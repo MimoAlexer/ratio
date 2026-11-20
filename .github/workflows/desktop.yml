@@ -85,7 +85,8 @@ jobs:
           $verified = $false
           foreach ($source in $sources) {
             try {
-              $response = Invoke-WebRequest $source -OutFile $zip -PassThru -TimeoutSec 60 -ErrorAction Stop
+              # SourceForge serves a download page to browser-like user agents.
+              $response = Invoke-WebRequest $source -UserAgent 'Working-Set-CI/1.0' -OutFile $zip -PassThru -TimeoutSec 60 -ErrorAction Stop
               $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
               if ($actual -ne $expected) {
                 throw "Expected $expected, received $actual ($((Get-Item $zip).Length) bytes, $($response.Headers['Content-Type']))."
