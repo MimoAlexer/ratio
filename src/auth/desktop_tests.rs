@@ -12,6 +12,21 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 #[test]
+fn desktop_handoff_recognizes_current_and_previous_clients() {
+    let mut headers = axum::http::HeaderMap::new();
+    assert!(!super::is_desktop_client(&headers));
+    for (agent, expected) in [
+        ("Mozilla/5.0 RatioDesktop/0.1.1", true),
+        ("Mozilla/5.0 WorkingSetDesktop/0.1.0", true),
+        ("Mozilla/5.0", false),
+        ("NotRatioDesktop/0.1.1", false),
+    ] {
+        headers.insert(header::USER_AGENT, agent.parse().unwrap());
+        assert_eq!(super::is_desktop_client(&headers), expected, "{agent}");
+    }
+}
+
+#[test]
 fn only_pairing_codes_survive_the_signin_round_trip() {
     let pending = "/desktop/authorize?code=X24P-F5VH";
     assert_eq!(safe_next(pending), pending);

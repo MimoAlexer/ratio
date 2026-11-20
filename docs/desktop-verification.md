@@ -1,18 +1,18 @@
-# Desktop qualification
+# Ratio 0.1.1 desktop qualification
 
-The published v0.1.0 application binaries were built from the Working Set desktop source in commit `cb1c2fc5d78bb122b4a5076cd0ce076ecd8531b2`. Both release assets were downloaded again from the private GitHub release and verified against the published SHA-256 manifest.
+The [private release](https://github.com/MimoAlexer/ratio/releases/tag/v0.1.1) contains these x86-64 installers. Verify downloaded files using its SHA-256 manifest.
 
-| Asset | SHA-256 |
+| File | SHA-256 |
 |---|---|
-| Working-Set-0.1.0-windows-x64-setup.exe | `71426a284bc1ddf97623f8d6b585116c812f278d87fbf967f02bc150e1ef8dcd` |
-| working-set_0.1.0_amd64.deb | `31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1` |
+| Ratio-0.1.1-windows-x64-setup.exe | `ddc157fe6e6787f21a2e93735a933a6441ec169061fc61b29a5ab12a02026057` |
+| ratio_0.1.1_amd64.deb | `c0bdb765e1f88570d7fce3283874278ae86dfb81e86af194e695d768ff07b761` |
 
-## Platform checks
+## Upgrade and compatibility
 
-- **Linux:** The final package passed installation, application-menu launch, initial rendering and saved-server relaunch on Ubuntu 22.04 and Debian 12.15 virtual machines. Ubuntu 22.04 and Ubuntu 26.04 also exercised X11 and native Wayland. The actual WebKit content process ran inside a separate PID namespace with seccomp and no-new-privileges. Removing the package preserved the local workspace profile.
-- **Windows:** The per-user NSIS installer was checked for x64 architecture, installed file hashes, WebView2 runtime detection, Start menu entry, icon, version metadata and data-preserving uninstall. On a genuine Windows Server 2025 runner the published installer was downloaded from the private release, verified against the release checksum, installed, exercised through the rendered WebView2 Connect control, and uninstalled successfully. [Exact published installer run](https://github.com/MimoAlexer/working-set/actions/runs/44796999075). The signed Microsoft runtime is a separate prerequisite. Windows cross-build and Wine checks are complemented by [native Windows CI](https://github.com/MimoAlexer/working-set/actions/workflows/desktop.yml) and [published-installer verification](https://github.com/MimoAlexer/working-set/actions/workflows/verify-published-desktop.yml), which looks for the rendered Connect control through Windows UI Automation.
-- **Real desktop session:** On Linux the native window handed off device approval to the default browser and received its own persistent session. A new issue from the native UI was visible to the independent client, and a changed checkpoint appeared back in the native app. Two isolated accounts were tested. A full restart preserved the intended server and account. Native Save As exported a valid archive, with no overwrite of existing files.
-- **Sync:** With two independent sign-ins a remote change appeared in approximately ten seconds on an idle window. When a user was typing, the window offered to load updates and retained the draft. Offline saves waited for explicit retry.
-- **Application:** Rust formatting and strict Clippy passed. The complete server suite passed 246 library and nine integration tests. The optional load test ran separately with 800 successful requests in the representative issue dataset. The real UI was inspected in graphite and monochrome at narrow and desktop widths; the issue list, board, issue detail and new-issue flow were tested with ordinary forms and keyboard input.
+- An actual v0.1.0 account reopened its saved server when Ratio launched with zero arguments. A native issue and its saved checkpoint were present, and the original session cookie was accepted. A clean profile starts in a Ratio directory. Ratio uses the older profile in place when upgrading an installation without a separate Ratio profile.
+- The Debian package upgrades the previously installed package and replaces the menu entry. Ubuntu 22.04 and Debian 12 virtual machines retained the saved origin, cookies and browser storage. The installed application also passed X11/Wayland and sandbox checks. Removal or purge preserved the user's profile.
+- The per-user Windows installer sets the Ratio name, icon, version and Start menu entry. A clean installation and upgrades from default and custom locations passed under Wine, including preservation of unrelated files. The private repo also runs [native Windows and Linux source CI](https://github.com/MimoAlexer/ratio/actions/workflows/desktop.yml) and a [native test against the published Windows installer](https://github.com/MimoAlexer/ratio/actions/workflows/verify-published-desktop.yml). The Windows installer is unsigned and requires the official Microsoft WebView2 runtime.
+- The server was upgraded on an existing database. Historical migrations, private project IDs, original authentication cookies and pending pairing codes remained valid. A newly signed-in Ratio device and a previous-version native client both received sync updates. Native ZIP exports preserve their format and archived encrypted backups remain readable by the restore utility.
+- The server suite passed all 258 tests including the opt-in read measurement. The desktop suite passed 20 tests on Linux and as Windows binaries under Wine. These local results use synthetic data and provider fixtures. Hosted workflows perform the platform-specific checks independently.
 
-The screenshots in [images](images) were captured from the running native application against the read-only Luma sample project. Provider OAuth, email delivery and charges were qualified with local fixtures. See [open staging issues](https://github.com/MimoAlexer/working-set/issues) for work requiring the operator's accounts.
+The [issue list](images/ratio-issues.png) and [issue detail](images/ratio-issue-detail.png) screenshots were captured from the released Linux package using the read-only Luma sample. For historical build evidence, see the [archived 0.1.0 release](https://github.com/MimoAlexer/ratio/releases/tag/v0.1.0).

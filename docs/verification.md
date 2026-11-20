@@ -1,4 +1,4 @@
-# Local qualification
+# Initial server qualification
 
 November 20, 2026. These results are from the integrated application using synthetic accounts, PostgreSQL and browser-rendered HTML. The standalone design preview is separate.
 

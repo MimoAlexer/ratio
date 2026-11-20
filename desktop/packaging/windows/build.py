@@ -30,7 +30,7 @@ def imported_dlls(binary, objdump):
 
 
 def collect_payload(binary, dll_dirs, objdump):
-    files = {"working-set.exe": binary}
+    files = {"ratio.exe": binary}
     pending = [binary]
     while pending:
         current = pending.pop()
@@ -71,7 +71,7 @@ def main():
     sources = collect_payload(binary, [binary.parent, *args.dll_dir], args.objdump)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    installer = output / f"Working-Set-{version}-windows-x64-setup.exe"
+    installer = output / f"Ratio-{version}-windows-x64-setup.exe"
     makensis = shutil.which(args.makensis)
     if not makensis:
         raise SystemExit("Install NSIS 3 or pass --makensis /path/to/makensis.")
@@ -91,10 +91,13 @@ def main():
                 install.append(f'  WriteRegDWORD HKCU "${{UNINSTALL_KEY}}" "Owns-{name}" 1')
             else:
                 install.append(f'  !insertmacro RetireDll "{name}"')
-        remove = [f'  Delete "$INSTDIR\\{name}"' for name in sources if name != "working-set.exe"]
+        remove = [f'  Delete "$INSTDIR\\{name}"' for name in sources if name != "ratio.exe"]
+        legacy = [f'  !insertmacro RetireLegacyDll "{name}" {int(name in sources)}'
+                  for name in RUNTIME_NAMES.values()]
         (stage / "payload.nsh").write_text("\n".join([
             "!macro InstallPayload", *install, "!macroend",
-            "!macro RemovePayload", *remove, "!macroend", "",
+            "!macro RemovePayload", *remove, "!macroend",
+            "!macro RemoveLegacyDlls", *legacy, "!macroend", "",
         ]), encoding="utf-8")
         command = [str(makensis), f"{prefix}V2", f"{prefix}DVERSION={version}"]
         if args.stub:

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use solo_tracker::{AppError, store};
+use ratio_server::{AppError, store};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -19,7 +19,7 @@ fn bytes(fields: &[&str]) -> i64 {
 
 #[sqlx::test(migrations = false)]
 async fn migration_preserves_existing_source_and_workflow_charges(db: PgPool) -> Result<()> {
-    for migration in solo_tracker::MIGRATIONS
+    for migration in ratio_server::MIGRATIONS
         .iter()
         .take_while(|m| m.version < 18)
     {

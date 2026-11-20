@@ -1,18 +1,22 @@
-# Working Set desktop
+# Ratio desktop
 
-Working Set opens a dedicated application window on Windows and Linux. Each installation keeps its own sign-in profile. Both use the same workspace records when connected to the same HTTPS deployment as the same account. The server owns the projects, issues, notes, release history and entitlements; copying a database between machines is unnecessary.
+Ratio opens a dedicated application window on Windows and Linux. Each installation keeps its own sign-in profile. Both use the same workspace records when connected to the same HTTPS deployment as the same account. The server owns the projects, issues, notes, release history and entitlements; copying a database between machines is unnecessary.
 
 ## Install
 
-Download the appropriate package from the [private releases](https://github.com/MimoAlexer/working-set/releases). The release contains SHA256SUMS for both installers.
+Download the appropriate package from the [private releases](https://github.com/MimoAlexer/ratio/releases). The release contains SHA256SUMS for both installers.
 
-- **Windows x64:** run the setup EXE. It installs for the current user and adds Working Set to the Start menu. Microsoft Edge WebView2 Evergreen is required. If it is missing, follow the installer’s instructions or install the [official Microsoft WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The release is unsigned.
-- **Ubuntu / Debian x86-64:** from the directory containing the downloaded package, run `sudo apt install ./working-set_0.1.0_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Working Set** from the applications menu or run `working-set`.
+- **Windows x64:** run the setup EXE. It installs for the current user and adds Ratio to the Start menu. Microsoft Edge WebView2 Evergreen is required. If it is missing, follow the installer’s instructions or install the [official Microsoft WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The release is unsigned.
+- **Ubuntu / Debian x86-64:** from the directory containing the downloaded package, run `sudo apt install ./ratio_0.1.1_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
+
+## Upgrading
+
+Version 0.1.1 keeps existing server connections and sign-in profiles. If the earlier profile directory already exists, Ratio uses it in place. A new installation starts in a private Ratio data directory.
 
 ## Connect two computers
 
 1. On the first computer, enter the origin of your backend, for example `https://your-deployment.example`. Use the exact same address on the second.
-2. Begin desktop sign-in. Working Set shows a device code. In your system browser, sign in to the intended account, check the code and approve.
+2. Begin desktop sign-in. Ratio shows a device code. In your system browser, sign in to the intended account, check the code and approve.
 3. Return to the application, check approval and confirm the displayed email. Your signed-in window opens the issue list.
 4. Repeat on the other computer. While a desktop window is visible, it checks for changes about every ten seconds and when you return to it. A clean view refreshes. With a draft in progress, **Load updates** lets you choose when to refresh. A separate account at the same address still has its own private data.
 
@@ -30,7 +34,7 @@ The local demo uses `http://127.0.0.1:4178` on the machine running the bundled d
 
 The issue list opens first. Use Filters and Display to control the records, grouping and sort order, or switch to Board. Click an issue key for its description, next action, properties and history. The theme control in the window toolbar switches between graphite with a muted steel-blue accent and pure monochrome.
 
-![Issue detail in Working Set on Linux](../docs/images/working-set-issue-detail.png)
+![Issue detail in Ratio on Linux](../docs/images/ratio-issue-detail.png)
 
 [Desktop qualification and checksums](../docs/desktop-verification.md)
 
@@ -45,4 +49,4 @@ cargo build --release --locked --manifest-path desktop/Cargo.toml
 
 On Ubuntu, building from source requires the GTK 3 and WebKitGTK 4.1 development packages in addition to the Rust toolchain. Windows native builds use Visual Studio C++ Build Tools and a Windows SDK. The cross-build can also target Windows GNU. The release includes the required WebView2 loader library for the GNU build. Native CI and packaging recipes are in [the desktop workflow](../.github/workflows/desktop.yml) and [packaging](packaging).
 
-`working-set --server https://your-deployment.example` selects a server directly. `--profile-dir <directory>` runs with a separate set of local profiles for testing. HTTP is accepted only on a loopback address.
+`ratio --server https://your-deployment.example` selects a server directly. `--profile-dir <directory>` runs with a separate set of local profiles for testing. HTTP is accepted only on a loopback address.

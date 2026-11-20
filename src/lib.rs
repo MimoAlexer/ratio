@@ -47,7 +47,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(db: PgPool, config: Config) -> anyhow::Result<Self> {
         let http = Client::builder()
-            .user_agent(concat!("solo-tracker/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("Ratio/", env!("CARGO_PKG_VERSION")))
             .timeout(Duration::from_secs(10))
             .connect_timeout(Duration::from_secs(4))
             .redirect(reqwest::redirect::Policy::none())
@@ -207,7 +207,7 @@ async fn ui_asset(axum::extract::Path(path): axum::extract::Path<String>) -> Res
 }
 async fn landing() -> Html<String> {
     ui::public_page(
-        "Working Set",
+        "Your development workspace",
         html! {
             h1 {"Your development workspace"}
             p {"Keep issues, Markdown decisions, release progress and critical repository alerts together in a private workspace."}

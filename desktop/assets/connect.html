@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Connect to Working Set</title>
+  <title>Connect to Ratio</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -91,10 +91,10 @@
   </style>
 </head>
 <body>
-  <header class="brand"><span class="mark" aria-hidden="true">{{MARK}}</span>Working Set</header>
+  <header class="brand"><span class="mark" aria-hidden="true">{{MARK}}</span>Ratio</header>
   <main>
     <h1>Workspace connection</h1>
-    <p class="intro">Enter the address of the Working Set server you use to sign in.</p>
+    <p class="intro">Enter the address of the Ratio server you use to sign in.</p>
     <form id="connection">
       <label for="origin">Workspace URL</label>
       <div class="controls">
@@ -111,7 +111,7 @@
     <button type="button" class="text-button local-demo" id="demo" data-origin="{{DEMO_ORIGIN}}" {{DEMO_HIDDEN}}>Open local demo</button>
     <details class="help">
       <summary>Where do I find my workspace URL?</summary>
-      <p>Use the HTTPS address where Working Set is deployed. If the server runs on this computer, enter its local address and port, such as <code>http://127.0.0.1:3000</code>.</p>
+      <p>Use the HTTPS address where Ratio is deployed. If the server runs on this computer, enter its local address and port, such as <code>http://127.0.0.1:3000</code>.</p>
     </details>
   </main>
   <script>
@@ -135,7 +135,7 @@
     }
     function send(message, progress) {
       if (!window.ipc || typeof window.ipc.postMessage !== "function") {
-        showMessage("Open the Working Set desktop app to connect.");
+        showMessage("Open the Ratio desktop app to connect.");
         return;
       }
       showMessage(progress);

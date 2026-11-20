@@ -563,7 +563,10 @@ impl Provider {
 
 async fn send(request: RequestBuilder) -> AppResult<Response> {
     let response = request
-        .header(header::USER_AGENT, "Workspace-GitHub-App")
+        .header(
+            header::USER_AGENT,
+            concat!("Ratio-GitHub-App/", env!("CARGO_PKG_VERSION")),
+        )
         .timeout(Duration::from_secs(10))
         .send()
         .await

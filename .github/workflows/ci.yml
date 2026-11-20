@@ -40,16 +40,16 @@ jobs:
           echo "::add-mask::$WORKSPACE_DB_PASSWORD"
           echo "::add-mask::$POSTGRES_PASSWORD"
           docker compose config --quiet
-          docker run --detach --name workspace-postgres --publish 127.0.0.1::5432 \
+          docker run --detach --name ratio-postgres --publish 127.0.0.1::5432 \
             --env POSTGRES_PASSWORD --env POSTGRES_DB=workspace_test "$PG_IMAGE"
-          port=$(docker port workspace-postgres 5432/tcp | cut -d: -f2)
+          port=$(docker port ratio-postgres 5432/tcp | cut -d: -f2)
           for attempt in {1..60}; do
-            if docker exec workspace-postgres pg_isready -h 127.0.0.1 -U postgres -d workspace_test; then break; fi
+            if docker exec ratio-postgres pg_isready -h 127.0.0.1 -U postgres -d workspace_test; then break; fi
             sleep 1
           done
-          docker exec workspace-postgres pg_isready -h 127.0.0.1 -U postgres -d workspace_test
-          docker cp ops workspace-postgres:/tmp/ops
-          docker exec --env PGUSER=postgres --env PGDATABASE=workspace_test --env WORKSPACE_DB_PASSWORD workspace-postgres /tmp/ops/init-runtime.sh
+          docker exec ratio-postgres pg_isready -h 127.0.0.1 -U postgres -d workspace_test
+          docker cp ops ratio-postgres:/tmp/ops
+          docker exec --env PGUSER=postgres --env PGDATABASE=workspace_test --env WORKSPACE_DB_PASSWORD ratio-postgres /tmp/ops/init-runtime.sh
           printf 'RUNTIME_DATABASE_URL=postgresql://workspace_app:%s@127.0.0.1:%s/workspace_test\n' "$WORKSPACE_DB_PASSWORD" "$port" >> "$GITHUB_ENV"
           printf 'DATABASE_URL=postgresql://postgres:%s@127.0.0.1:%s/workspace_test\n' "$POSTGRES_PASSWORD" "$port" >> "$GITHUB_ENV"
       - name: Check formatting and Clippy
@@ -58,27 +58,27 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
       - name: Migrate and test against PostgreSQL
         run: |
-          APP_GRANT_RUNTIME=1 cargo run --locked --bin solo-tracker -- migrate
+          APP_GRANT_RUNTIME=1 cargo run --locked --bin ratio-server -- migrate
           cargo test --locked --all-targets -- --include-ignored --test-threads=1
       - name: Rehearse encrypted backup and restore
         run: |
-          docker exec workspace-postgres sh -ec 'apt-get update -qq && apt-get install -qy --no-install-recommends age'
-          docker cp migrations workspace-postgres:/tmp/migrations
+          docker exec ratio-postgres sh -ec 'apt-get update -qq && apt-get install -qy --no-install-recommends age'
+          docker cp migrations ratio-postgres:/tmp/migrations
           docker exec --user postgres --env PGHOST=/var/run/postgresql --env PGDATABASE=postgres --env PGUSER=postgres \
-            workspace-postgres /tmp/ops/drill.sh
+            ratio-postgres /tmp/ops/drill.sh
       - name: Build and probe the non-root release image
         env:
           APP_ENV: production
-          APP_BASE_URL: https://workspace.example.invalid
+          APP_BASE_URL: https://ratio.example.invalid
           PORT: '38123'
         run: |
           cargo clean
-          docker build --tag workspace-ci .
-          test "$(docker image inspect --format '{{.Config.User}}' workspace-ci)" = '65532:65532'
-          docker run --rm --network host --env DATABASE_URL --env APP_GRANT_RUNTIME=1 workspace-ci solo-tracker migrate
+          docker build --tag ratio-ci .
+          test "$(docker image inspect --format '{{.Config.User}}' ratio-ci)" = '65532:65532'
+          docker run --rm --network host --env DATABASE_URL --env APP_GRANT_RUNTIME=1 ratio-ci ratio-server migrate
           export DATABASE_URL="$RUNTIME_DATABASE_URL"
-          docker run --rm --network host --env DATABASE_URL workspace-ci solo-tracker check
-          docker exec -i workspace-postgres psql -U postgres -d workspace_test -v ON_ERROR_STOP=1 <<'SQL'
+          docker run --rm --network host --env DATABASE_URL ratio-ci ratio-server check
+          docker exec -i ratio-postgres psql -U postgres -d workspace_test -v ON_ERROR_STOP=1 <<'SQL'
           BEGIN;
           SET LOCAL ROLE workspace_app;
           DO $$ BEGIN IF has_schema_privilege(current_user,'public','CREATE')
@@ -95,7 +95,7 @@ jobs:
             RAISE EXCEPTION 'runtime issue and note storage accounting failed'; END IF; END $$;
           ROLLBACK;
           SQL
-          docker run --detach --name workspace-web --read-only --tmpfs /tmp \
-            --network host --env DATABASE_URL --env APP_BASE_URL --env APP_ENV --env PORT workspace-ci
+          docker run --detach --name ratio-web --read-only --tmpfs /tmp \
+            --network host --env DATABASE_URL --env APP_BASE_URL --env APP_ENV --env PORT ratio-ci
           curl --retry 30 --retry-connrefused --retry-delay 1 --fail --silent --show-error "http://127.0.0.1:$PORT/readyz"
           curl --fail --silent --show-error "http://127.0.0.1:$PORT/login" | grep -qi '<form'

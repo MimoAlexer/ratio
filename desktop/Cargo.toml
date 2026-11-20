@@ -1,10 +1,10 @@
 [package]
-name = "working-set"
-version = "0.1.0"
+name = "ratio"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.90"
 publish = false
-description = "Working Set — a desktop issue tracker for solo developers"
+description = "Ratio — a desktop issue tracker for solo developers"
 
 [dependencies]
 dirs = "6"

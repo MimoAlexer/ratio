@@ -1,4 +1,4 @@
-# Engineering implementation plan
+# Ratio engineering implementation plan
 
 Build the first paid release of a private issue tracker for solo developers. A returning developer should be able to resume an issue, act on a critical security finding and verify what shipped. Use the [product plan](product-plan.md) for the customer journey and pricing rationale. The paths below describe a proposed new repository.
 

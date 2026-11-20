@@ -85,9 +85,9 @@ pub(crate) fn icon(name: &str) -> Markup {
 
 fn brand(href: &str) -> Markup {
     html! {
-        a.brand href=(href) aria-label="Working Set home" {
+        a.brand href=(href) aria-label="Ratio home" {
             img src="/assets/mark.svg" width="28" height="28" alt="";
-            span { "Working Set" }
+            span { "Ratio" }
         }
     }
 }
@@ -131,7 +131,7 @@ fn head(title: &str) -> Markup {
     html! {
         meta charset="utf-8";
         meta name="viewport" content="width=device-width, initial-scale=1";
-        title { (title) " · Working Set" }
+        title { (title) " · Ratio" }
         link rel="icon" type="image/svg+xml" href="/assets/mark.svg";
         link rel="stylesheet" href="/assets/app.css";
     }

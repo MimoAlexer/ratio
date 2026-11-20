@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Published Working Set release tag
+        description: Published Ratio release tag
         required: true
-        default: v0.1.0
+        default: v0.1.1
         type: string
 permissions:
   contents: read
@@ -25,10 +25,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a release tag such as v0.1.0' }
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a release tag such as v0.1.1' }
           $version = $env:RELEASE_TAG.Substring(1)
-          $exe = "Working-Set-$version-windows-x64-setup.exe"
-          $dir = Join-Path $env:RUNNER_TEMP 'published-working-set'
+          $exe = "Ratio-$version-windows-x64-setup.exe"
+          $dir = Join-Path $env:RUNNER_TEMP 'published-ratio'
           gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --pattern $exe --pattern SHA256SUMS --dir $dir
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $pattern = '^([a-fA-F0-9]{64})\s+\*?' + [regex]::Escape($exe) + '$'
@@ -36,7 +36,11 @@ jobs:
           if ($hashLine.Count -ne 1 -or $hashLine[0] -notmatch $pattern) { throw 'Missing or ambiguous release checksum' }
           $expected = $Matches[1]
           if ((Get-FileHash (Join-Path $dir $exe)).Hash -ne $expected) { throw 'Release checksum mismatch' }
+          gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern Working-Set-0.1.0-windows-x64-setup.exe --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "VERIFIED_SETUP=$(Join-Path $dir $exe)" >> $env:GITHUB_ENV
-      - name: Install, open the rendered connection form, and uninstall
+      - name: Test fresh install and legacy upgrade of the published installer
         shell: powershell
-        run: ./desktop/packaging/windows/smoke.ps1 -Installer $env:VERIFIED_SETUP
+        run: |
+          $legacy = Join-Path $env:RUNNER_TEMP 'Working-Set-0.1.0-windows-x64-setup.exe'
+          ./desktop/packaging/windows/smoke.ps1 -Installer $env:VERIFIED_SETUP -LegacyInstaller $legacy

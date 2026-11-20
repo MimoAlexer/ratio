@@ -1,68 +1,141 @@
 # Run on a disposable Windows CI worker with an interactive desktop.
-param([Parameter(Mandatory)][string]$Installer)
+param(
+    [Parameter(Mandatory)][string]$Installer,
+    [string]$LegacyInstaller
+)
 $ErrorActionPreference = 'Stop'
 $setup = (Resolve-Path $Installer).Path
-$result = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
-if ($result.ExitCode -eq 3) {
-    # Only this disposable worker provisions a missing prerequisite. Verify the
-    # Microsoft signature before running their official Evergreen bootstrapper.
-    $bootstrap = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
-    Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrap
-    $signature = Get-AuthenticodeSignature $bootstrap
-    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
-        throw 'Microsoft WebView2 bootstrapper signature verification failed.'
-    }
-    $runtime = Start-Process $bootstrap -ArgumentList '/silent','/install' -Wait -PassThru
-    if ($runtime.ExitCode -ne 0) { throw "WebView2 installer exited with $($runtime.ExitCode)" }
+if ((Split-Path $setup -Leaf) -notmatch '^Ratio-([0-9]+\.[0-9]+\.[0-9]+)-windows-x64-setup\.exe$') {
+    throw 'Expected the versioned Ratio installer.'
+}
+$version = $Matches[1]
+$programs = [Environment]::GetFolderPath('Programs')
+$uninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\Ratio'
+$appExe = Join-Path $installDir 'ratio.exe'
+$shortcut = Join-Path $programs 'Ratio.lnk'
+$key = Join-Path $uninstallRoot 'Ratio'
+$ratioProfile = Join-Path $env:LOCALAPPDATA 'Ratio'
+$legacyDir = Join-Path $env:LOCALAPPDATA 'Programs\Working Set'
+$legacyProfile = Join-Path $env:LOCALAPPDATA 'Working Set'
+$legacyShortcut = Join-Path $programs 'Working Set.lnk'
+$legacyKey = Join-Path $uninstallRoot 'WorkingSet'
+
+function Install-Application([string]$setup) {
     $result = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
-}
-if ($result.ExitCode -ne 0) { throw "Working Set installer exited with $($result.ExitCode)" }
-$installDir = Join-Path $env:LOCALAPPDATA 'Programs\Working Set'
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Working Set.lnk'
-$key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WorkingSet'
-$appExe = Join-Path $installDir 'working-set.exe'
-if (!(Test-Path $appExe) -or !(Test-Path $shortcut) -or !(Test-Path $key)) {
-    throw 'Missing installed application, Start Menu entry, or uninstall registration.'
-}
-# The normal first-run profile is new on the hosted worker. The connection
-# window title is set only after the app mounts its native WebView2 control.
-$app = Start-Process $appExe -PassThru
-try {
-    $end = (Get-Date).AddSeconds(60)
-    do {
-        Start-Sleep -Milliseconds 400
-        $app.Refresh()
-        if ($app.HasExited) { throw "Application exited before opening a window ($($app.ExitCode))." }
-    } until ($app.MainWindowTitle -like 'Working Set*Connection' -or (Get-Date) -gt $end)
-    if ($app.MainWindowTitle -notlike 'Working Set*Connection') { throw 'First-run connection window did not open.' }
-    # UI Automation reaches into WebView2. This verifies that the server-choice
-    # form rendered, even when the frame was created successfully.
-    Add-Type -AssemblyName UIAutomationClient
-    Add-Type -AssemblyName UIAutomationTypes
-    $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
-    $condition = [System.Windows.Automation.PropertyCondition]::new(
-        [System.Windows.Automation.AutomationElement]::NameProperty, 'Connect')
-    $end = (Get-Date).AddSeconds(45)
-    do {
-        $button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
-        if (!$button) { Start-Sleep -Milliseconds 400 }
-    } until ($button -or (Get-Date) -gt $end)
-    if (!$button -or $button.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button) {
-        throw 'The connection form did not expose its Connect button to Windows UI Automation.'
+    if ($result.ExitCode -eq 3) {
+        # Only this disposable worker provisions a missing prerequisite. Verify the
+        # Microsoft signature before running their official Evergreen bootstrapper.
+        $bootstrap = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+        Invoke-WebRequest -UseBasicParsing 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrap
+        $signature = Get-AuthenticodeSignature $bootstrap
+        if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
+            throw 'Microsoft WebView2 bootstrapper signature verification failed.'
+        }
+        $runtime = Start-Process $bootstrap -ArgumentList '/silent','/install' -Wait -PassThru
+        if ($runtime.ExitCode -ne 0) { throw "WebView2 installer exited with $($runtime.ExitCode)" }
+        $result = Start-Process $setup -ArgumentList '/S' -Wait -PassThru
     }
-} finally {
-    if (!$app.HasExited) {
-        $null = $app.CloseMainWindow()
-        if (!$app.WaitForExit(5000)) { Stop-Process -Id $app.Id -Force }
+    if ($result.ExitCode -ne 0) { throw "Installer $setup exited with $($result.ExitCode)" }
+}
+
+function Assert-ConnectionWindow {
+    $app = Start-Process $appExe -PassThru
+    try {
+        $end = (Get-Date).AddSeconds(60)
+        do {
+            Start-Sleep -Milliseconds 400
+            $app.Refresh()
+            if ($app.HasExited) { throw "Application exited before opening a window ($($app.ExitCode))." }
+        } until ($app.MainWindowTitle -like 'Ratio*Connection' -or (Get-Date) -gt $end)
+        if ($app.MainWindowTitle -notlike 'Ratio*Connection') { throw 'First-run connection window did not open.' }
+        # UI Automation reaches into WebView2. This verifies that the server-choice
+        # form rendered, even when the frame was created successfully.
+        Add-Type -AssemblyName UIAutomationClient
+        Add-Type -AssemblyName UIAutomationTypes
+        $window = [System.Windows.Automation.AutomationElement]::FromHandle($app.MainWindowHandle)
+        $condition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::NameProperty, 'Connect')
+        $end = (Get-Date).AddSeconds(45)
+        do {
+            $button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+            if (!$button) { Start-Sleep -Milliseconds 400 }
+        } until ($button -or (Get-Date) -gt $end)
+        if (!$button -or $button.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button) {
+            throw 'The connection form did not expose its Connect button to Windows UI Automation.'
+        }
+    } finally {
+        if (!$app.HasExited) {
+            $null = $app.CloseMainWindow()
+            if (!$app.WaitForExit(5000)) { Stop-Process -Id $app.Id -Force }
+        }
     }
 }
-$profileDir = Join-Path $env:LOCALAPPDATA 'Working Set'
-$sentinel = Join-Path $profileDir 'installer-ci-sentinel.txt'
-Set-Content -LiteralPath $sentinel -Value 'retained'
-# _?= keeps the uninstaller in-process so its exit status can be checked.
-$uninstaller = Join-Path $installDir 'Uninstall.exe'
-$result = Start-Process $uninstaller -ArgumentList "/S _?=$installDir" -Wait -PassThru
-if ($result.ExitCode -ne 0 -or (Test-Path $appExe) -or (Test-Path $shortcut) -or (Test-Path $key)) {
-    throw 'The uninstall lifecycle did not finish.'
+
+# This guard limits the test to a clean machine and protects existing profiles.
+foreach ($path in @($installDir, $legacyDir, $ratioProfile, $legacyProfile, $key, $legacyKey, $shortcut, $legacyShortcut)) {
+    if (Test-Path -LiteralPath $path) { throw "Installer smoke needs a clean worker. Found $path." }
 }
-if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'The desktop profile was not preserved.' }
+$scenarios = @('fresh')
+if ($LegacyInstaller) {
+    $LegacyInstaller = (Resolve-Path $LegacyInstaller).Path
+    if ((Get-FileHash $LegacyInstaller).Hash -ne '71426a284bc1ddf97623f8d6b585116c812f278d87fbf967f02bc150e1ef8dcd') {
+        throw 'Published Working Set 0.1.0 installer checksum mismatch.'
+    }
+    $scenarios += 'upgrade'
+}
+foreach ($scenario in $scenarios) {
+    Write-Host "Testing Ratio $version ($scenario)"
+    $expectedProfileDir = $ratioProfile
+    if ($scenario -eq 'upgrade') {
+        Install-Application $LegacyInstaller
+        $oldExe = Join-Path $legacyDir 'working-set.exe'
+        if (!(Test-Path $oldExe) -or !(Test-Path $legacyShortcut) -or !(Test-Path $legacyKey)) {
+            throw 'The legacy installer did not establish the upgrade fixture.'
+        }
+        $legacyFiles = @(Get-ChildItem -LiteralPath $legacyDir -File)
+        $legacyUserFile = Join-Path $legacyDir 'user-owned.txt'
+        Set-Content -LiteralPath $legacyUserFile -Value 'keep this file'
+        $expectedProfileDir = $legacyProfile
+        New-Item -ItemType Directory -Path $expectedProfileDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $expectedProfileDir 'installer-ci-sentinel') -Value 'retained'
+    }
+    Install-Application $setup
+    $entry = Get-ItemProperty -LiteralPath $key
+    if (!(Test-Path $appExe) -or !(Test-Path $shortcut) -or $entry.DisplayName -ne 'Ratio' -or $entry.DisplayVersion -ne $version) {
+        throw 'Missing or incorrect installed Ratio binary, Start Menu entry, or registration.'
+    }
+    $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+    if ($link.TargetPath -ne $appExe) { throw 'The Start Menu shortcut points to the wrong executable.' }
+    if ((Get-Item $appExe).VersionInfo.ProductName -ne 'Ratio') { throw 'Unexpected executable product name.' }
+    if ((Test-Path $legacyKey) -or (Test-Path $legacyShortcut)) { throw 'The legacy registration or shortcut remains.' }
+    if ($scenario -eq 'upgrade') {
+        foreach ($old in $legacyFiles) {
+            if (Test-Path -LiteralPath $old.FullName) { throw "Legacy application file remains: $($old.Name)" }
+        }
+        if ((Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') { throw 'Upgrade removed an unrelated file.' }
+    }
+
+    Assert-ConnectionWindow
+    if (!(Test-Path -LiteralPath (Join-Path $expectedProfileDir 'launcher'))) { throw 'The app opened the wrong profile.' }
+    $sentinel = Join-Path $expectedProfileDir 'installer-ci-sentinel'
+    if ($scenario -eq 'fresh') { Set-Content -LiteralPath $sentinel -Value 'retained' }
+    if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Install changed user data.' }
+
+    # The default NSIS uninstall process relaunches from TEMP and removes itself.
+    $uninstaller = Join-Path $installDir 'Uninstall.exe'
+    $result = Start-Process $uninstaller -ArgumentList '/S' -Wait -PassThru
+    $end = (Get-Date).AddSeconds(20)
+    while ((Test-Path $uninstaller) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
+    if ($result.ExitCode -ne 0 -or (Test-Path $installDir) -or (Test-Path $shortcut) -or (Test-Path $key)) {
+        throw 'Ratio uninstall left application files, a shortcut, or a registration.'
+    }
+    if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Uninstall changed user data.' }
+    if ($scenario -eq 'fresh' -and $LegacyInstaller) {
+        # Keep this test-created profile for inspection and start the upgrade
+        # scenario on a machine with only the original Working Set profile.
+        Rename-Item -LiteralPath $ratioProfile -NewName ('Ratio-ci-' + [guid]::NewGuid().ToString('N'))
+    } elseif ($scenario -eq 'upgrade' -and (Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') {
+        throw 'Uninstall removed an unrelated legacy file.'
+    }
+}

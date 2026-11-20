@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Working Set
+Name=Ratio
 Comment=Track projects, issues, and releases
-Exec=working-set
-Icon=working-set
+Exec=ratio
+Icon=ratio
 Terminal=false
 Categories=Development;ProjectManagement;
 Keywords=tasks;issues;projects;roadmap;

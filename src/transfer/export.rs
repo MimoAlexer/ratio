@@ -178,8 +178,10 @@ pub(super) async fn download(
     headers.insert(header::CONTENT_LENGTH, HeaderValue::from(length));
     headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!("attachment; filename=\"project-{project}.zip\""))
-            .map_err(|_| AppError::Internal("Invalid export filename.".into()))?,
+        HeaderValue::from_str(&format!(
+            "attachment; filename=\"ratio-project-{project}.zip\""
+        ))
+        .map_err(|_| AppError::Internal("Invalid export filename.".into()))?,
     );
     headers.insert(
         header::CACHE_CONTROL,

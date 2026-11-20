@@ -1559,6 +1559,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratio-server"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "chacha20poly1305",
+ "chrono",
+ "csv",
+ "futures-util",
+ "hex",
+ "hmac",
+ "http-body-util",
+ "maud",
+ "percent-encoding",
+ "pulldown-cmark",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "zip",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1898,43 +1935,6 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "solo-tracker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64 0.22.1",
- "chacha20poly1305",
- "chrono",
- "csv",
- "futures-util",
- "hex",
- "hmac",
- "http-body-util",
- "maud",
- "percent-encoding",
- "pulldown-cmark",
- "rand 0.8.8",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "subtle",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "zip",
 ]
 
 [[package]]

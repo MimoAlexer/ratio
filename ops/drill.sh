@@ -8,10 +8,10 @@ umask 077
 ops=$(cd -- "$(dirname -- "$0")" && pwd -P)
 scratch=$(mktemp -d)
 nonce=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
-source_db=solo_drill_source_$nonce
-restored_db=solo_drill_recovered_$nonce
-sibling_db=solo_drill_sibling_$nonce
-pitr_db=solo_drill_pitr_$nonce
+source_db=ratio_drill_source_$nonce
+restored_db=ratio_drill_recovered_$nonce
+sibling_db=ratio_drill_sibling_$nonce
+pitr_db=ratio_drill_pitr_$nonce
 created_source=false
 created_restored=false
 created_sibling=false
@@ -161,6 +161,16 @@ pitr_copy=$(PGDATABASE="$sibling_db" "$ops/backup.sh" --pitr-at "$point" "$scrat
 ledger_time=$(sed -n 's/^started_utc=//p' "$ledger/manifest.txt")
 copy_time=$(sed -n 's/^started_utc=//p' "$pitr_copy/manifest.txt")
 [[ "$point" < "$ledger_time" && "$ledger_time" < "$copy_time" ]]
+# v0.1.0 used these manifest tags with the same encrypted payloads. Exercise
+# the old reader contract in addition to the Ratio-format restore above.
+for bundle in "$pitr_copy" "$ledger"; do
+    (
+        cd -- "$bundle"
+        grep -q '^format=ratio-' manifest.txt
+        sed -i 's/^format=ratio-/format=solo-tracker-/' manifest.txt
+        sha256sum -- *.age manifest.txt > SHA256SUMS
+    )
+done
 "$ops/restore.sh" "$pitr_copy" "$pitr_db" "$ledger"
 created_pitr=true
 verify_fixture "$pitr_db"
@@ -170,4 +180,4 @@ for invalid in '2001-02-30T00:00:00Z' '2024-01-01' "$(date -u --date=tomorrow +'
         exit 1
     fi
 done
-printf 'Verified sibling copy with intervening erasures and refused invalid, noncanonical and future PITR timestamps.\n'
+printf 'Verified v0.1.0 sibling copy with intervening erasures and refused invalid, noncanonical and future PITR timestamps.\n'

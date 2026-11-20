@@ -3,9 +3,9 @@
 //! Measures complete, authenticated, uncompressed HTTP responses over loopback.
 //! Use --release before ' -- ' for an optimized build. No external providers participate.
 use anyhow::{Context, Result, ensure};
+use ratio_server::{AppState, app};
 use reqwest::{Client, StatusCode, header::COOKIE};
 use sha2::{Digest, Sha256};
-use solo_tracker::{AppState, app};
 use sqlx::{
     PgPool,
     postgres::{PgConnectOptions, PgPoolOptions},

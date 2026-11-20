@@ -1783,6 +1783,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
+name = "ratio"
+version = "0.1.1"
+dependencies = [
+ "dirs 6.0.0",
+ "gtk",
+ "muda",
+ "open",
+ "rfd",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tao",
+ "tauri-winres",
+ "tempfile",
+ "url",
+ "webkit2gtk",
+ "webview2-com",
+ "windows",
+ "windows-core",
+ "wry",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2968,29 +2991,6 @@ checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "working-set"
-version = "0.1.0"
-dependencies = [
- "dirs 6.0.0",
- "gtk",
- "muda",
- "open",
- "rfd",
- "serde",
- "serde_json",
- "sha2",
- "tao",
- "tauri-winres",
- "tempfile",
- "url",
- "webkit2gtk",
- "webview2-com",
- "windows",
- "windows-core",
- "wry",
 ]
 
 [[package]]

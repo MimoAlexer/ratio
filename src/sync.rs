@@ -32,11 +32,7 @@ pub(crate) async fn desktop_page_context(req: Request, next: Next) -> Response {
             .headers()
             .get("sec-fetch-dest")
             .is_none_or(|destination| destination == "document" || destination == "iframe")
-        && req
-            .headers()
-            .get(header::USER_AGENT)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|agent| agent.contains("WorkingSetDesktop/"));
+        && crate::auth::is_desktop_client(req.headers());
     if desktop_read {
         PAGE_REVISION.scope(Cell::new(None), next.run(req)).await
     } else {
@@ -126,7 +122,7 @@ mod tests {
     use tower::ServiceExt;
 
     const POLL: &str = "/api/device/changes";
-    const DESKTOP: &str = "WorkingSetDesktop/test";
+    const DESKTOP: &str = "RatioDesktop/test";
 
     async fn owner(db: &PgPool) -> Uuid {
         let id = Uuid::new_v4();
@@ -228,6 +224,13 @@ mod tests {
         let baseline = attribute(&page, "name=\"workspace-revision\" content=\"");
         assert_eq!(baseline, initial);
         assert!(page.contains("/assets/device-sync.js"));
+        let legacy =
+            body(request(&app, &reader, "WorkingSetDesktop/0.1.0", "/projects", None).await).await;
+        assert_eq!(
+            attribute(&legacy, "name=\"workspace-revision\" content=\""),
+            initial
+        );
+        assert!(legacy.contains("/assets/device-sync.js"));
         let web = body(request(&app, &writer, "Browser", "/projects", None).await).await;
         assert!(!web.contains("workspace-revision"));
         assert!(!web.contains("/assets/device-sync.js"));

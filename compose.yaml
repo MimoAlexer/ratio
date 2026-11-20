@@ -1,3 +1,5 @@
+# Compose scopes the PostgreSQL volume to its project. When moving an existing
+# installation to another directory, keep its COMPOSE_PROJECT_NAME (see ops/railway.md).
 services:
   db:
     image: postgres:18-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
@@ -16,16 +18,16 @@ services:
       retries: 30
   migrate:
     build: .
-    image: ${COMPOSE_PROJECT_NAME:-workspace}-web:local
+    image: ratio-server:${COMPOSE_PROJECT_NAME:-ratio}-local
     depends_on:
       db:
         condition: service_healthy
-    command: ["solo-tracker", "migrate"]
+    command: ["ratio-server", "migrate"]
     environment:
       DATABASE_URL: postgresql://workspace:${POSTGRES_PASSWORD:?Export a random migration password}@db/workspace
       APP_GRANT_RUNTIME: "1"
   web:
-    image: ${COMPOSE_PROJECT_NAME:-workspace}-web:local
+    image: ratio-server:${COMPOSE_PROJECT_NAME:-ratio}-local
     pull_policy: never
     depends_on:
       migrate:

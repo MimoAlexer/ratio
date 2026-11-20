@@ -5,6 +5,7 @@ import configure from "./railway.ts";
 // Exercise the SDK without an account or a remote plan/apply operation.
 for (const environment of ["staging", "production"]) {
   const definition = await configure(createRailwayContext({ environment }), project);
+  assert.equal(definition.name, "Ratio");
   const database = definition.resources.find((node) => node.type === "database");
   const web = definition.resources.find((node) => node.address === "service.web");
   assert.equal(database.engine, "postgres");
@@ -14,8 +15,8 @@ for (const environment of ["staging", "production"]) {
   assert.equal(web.variables.APP_BASE_URL.name, "APP_BASE_URL");
   assert.equal(web.variables.APP_ENV.value, "production");
   assert.equal(web.build.builder, "DOCKERFILE");
-  assert.match(web.deploy.preDeployCommand[0], /APP_GRANT_RUNTIME=1 .*solo-tracker migrate/);
-  assert.equal(web.deploy.startCommand, "env -u MIGRATION_DATABASE_URL solo-tracker serve");
+  assert.match(web.deploy.preDeployCommand[0], /APP_GRANT_RUNTIME=1 .*ratio-server migrate/);
+  assert.equal(web.deploy.startCommand, "env -u MIGRATION_DATABASE_URL ratio-server serve");
   assert.equal(web.deploy.healthcheckPath, "/readyz");
   assert.deepEqual(web.deploy.multiRegionConfig, database.deploy.multiRegionConfig);
   assert.equal(Object.values(web.deploy.multiRegionConfig)[0].numReplicas, 1);

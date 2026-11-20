@@ -1,6 +1,6 @@
-# A solo developer’s issue tracker
+# Ratio product plan
 
-Start with the [five interactive graph examples](solo-graphs.html) for the visual direction, or the [engineering backlog](build-plan.md) to see what can ship at each milestone.
+Start with the [five interactive graph examples](ratio-graphs.html) for the visual direction, or the [engineering backlog](build-plan.md) to see what can ship at each milestone.
 
 [Daily use](#daily-use) · [GitHub and security](#github-and-critical-issues) · [Release Review](#release-review-and-the-local-graph) · [Markdown](#markdown-portability-and-migration) · [Five solo views](#five-visual-views-for-one-developer) · [Pricing](#plans-and-billing) · [Architecture](#rust-stack-and-configuration) · [Railway](#deploy-and-operate-on-railway) · [MCP and AI](#mcp-and-ai-after-launch) · [Delivery](#delivery-and-launch)
 
@@ -83,7 +83,7 @@ Launch with explicit transfers, bounded uploads and local browser draft recovery
 
 ## Five visual views for one developer
 
-The roadmap is the opening design preview. It puts the current issue and critical security alert above the milestone timeline. Timeline, Burnup and Cycle time each use the full width of the same surface. In the timeline, work names and IDs form a fixed left gutter; the critical archive fix and the storage migration lead into the beta gate. Selecting a milestone opens an inline annotation with its prerequisites. The sample project is Luma. The preview uses an original folded milestone symbol; product naming is open. The reference images use aligned timelines, diamond-shaped milestones, linked panes, a dot per observation and expandable rows. Keep those relationships visible. Use an original high-contrast palette with one accent for selection, distinct risk symbols, direct axis labels and readable grid lines in both themes. A selected mark opens the exact release, issue, source or note behind it. At phone widths, offer an agenda, a compact event list or a unified diff. The standalone [interactive graph examples](solo-graphs.html) use fictional project data.
+The roadmap is the opening design preview. It puts the current issue and critical security alert above the milestone timeline. Timeline, Burnup and Cycle time each use the full width of the same surface. In the timeline, work names and IDs form a fixed left gutter; the critical archive fix and the storage migration lead into the beta gate. Selecting a milestone opens an inline annotation with its prerequisites. The sample project is Luma. The application is named Ratio, from the Latin ratiō. Its mark is an R with a fraction slash. The reference images use aligned timelines, diamond-shaped milestones, linked panes, a dot per observation and expandable rows. Keep those relationships visible. Use an original high-contrast palette with one accent for selection, distinct risk symbols, direct axis labels and readable grid lines in both themes. A selected mark opens the exact release, issue, source or note behind it. At phone widths, offer an agenda, a compact event list or a unified diff. The standalone [interactive graph examples](ratio-graphs.html) use fictional project data.
 
 | Reference and proposed view | The solo question | Behavior and delivery |
 |---|---|---|

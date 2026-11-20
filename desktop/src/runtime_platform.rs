@@ -14,7 +14,7 @@ pub fn initialize() -> Result<(), String> {
     use std::{env, ffi::OsStr, os::unix::process::CommandExt, path::Path, process::Command};
 
     if env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_some_and(|value| value != "0") {
-        return Err("Unset WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS and reopen Working Set to enable the WebKitGTK sandbox.".into());
+        return Err("Unset WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS and reopen Ratio to enable the WebKitGTK sandbox.".into());
     }
 
     // WebKitGTK 4.1 reads this switch while constructing each process pool.
@@ -27,7 +27,7 @@ pub fn initialize() -> Result<(), String> {
             .env("WEBKIT_FORCE_SANDBOX", "1")
             .exec();
         return Err(format!(
-            "Could not start the sandboxed Working Set client. {error}"
+            "Could not start the sandboxed Ratio client. {error}"
         ));
     }
 
@@ -37,7 +37,7 @@ pub fn initialize() -> Result<(), String> {
         Command::new("flatpak-spawn")
             .args([
                 "--sandbox",
-                "--sandbox-expose-path-ro-try=/nonexistent-working-set",
+                "--sandbox-expose-path-ro-try=/nonexistent-ratio",
                 "true",
             ])
             .output()
@@ -46,7 +46,7 @@ pub fn initialize() -> Result<(), String> {
             .iter()
             .all(|name| env::var_os(name).is_some())
         {
-            return Err("Open Working Set from the native desktop menu. WebKitGTK skips its process sandbox inside this Snap environment.".into());
+            return Err("Open Ratio from the native desktop menu. WebKitGTK skips its process sandbox inside this Snap environment.".into());
         }
         Command::new("/usr/bin/bwrap")
             .args([
@@ -62,7 +62,7 @@ pub fn initialize() -> Result<(), String> {
             ])
             .output()
     };
-    let guidance = "Working Set needs a working WebKitGTK process sandbox. Check that your distribution’s bubblewrap package and user namespace support are available, or open the app from the native desktop.";
+    let guidance = "Ratio needs a working WebKitGTK process sandbox. Check that your distribution’s bubblewrap package and user namespace support are available, or open the app from the native desktop.";
     let output = result.map_err(|e| format!("{guidance}\n\n{e}"))?;
     if !output.status.success() {
         return Err(format!(
@@ -149,7 +149,7 @@ pub fn mount(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, St
         .context()
         .is_some_and(|ctx| ctx.is_sandbox_enabled())
     {
-        return Err("WebKitGTK did not enable its process sandbox. Install the distribution’s WebKitGTK 4.1 and bubblewrap packages, then reopen Working Set.".into());
+        return Err("WebKitGTK did not enable its process sandbox. Install the distribution’s WebKitGTK 4.1 and bubblewrap packages, then reopen Ratio.".into());
     }
     Ok(view)
 }
@@ -208,7 +208,7 @@ pub fn watch_failures(
         .settings()
         .ok_or("WebKitGTK did not supply browser settings.")?
         .set_user_agent_with_application_details(
-            Some("WorkingSetDesktop"),
+            Some("RatioDesktop"),
             Some(env!("CARGO_PKG_VERSION")),
         );
     let network = proxy.clone();
@@ -292,13 +292,13 @@ mod win {
             if matches!(&e, wry::Error::WebView2Error(webview2_com::Error::WindowsError(win))
                 if win.code().0 as u32 == 0x80070002)
             {
-                format!("Install the Microsoft Edge WebView2 Evergreen Runtime, then reopen Working Set.\n\nhttps://developer.microsoft.com/microsoft-edge/webview2/\n\n{e}")
+                format!("Install the Microsoft Edge WebView2 Evergreen Runtime, then reopen Ratio.\n\nhttps://developer.microsoft.com/microsoft-edge/webview2/\n\n{e}")
             } else {
                 e.to_string()
             }
         })?;
         restrict_navigation(&view).map_err(|e| {
-            format!("Update the Microsoft Edge WebView2 Runtime and reopen Working Set. {e}")
+            format!("Update the Microsoft Edge WebView2 Runtime and reopen Ratio. {e}")
         })?;
         let owner = HWND(window.hwnd() as _);
         // WebView2 processes keys in a separate process while the content has focus.
@@ -365,7 +365,7 @@ mod win {
     fn restrict_navigation(view: &WebView) -> windows::core::Result<()> {
         let webview = view.webview();
         // WebView2 handles child frames and external OS protocols outside the
-        // top-level navigation callback. Working Set uses a single document.
+        // top-level navigation callback. Ratio uses a single document.
         let frame = NavigationStartingEventHandler::create(Box::new(|_, args| {
             if let Some(args) = args {
                 unsafe { args.SetCancel(true)? };
@@ -428,7 +428,7 @@ mod win {
             let mut original = PWSTR::null();
             settings.UserAgent(&mut original)?;
             let agent = format!(
-                "{} WorkingSetDesktop/{}",
+                "{} RatioDesktop/{}",
                 webview2_com::take_pwstr(original),
                 env!("CARGO_PKG_VERSION")
             );

@@ -23,9 +23,9 @@ use crate::{
     runtime_download, runtime_platform,
 };
 
-const LAUNCHER: &str = "workingset://localhost/";
+const LAUNCHER: &str = "ratio://localhost/";
 #[cfg(target_os = "windows")]
-const LAUNCHER_DOCUMENT: &str = "https://workingset.localhost/";
+const LAUNCHER_DOCUMENT: &str = "https://ratio.localhost/";
 #[cfg(not(target_os = "windows"))]
 const LAUNCHER_DOCUMENT: &str = LAUNCHER;
 
@@ -90,9 +90,11 @@ pub(crate) fn run(options: Options) -> Result<(), String> {
     runtime_platform::initialize()?;
     let profile = match options.profile {
         Some(path) => std::path::absolute(path).map_err(|e| e.to_string())?,
-        None => dirs::data_local_dir()
-            .ok_or("No user profile directory is available")?
-            .join("Working Set"),
+        None => {
+            let data_root =
+                dirs::data_local_dir().ok_or("No user profile directory is available")?;
+            crate::runtime_profile::default_profile(&data_root)?
+        }
     };
     private_dir(&profile)?;
 
@@ -112,7 +114,7 @@ pub(crate) fn run(options: Options) -> Result<(), String> {
     let icon = Icon::from_rgba(include_bytes!("../assets/icon.rgba").to_vec(), 32, 32)
         .map_err(|error| error.to_string())?;
     let window = WindowBuilder::new()
-        .with_title("Working Set")
+        .with_title("Ratio")
         .with_window_icon(Some(icon))
         .with_inner_size(LogicalSize::new(1240, 820))
         .with_min_inner_size(LogicalSize::new(520, 440))
@@ -154,7 +156,7 @@ pub(crate) fn run(options: Options) -> Result<(), String> {
                 {
                     runtime_platform::error(
                         Some(&app.window),
-                        "Working Set could not open connection settings",
+                        "Ratio could not open connection settings",
                         &fatal,
                     );
                     *flow = ControlFlow::Exit;
@@ -181,7 +183,7 @@ impl Desktop {
         let mut context = WebContext::new(Some(directory));
         let proxy = self.proxy.clone();
         let builder = WebViewBuilder::new_with_web_context(&mut context)
-            .with_custom_protocol("workingset".into(), move |_, request| {
+            .with_custom_protocol("ratio".into(), move |_, request| {
                 if request.uri() != LAUNCHER || request.method() != "GET" {
                     return Response::builder().status(404).body(Vec::new().into()).expect("valid static response");
                 }
@@ -212,7 +214,7 @@ impl Desktop {
         let view = runtime_platform::mount(builder, &self.window)?;
         #[cfg(target_os = "linux")]
         view.load_url(LAUNCHER).map_err(|e| e.to_string())?;
-        self.window.set_title("Working Set — Connection");
+        self.window.set_title("Ratio — Connection");
         self.page = Some(Page {
             view,
             _context: context,
@@ -225,7 +227,7 @@ impl Desktop {
         let origin = self
             .origin
             .clone()
-            .ok_or("Choose a Working Set server to connect.")?;
+            .ok_or("Choose a Ratio server to connect.")?;
         let epoch = self.replace_page();
         let directory = self.profile.join("profiles").join(origin.profile_key());
         private_dir(&directory)?;
@@ -275,7 +277,7 @@ impl Desktop {
         runtime_platform::watch_failures(&view, epoch, self.proxy.clone())?;
         downloads.install(&view)?;
         self.window
-            .set_title(&format!("Working Set — {}", origin.as_str()));
+            .set_title(&format!("Ratio — {}", origin.as_str()));
         view.load_url(&format!("{}/desktop/start", origin.as_str()))
             .map_err(|e| e.to_string())?;
         self.page = Some(Page {
@@ -291,7 +293,7 @@ impl Desktop {
             Event::Command(command) => self.command(command),
             Event::Launcher(epoch, body) if epoch == self.epoch => self.launcher_command(&body),
             Event::Failed(epoch) if epoch == self.epoch => {
-                self.launcher(Some("Working Set could not reach this server. Check the address and your network, then connect again."))
+                self.launcher(Some("Ratio could not reach this server. Check the address and your network, then connect again."))
             }
             Event::Open(epoch, url) if epoch == self.epoch => {
                 self.open_external(url);
@@ -374,7 +376,7 @@ impl Desktop {
                 "Open {destination} in your default browser to approve this desktop sign-in?"
             ),
             Some(BrowserAction::GitHub) => format!(
-                "Open {destination} in your default browser to connect GitHub to your Working Set account?"
+                "Open {destination} in your default browser to connect GitHub to your Ratio account?"
             ),
             None => format!(
                 "Open this link from your workspace in your default browser?\n\n{destination}{}",

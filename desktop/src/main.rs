@@ -4,12 +4,13 @@ mod connect;
 mod runtime;
 mod runtime_download;
 mod runtime_platform;
+mod runtime_profile;
 
 use std::{ffi::OsString, path::PathBuf};
 
 use connect::ServerOrigin;
 
-const HELP: &str = "Working Set desktop\n\nUsage: working-set [--server ORIGIN] [--profile-dir DIRECTORY]\n\n  --server ORIGIN           Connect to and remember this Working Set deployment\n  --profile-dir DIRECTORY   Use a separate local profile directory\n  -h, --help                Show this help\n  -V, --version             Print the version\n\nUse an HTTPS origin, or HTTP on loopback for local development.";
+const HELP: &str = "Ratio desktop\n\nUsage: ratio [--server ORIGIN] [--profile-dir DIRECTORY]\n\n  --server ORIGIN           Connect to and remember this Ratio deployment\n  --profile-dir DIRECTORY   Use a separate local profile directory\n  -h, --help                Show this help\n  -V, --version             Print the version\n\nUse an HTTPS origin, or HTTP on loopback for local development.";
 
 struct Options {
     origin: Option<ServerOrigin>,
@@ -36,7 +37,7 @@ fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, St
                 let value = args
                     .next()
                     .and_then(|value| value.into_string().ok())
-                    .ok_or("--server requires a Working Set origin")?;
+                    .ok_or("--server requires a Ratio origin")?;
                 options.origin = Some(ServerOrigin::parse(&value)?);
             }
             Some("--profile-dir") if options.profile.is_none() => {
@@ -59,7 +60,7 @@ fn parse_args(args: impl IntoIterator<Item = OsString>) -> Result<Invocation, St
 
 fn main() {
     let invocation = parse_args(std::env::args_os().skip(1)).unwrap_or_else(|error| {
-        eprintln!("Working Set: {error}");
+        eprintln!("Ratio: {error}");
         std::process::exit(2);
     });
     let result = match invocation {
@@ -68,14 +69,14 @@ fn main() {
             return;
         }
         Invocation::Version => {
-            println!("Working Set {}", env!("CARGO_PKG_VERSION"));
+            println!("Ratio {}", env!("CARGO_PKG_VERSION"));
             return;
         }
         Invocation::Run(options) => runtime::run(options),
     };
     if let Err(error) = result {
-        eprintln!("Working Set: {error}");
-        runtime_platform::error(None, "Working Set could not start", &error);
+        eprintln!("Ratio: {error}");
+        runtime_platform::error(None, "Ratio could not start", &error);
         std::process::exit(1);
     }
 }

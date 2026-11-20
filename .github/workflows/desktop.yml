@@ -30,28 +30,52 @@ jobs:
         run: |
           cargo test --locked
           cargo build --release --locked
-      - name: Package and open the installed application
+      - name: Fetch the published Working Set upgrade fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          packaging/linux/build.sh target/release/working-set dist
-          sudo apt-get install -y ./dist/working-set_*_amd64.deb
-          working-set --version
-          desktop-file-validate /usr/share/applications/working-set.desktop
-          xvfb-run -a dbus-run-session -- bash -eu -c '
-            working-set &
-            pid=$!
-            trap "kill $pid 2>/dev/null || true" EXIT
-            timeout 90 xdotool search --all --onlyvisible --sync --pid "$pid" --name "Working Set.*Connection"
-          '
-          profile="${XDG_DATA_HOME:-$HOME/.local/share}/Working Set"
-          touch "$profile/installer-ci-sentinel"
-          sudo dpkg --remove working-set
-          test ! -e /usr/bin/working-set
-          test ! -e /usr/share/applications/working-set.desktop
-          test -f "$profile/installer-ci-sentinel"
+          legacy=working-set_0.1.0_amd64.deb
+          gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern "$legacy" --dir "$RUNNER_TEMP"
+          (cd "$RUNNER_TEMP" && echo "31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1  $legacy" | sha256sum --check)
+      - name: Test fresh install and upgrade on Ubuntu
+        run: |
+          packaging/linux/build.sh target/release/ratio dist
+          for scenario in fresh upgrade; do
+            export XDG_DATA_HOME="$RUNNER_TEMP/ratio-$scenario"
+            profile="$XDG_DATA_HOME/Ratio"
+            if [[ "$scenario" == upgrade ]]; then
+              sudo apt-get install -y "$RUNNER_TEMP/working-set_0.1.0_amd64.deb"
+              test -x /usr/bin/working-set
+              test -f /usr/share/applications/working-set.desktop
+              profile="$XDG_DATA_HOME/Working Set"
+              mkdir -p "$profile"
+              echo retained > "$profile/installer-ci-sentinel"
+            fi
+            sudo apt-get install -y ./dist/ratio_*_amd64.deb
+            ratio --version
+            desktop-file-validate /usr/share/applications/ratio.desktop
+            test -f /usr/share/icons/hicolor/256x256/apps/ratio.png
+            test ! -e /usr/bin/working-set
+            test ! -e /usr/share/applications/working-set.desktop
+            test ! -e /usr/share/icons/hicolor/256x256/apps/working-set.png
+            xvfb-run -a dbus-run-session -- bash -eu -c '
+              ratio &
+              pid=$!
+              trap "kill $pid 2>/dev/null || true" EXIT
+              timeout 90 xdotool search --all --onlyvisible --sync --pid "$pid" --name "Ratio.*Connection"
+            '
+            test -d "$profile/launcher"
+            if [[ "$scenario" == fresh ]]; then echo retained > "$profile/installer-ci-sentinel"; fi
+            sudo apt-get remove -y ratio
+            test ! -e /usr/bin/ratio
+            test ! -e /usr/share/applications/ratio.desktop
+            test ! -e /usr/share/icons/hicolor/256x256/apps/ratio.png
+            test "$(cat "$profile/installer-ci-sentinel")" = retained
+          done
           (cd dist && sha256sum *.deb > SHA256SUMS)
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: Working-Set-linux-amd64
+          name: Ratio-linux-amd64
           path: desktop/dist/
           if-no-files-found: error
 
@@ -86,7 +110,7 @@ jobs:
           foreach ($source in $sources) {
             try {
               # SourceForge serves a download page to browser-like user agents.
-              $response = Invoke-WebRequest $source -UserAgent 'Working-Set-CI/1.0' -OutFile $zip -PassThru -TimeoutSec 60 -ErrorAction Stop
+              $response = Invoke-WebRequest $source -UserAgent 'Ratio-CI/1.0' -OutFile $zip -PassThru -TimeoutSec 60 -ErrorAction Stop
               $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
               if ($actual -ne $expected) {
                 throw "Expected $expected, received $actual ($((Get-Item $zip).Length) bytes, $($response.Headers['Content-Type']))."
@@ -102,15 +126,20 @@ jobs:
           Expand-Archive $zip $env:RUNNER_TEMP
           $nsis = Join-Path $env:RUNNER_TEMP 'nsis-3.13\makensis.exe'
           $objdump = Join-Path $env:ProgramFiles 'LLVM\bin\llvm-objdump.exe'
-          python packaging/windows/build.py target/x86_64-pc-windows-msvc/release/working-set.exe dist --makensis $nsis --objdump $objdump
-      - name: Exercise the installer, rendered connection form, and uninstaller
+          python packaging/windows/build.py target/x86_64-pc-windows-msvc/release/ratio.exe dist --makensis $nsis --objdump $objdump
+      - name: Fetch the published Working Set upgrade fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern Working-Set-0.1.0-windows-x64-setup.exe --dir $env:RUNNER_TEMP
+      - name: Test fresh install and upgrade on Windows
         shell: powershell
         run: |
-          $installer = Get-Item dist/*-setup.exe
-          ./packaging/windows/smoke.ps1 $installer.FullName
+          $installer = Get-Item dist/Ratio-*-windows-x64-setup.exe
+          $legacy = Join-Path $env:RUNNER_TEMP 'Working-Set-0.1.0-windows-x64-setup.exe'
+          ./packaging/windows/smoke.ps1 -Installer $installer.FullName -LegacyInstaller $legacy
           "$((Get-FileHash $installer).Hash.ToLowerInvariant())  $($installer.Name)" | Set-Content dist/SHA256SUMS -Encoding ascii
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: Working-Set-windows-x64
+          name: Ratio-windows-x64
           path: desktop/dist/
           if-no-files-found: error

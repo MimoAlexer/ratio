@@ -71,8 +71,8 @@ async fn browser_handoff(
         let query = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("next", &handoff_path(target.owner))
             .finish();
-        return (StatusCode::FORBIDDEN, ui::public_page("Switch Working Set account", html! {
-            h1 { "Switch Working Set account" }
+        return (StatusCode::FORBIDDEN, ui::public_page("Switch Ratio account", html! {
+            h1 { "Switch Ratio account" }
             p { "This browser is signed in as " strong { (auth.email) } ". To connect GitHub, sign in with the account open in your desktop app." }
             a.button href=(format!("/login?{query}")) { "Sign in with another account" }
         })).into_response();
@@ -82,7 +82,7 @@ async fn browser_handoff(
         "Connect GitHub",
         html! {
             h1 { "Connect GitHub" }
-            p { "Authorize GitHub for the Working Set account " strong { (auth.email) } "." }
+            p { "Authorize GitHub for the Ratio account " strong { (auth.email) } "." }
             (authorize_control(&auth, is_desktop_client(&headers), "Continue to GitHub"))
         },
     )

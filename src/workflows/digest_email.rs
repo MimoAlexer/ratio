@@ -107,6 +107,7 @@ enum Outcome {
     Retry(u32),
     Failed,
     Canceled,
+    PayloadMismatch,
 }
 
 #[derive(Deserialize)]
@@ -129,6 +130,26 @@ async fn send(
     recipient: &str,
     digest: Uuid,
     key: &str,
+    retry: bool,
+) -> Outcome {
+    let submit = |subject| send_with_subject(client, mail, recipient, digest, key, subject);
+    let result = submit("Your weekly Ratio review").await;
+    if retry && matches!(result, Outcome::PayloadMismatch) {
+        // An older release may already have sent this message before recording
+        // its receipt. Replay the original payload with the same idempotency key.
+        submit("Your weekly Working Set review").await
+    } else {
+        result
+    }
+}
+
+async fn send_with_subject(
+    client: &Client,
+    mail: &Transport,
+    recipient: &str,
+    digest: Uuid,
+    key: &str,
+    subject: &str,
 ) -> Outcome {
     let result = client
         .post(&mail.endpoint)
@@ -138,7 +159,7 @@ async fn send(
         .json(&serde_json::json!({
             "from": mail.sender,
             "to": [recipient],
-            "subject": "Your weekly Working Set review",
+            "subject": subject,
             "text": format!("{}/workflows/digest/{digest}", mail.origin)
         }))
         .send()
@@ -164,7 +185,7 @@ async fn send(
         // key that was reused with different request parameters.
         let error = response.json::<serde_json::Value>().await.ok();
         if error.as_ref().and_then(|e| e["name"].as_str()) == Some("invalid_idempotent_request") {
-            return Outcome::Failed;
+            return Outcome::PayloadMismatch;
         }
         return Outcome::Retry(retry_after);
     }
@@ -213,7 +234,7 @@ async fn deliver(
             break;
         };
         let mut tx = db.begin().await?;
-        // Hold the account lock across this one time-bounded mail submission.
+        // Hold the account lock across the time-bounded mail submission.
         // End-of-plan changes, recipient replacement and opt-out use this lock
         // too, so they cannot commit between the consent check and submission.
         let user: Option<(String, String, bool)> =
@@ -248,13 +269,14 @@ async fn deliver(
                     &email,
                     item.id,
                     &provider_key(job.owner_id, job.week_start),
+                    item.attempts > 1,
                 )
                 .await
             };
             let (status, delay) = match result {
                 Outcome::Sent => ("sent", 0),
                 Outcome::Canceled => ("canceled", 0),
-                Outcome::Failed => ("failed", 0),
+                Outcome::Failed | Outcome::PayloadMismatch => ("failed", 0),
                 Outcome::Retry(minimum) => {
                     let delay = (30_u32 * 2_u32.pow(item.attempts.clamp(0, 7) as u32))
                         .min(3600)
@@ -422,11 +444,71 @@ mod tests {
             assert_eq!(
                 body,
                 &json!({
-                    "from":"fixture@example.invalid","to":[address],"subject":"Your weekly Working Set review",
+                    "from":"fixture@example.invalid","to":[address],"subject":"Your weekly Ratio review",
                     "text":format!("https://workspace.example.org/workflows/digest/{digest}")
                 })
             );
         }
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn existing_digest_retry_reuses_the_pre_upgrade_request() {
+        let subjects = Arc::new(Mutex::new(Vec::new()));
+        let observed = subjects.clone();
+        let app = Router::new().route(
+            "/emails",
+            post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                let observed = observed.clone();
+                async move {
+                    assert_eq!(headers["Idempotency-Key"], "fixture-key");
+                    let subject = body["subject"].as_str().unwrap();
+                    observed.lock().unwrap().push(subject.to_owned());
+                    if subject == "Your weekly Working Set review" {
+                        (StatusCode::OK, Json(json!({"id":Uuid::new_v4()})))
+                    } else {
+                        (
+                            StatusCode::CONFLICT,
+                            Json(json!({"name":"invalid_idempotent_request"})),
+                        )
+                    }
+                }
+            }),
+        );
+        let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(socket, app).await.unwrap() });
+        let mail = Transport {
+            endpoint: format!("http://{addr}/emails"),
+            origin: "https://workspace.example.org".into(),
+            sender: "fixture@example.invalid".into(),
+            api_key: "fixture".into(),
+        };
+        let client = Client::builder().no_proxy().build().unwrap();
+        let digest = Uuid::new_v4();
+        for retry in [false, true] {
+            let result = send(
+                &client,
+                &mail,
+                "reader@example.invalid",
+                digest,
+                "fixture-key",
+                retry,
+            )
+            .await;
+            assert!(matches!(
+                (retry, result),
+                (false, Outcome::PayloadMismatch) | (true, Outcome::Sent)
+            ));
+        }
+        assert_eq!(
+            *subjects.lock().unwrap(),
+            [
+                "Your weekly Ratio review",
+                "Your weekly Ratio review",
+                "Your weekly Working Set review"
+            ]
+        );
         server.abort();
     }
 

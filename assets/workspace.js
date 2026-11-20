@@ -3,15 +3,21 @@
     "use strict";
 
     const projectId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-    const preference = "workspace.single-key-shortcuts";
-    let singleKeys = true;
-    try {
-        singleKeys = localStorage.getItem(preference) !== "off";
-    } catch {
-        // The preference still works for this page if browser storage is unavailable.
+    function readPreference(key, previousKey) {
+        let value = null;
+        try {
+            value = localStorage.getItem(key);
+            if (value === null) {
+                value = localStorage.getItem(previousKey);
+                if (value !== null) localStorage.setItem(key, value);
+            }
+        } catch { /* Preferences still work on this page when storage is unavailable. */ }
+        return value;
     }
 
-    const themeKey = "working-set.display";
+    const shortcutKey = "ratio.single-key-shortcuts";
+    let singleKeys = readPreference(shortcutKey, "workspace.single-key-shortcuts") !== "off";
+    const themeKey = "ratio.display";
     function applyTheme(mono) {
         document.documentElement.dataset.theme = mono ? "mono" : "graphite";
         for (const button of document.querySelectorAll("[data-theme-toggle]")) {
@@ -20,9 +26,7 @@
             button.title = mono ? "Use graphite theme" : "Use black and white theme";
         }
     }
-    let monochrome = false;
-    try { monochrome = localStorage.getItem(themeKey) === "mono"; } catch {}
-    applyTheme(monochrome);
+    applyTheme(readPreference(themeKey, "working-set.display") === "mono");
     for (const button of document.querySelectorAll("[data-theme-toggle]")) {
         button.addEventListener("click", () => {
             const mono = document.documentElement.dataset.theme !== "mono";
@@ -142,7 +146,7 @@
             toggle.addEventListener("change", () => {
                 singleKeys = toggle.checked;
                 try {
-                    localStorage.setItem(preference, singleKeys ? "on" : "off");
+                    localStorage.setItem(shortcutKey, singleKeys ? "on" : "off");
                 } catch {
                     // This page keeps the choice in memory.
                 }

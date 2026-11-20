@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or reconcile the private Working Set board and its launch issues.
+"""Create or reconcile the private Ratio board and its launch issues.
 
 Run with Python 3 and a gh session authorized for repository and project access.
 Use GH_BIN to select a particular gh installation. This script cannot grant scopes.
@@ -10,8 +10,8 @@ import os
 import subprocess
 import sys
 
-TITLE = "Working Set"
-DESCRIPTION = "Desktop release qualification, account sync, provider staging, and the Working Set roadmap."
+TITLE = "Ratio"
+DESCRIPTION = "Desktop release qualification, account sync, provider staging, and the Ratio roadmap."
 PROJECT_FIELDS = """
   id number title public url owner { ... on User { login } }
   repositories(first:100){nodes{nameWithOwner}}
@@ -47,9 +47,9 @@ def graph(query, **variables):
     return gh("graphql", payload={"query": query, "variables": variables})["data"]
 
 
-def verify_project(board, owner, repository):
+def verify_project(board, owner, repository, titles=(TITLE,)):
     linked = [node["nameWithOwner"] for node in board["repositories"]["nodes"]]
-    if (board["public"] or board["title"] != TITLE or
+    if (board["public"] or board["title"] not in titles or
             board["owner"].get("login") != owner or repository not in linked):
         raise ValueError("Board privacy, owner, title, or repository linkage failed verification.")
 
@@ -75,7 +75,7 @@ def board_items(project_id):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("repository", help="owner/repository, e.g. octocat/working-set")
+    parser.add_argument("repository", help="owner/repository, e.g. MimoAlexer/ratio")
     parser.add_argument("issues", nargs="+", type=int, help="Issue numbers to include and reconcile")
     args = parser.parse_args()
     owner, name = args.repository.split("/")
@@ -100,12 +100,18 @@ def main():
         if "pull_request" in issue:
             raise ValueError(f"#{number} is a pull request.")
         issues.append(issue)
+    # The published repository already has a board. Follow its stable number
+    # across a rename, preserving its items, field values, views and links.
+    canonical = repo["nameWithOwner"].casefold() == "mimoalexer/ratio"
     matches = [p for p in repo["projectsV2"]["nodes"]
-               if p["title"] == TITLE and p["owner"].get("login") == owner]
+               if p["owner"].get("login") == owner and
+               (p["number"] == 4 if canonical else p["title"] == TITLE)]
     if len(matches) > 1:
         raise ValueError("Multiple linked projects share the requested title.")
     if matches:
         project = matches[0]
+    elif canonical:
+        raise ValueError("Private project #4 must be linked to MimoAlexer/ratio.")
     else:
         query = """mutation($owner:ID!, $repo:ID!, $title:String!) {
           createProjectV2(input:{ownerId:$owner,repositoryId:$repo,title:$title}) {
@@ -114,13 +120,14 @@ def main():
         }"""
         project = graph(query, owner=initial["viewer"]["id"], repo=repo["id"],
                         title=TITLE)["createProjectV2"]["projectV2"]
-    verify_project(project, owner, repo["nameWithOwner"])
+    titles = (TITLE, "Working Set") if canonical else (TITLE,)
+    verify_project(project, owner, repo["nameWithOwner"], titles)
     project_id = project["id"]
-    graph("""mutation($id:ID!, $desc:String!){
-      updateProjectV2(input:{projectId:$id,public:false,shortDescription:$desc}){
+    graph("""mutation($id:ID!, $title:String!, $desc:String!){
+      updateProjectV2(input:{projectId:$id,public:false,title:$title,shortDescription:$desc}){
         projectV2{id public}
       }
-    }""", id=project_id, desc=DESCRIPTION)
+    }""", id=project_id, title=TITLE, desc=DESCRIPTION)
     data = graph("query($id:ID!){node(id:$id){... on ProjectV2{" + DETAILS + "}}}", id=project_id)["node"]
     status = data["field"]
     if not status:

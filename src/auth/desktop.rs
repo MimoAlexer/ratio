@@ -31,6 +31,7 @@ fn device_cookie(production: bool) -> &'static str {
 
 // Derive the display code from the private device cookie so a reloaded
 // desktop can display it without storing either credential in plaintext.
+// The domain separator must remain stable for active pairing requests across upgrades.
 fn display_code(secret: &str) -> String {
     let bytes = digest(&format!("working-set/desktop-code/v1/{secret}"));
     let mut code = String::with_capacity(9);
@@ -128,7 +129,7 @@ async fn start(State(state): State<AppState>, headers: HeaderMap) -> AppResult<R
         return Ok(Redirect::to("/desktop/check").into_response());
     }
     Ok(nonce_page(
-        "Sign in to Working Set",
+        "Sign in to Ratio",
         &headers,
         production,
         |nonce| {
@@ -245,19 +246,23 @@ async fn authorize(
     if !valid_code(&query.code) {
         return unavailable();
     }
-    public_page("Approve desktop sign-in", html! {
-        p { "Approve only if this code matches the code in the Working Set desktop app you opened." }
-        p { strong { code { (query.code) } } }
-        dl {
-            dt { "Account" } dd { (auth.email) }
-            dt { "Server" } dd { (state.config.base_url) }
-        }
-        form method="post" action="/desktop/authorize" {
-            (crate::ui::csrf(&auth))
-            input type="hidden" name="code" value=(query.code);
-            button type="submit" { "Approve desktop" }
-        }
-    }).into_response()
+    public_page(
+        "Approve desktop sign-in",
+        html! {
+            p { "Approve only if this code matches the code in the Ratio desktop app you opened." }
+            p { strong { code { (query.code) } } }
+            dl {
+                dt { "Account" } dd { (auth.email) }
+                dt { "Server" } dd { (state.config.base_url) }
+            }
+            form method="post" action="/desktop/authorize" {
+                (crate::ui::csrf(&auth))
+                input type="hidden" name="code" value=(query.code);
+                button type="submit" { "Approve desktop" }
+            }
+        },
+    )
+    .into_response()
 }
 
 #[derive(Deserialize)]
@@ -337,7 +342,7 @@ async fn approve(
         return Ok(unavailable());
     }
     Ok(public_page("Desktop approved", html! {
-        p { "Return to Working Set on your desktop, choose Check approval, and confirm " strong { (auth.email) } "." }
+        p { "Return to Ratio on your desktop, choose Check approval, and confirm " strong { (auth.email) } "." }
     }).into_response())
 }
 

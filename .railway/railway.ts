@@ -9,9 +9,9 @@ export default defineRailway((ctx) => {
   const web = service("web", {
     build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile" },
     deploy: {
-      startCommand: "env -u MIGRATION_DATABASE_URL solo-tracker serve",
+      startCommand: "env -u MIGRATION_DATABASE_URL ratio-server serve",
       preDeployCommand: [
-        `sh -c 'export DATABASE_URL="$MIGRATION_DATABASE_URL" APP_GRANT_RUNTIME=1 && exec solo-tracker migrate'`,
+        `sh -c 'export DATABASE_URL="$MIGRATION_DATABASE_URL" APP_GRANT_RUNTIME=1 && exec ratio-server migrate'`,
       ],
       preDeployTimeoutSeconds: 300,
       healthcheckPath: "/readyz",
@@ -27,5 +27,5 @@ export default defineRailway((ctx) => {
       RESEND_API_KEY: ctx.shared.RESEND_API_KEY,
     },
   });
-  return project("solo-tracker", { resources: [db, web] });
+  return project("Ratio", { resources: [db, web] });
 });

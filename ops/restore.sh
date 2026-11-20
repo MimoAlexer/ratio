@@ -26,21 +26,21 @@ verify_bundle() (
         echo 'Archive checksum verification failed.' >&2
         exit 1
     fi
-    if ! grep -Fxq "format=$3" manifest.txt; then
+    if ! grep -Fxq -e "format=ratio-$3" -e "format=solo-tracker-$3" manifest.txt; then
         echo 'Unrecognized backup format.' >&2
         exit 1
     fi
     # Read to EOF to authenticate the whole ciphertext before creating the DB.
     age --decrypt --identity "$identity" "$2" > /dev/null
 )
-verify_bundle "$archive" database.dump.age solo-tracker-pg-custom-age-v1
+verify_bundle "$archive" database.dump.age pg-custom-age-v1
 if [[ $# -eq 3 ]]; then
     ledger=$(realpath -e -- "$3")
     if grep -Fxq 'format=solo-tracker-deletions-csv-age-v1' "$ledger/manifest.txt"; then
         echo 'This legacy ledger contains only erasures. Cutover requires a complete v2 ledger, including recovery events and billing shutdowns.' >&2
         exit 1
     fi
-    verify_bundle "$ledger" deletions.csv.age solo-tracker-identity-billing-ledger-csv-age-v2
+    verify_bundle "$ledger" deletions.csv.age identity-billing-ledger-csv-age-v2
     dump_start=$(sed -n 's/^started_utc=//p' "$archive/manifest.txt")
     ledger_start=$(sed -n 's/^started_utc=//p' "$ledger/manifest.txt")
     source_time=$dump_start

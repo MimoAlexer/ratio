@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
-  <title id="title">Working Set</title>
+  <title id="title">Ratio</title>
   <rect width="64" height="64" rx="14" fill="#000"/>
-  <path fill="#fff" d="M8 20 24 12v8l-8 4v16l10-5V24l16-8v8l-8 4v12l14-7v-8l8-4v17L34 49l-8-4v-2l-10 5-8-4Z"/>
+  <path fill="#fff" fill-rule="evenodd" d="M12 12h24c10 0 16 6 16 14 0 7-5 12-12 13l13 13H40L23 35v17H12V36l16-16H12z M26 32h9c5 0 8-2 8-6s-2-6-5-6z"/>
 </svg>

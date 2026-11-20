@@ -3,7 +3,8 @@
     "use strict";
     const rendered = document.querySelector('meta[name="workspace-revision"]')?.content;
     const content = document.querySelector(".page-content[data-view]");
-    if (!rendered || !content || !navigator.userAgent.includes("WorkingSetDesktop/")) return;
+    const desktop = /(?:^|\s)(?:RatioDesktop|WorkingSetDesktop)\//.test(navigator.userAgent);
+    if (!rendered || !content || !desktop) return;
 
     const readViews = new Set(["home", "issues", "inbox", "notes", "projects", "roadmap", "releases", "insights", "health"]);
     const fields = 'input:not([type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]';

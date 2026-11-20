@@ -13,8 +13,8 @@ use axum::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, Mac};
+use ratio_server::{AppState, app};
 use sha2::{Digest, Sha256};
-use solo_tracker::{AppState, app};
 use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -172,6 +172,13 @@ impl Tenant {
             .await?;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zip");
+        assert_eq!(
+            response.headers()[header::CONTENT_DISPOSITION].to_str()?,
+            format!(
+                "attachment; filename=\"ratio-project-{}.zip\"",
+                self.project
+            )
+        );
         Ok(to_bytes(response.into_body(), 5_000_000).await?.to_vec())
     }
 }
@@ -377,9 +384,9 @@ async fn vault_roundtrip_restores_sources_images_links_and_scopes_the_preview(
             .bind(reader.project)
             .fetch_one(&db)
             .await?;
-    let before_delete = solo_tracker::store::storage_used(&db, reader.id).await?;
+    let before_delete = ratio_server::store::storage_used(&db, reader.id).await?;
     redirect(reader.delete_asset(&app, restored_blob).await?).await?;
-    let after_delete = solo_tracker::store::storage_used(&db, reader.id).await?;
+    let after_delete = ratio_server::store::storage_used(&db, reader.id).await?;
     assert_eq!(before_delete - after_delete, png.len() as i64);
     assert_eq!(counts(&db, reader.project).await?, (2, 0, 0));
     Ok(())
@@ -620,10 +627,10 @@ async fn note_links_survive_project_key_and_target_path_changes(db: PgPool) -> R
         format!("[[ALPHA-17]] and [Open issue](/issues/{issue}) and [[Architecture]].\n");
     sqlx::query("INSERT INTO notes(owner_id,project_id,path,title,body) VALUES($1,$2,'Decisions.md','Decisions',$3),($1,$2,'Architecture.md','Architecture','Snapshot')")
         .bind(author.id).bind(author.project).bind(&original_body).execute(&mut *tx).await?;
-    solo_tracker::notes::reindex(&mut tx, author.id, author.project).await?;
+    ratio_server::notes::reindex(&mut tx, author.id, author.project).await?;
     sqlx::query("UPDATE notes SET path='Record.md',title='Record',revision=revision+1 WHERE project_id=$1 AND path='Architecture.md'")
         .bind(author.project).execute(&mut *tx).await?;
-    solo_tracker::notes::reindex(&mut tx, author.id, author.project).await?;
+    ratio_server::notes::reindex(&mut tx, author.id, author.project).await?;
     let source_count: i64 = sqlx::query_scalar("SELECT count(*) FROM note_links WHERE project_id=$1 AND (dest_note IS NOT NULL OR dest_issue IS NOT NULL)")
         .bind(author.project).fetch_one(&mut *tx).await?;
     assert_eq!(
@@ -636,7 +643,7 @@ async fn note_links_survive_project_key_and_target_path_changes(db: PgPool) -> R
     for _ in 0..2 {
         reader.import(&app, "vault", "", &archive).await?;
         let mut tx = db.begin().await?;
-        solo_tracker::notes::reindex(&mut tx, reader.id, reader.project).await?;
+        ratio_server::notes::reindex(&mut tx, reader.id, reader.project).await?;
         tx.commit().await?;
         let (body, decision): (String, Uuid) =
             sqlx::query_as("SELECT body,id FROM notes WHERE project_id=$1 AND path='Decisions.md'")

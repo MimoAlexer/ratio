@@ -402,7 +402,7 @@ fn read_manifest(bytes: &[u8], has_native_history: bool) -> AppResult<Option<Man
                 return Ok(None);
             }
             return Err(invalid(
-                "Invalid native manifest.json. Import a vault folder or a version 1 Working Set export.",
+                "Invalid native manifest.json. Import a vault folder or a version 1 Ratio export.",
             ));
         }
     };
@@ -708,32 +708,23 @@ mod tests {
     }
 
     #[test]
-    fn native_roundtrip_retains_source_bytes_hashes_history_and_unique_rename_identity() {
+    fn legacy_version_one_archive_retains_source_bytes_history_and_rename_identity() {
         let note = b"---\r\n# unknown comment\r\nother: yes\r\n---\r\n";
-        let first = Uuid::new_v4();
-        let manifest = Manifest {
-            version: 1,
-            project: Uuid::new_v4(),
-            files: vec![ManifestFile {
-                id: first,
-                path: "Notes/old.md".into(),
-                kind: "note".into(),
-                sha256: hex::encode(Sha256::digest(note)),
-                data: serde_json::json!({}),
-            }],
-        };
-        let zip = encode(vec![
-            (
-                "manifest.json".into(),
-                serde_json::to_vec(&manifest).unwrap(),
-            ),
-            ("Notes/new.md".into(), note.to_vec()),
-            ("history.jsonl".into(), b"{\"type\":\"record\"}\n".to_vec()),
-        ])
-        .unwrap();
+        // Keep this fixture independent of the current serializer so old downloads stay readable.
+        let manifest = br#"{
+            "version":1,"project":"3089ca01-aa1c-4870-9b3e-d5309d4c63f1","files":[{
+                "id":"0cc77ca4-4e1b-4b8f-a44a-51a7544ce171","path":"Notes/old.md","kind":"note",
+                "sha256":"39efad146d322505bf9b410180b4772f9ec5879f188168d1b51b091670a13b65","data":{}
+            }]}"#;
+        let zip = fixture(&[
+            ("manifest.json", manifest),
+            ("Notes/new.md", note),
+            ("history.jsonl", b"{\"type\":\"record\"}\n"),
+        ]);
         let restore = parse(&zip, "", 1024).unwrap();
         let f = &restore.manifest.unwrap().files[0];
-        assert_eq!((f.id, f.path.as_str()), (first, "Notes/new.md"));
+        assert_eq!(f.id.to_string(), "0cc77ca4-4e1b-4b8f-a44a-51a7544ce171");
+        assert_eq!(f.path, "Notes/new.md");
         assert_eq!(f.sha256, hex::encode(Sha256::digest(note)));
         assert_eq!(restore.entries[0].bytes, note);
         assert_eq!(restore.history[0]["type"], "record");

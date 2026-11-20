@@ -37,8 +37,9 @@ pub(crate) fn is_desktop_client(headers: &HeaderMap) -> bool {
         .get(axum::http::header::USER_AGENT)
         .and_then(|value| value.to_str().ok())
         .is_some_and(|ua| {
-            ua.split_ascii_whitespace()
-                .any(|product| product.starts_with("WorkingSetDesktop/"))
+            ua.split_ascii_whitespace().any(|product| {
+                product.starts_with("RatioDesktop/") || product.starts_with("WorkingSetDesktop/")
+            })
         })
 }
 
@@ -50,7 +51,7 @@ fn public_page(title: &str, body: Markup) -> Html<String> {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="referrer" content="strict-origin";
-                title { (title) " · Working Set" }
+                title { (title) " · Ratio" }
                 link rel="stylesheet" href="/assets/app.css";
                 link rel="icon" type="image/svg+xml" href="/assets/mark.svg";
                 script defer src="/assets/workspace.js" {}
@@ -58,7 +59,7 @@ fn public_page(title: &str, body: Markup) -> Html<String> {
             body.auth-page {
                 main.auth-shell {
                     div.auth-card {
-                        a.auth-brand href="/welcome" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Working Set" }
+                        a.auth-brand href="/welcome" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Ratio" }
                         h1 { (title) }
                         (body)
                     }

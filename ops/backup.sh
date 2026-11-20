@@ -5,13 +5,13 @@ set -euo pipefail
 umask 077
 
 asset=database.dump.age
-format=solo-tracker-pg-custom-age-v1
-prefix=solo
+format=ratio-pg-custom-age-v1
+prefix=ratio
 point=''
 if [[ "${1:-}" == --deletions ]]; then
     asset=deletions.csv.age
-    format=solo-tracker-identity-billing-ledger-csv-age-v2
-    prefix=solo-deletions
+    format=ratio-identity-billing-ledger-csv-age-v2
+    prefix=ratio-deletions
     shift
 elif [[ "${1:-}" == --pitr-at ]]; then
     if [[ $# -ne 3 || -z "$2" ]]; then

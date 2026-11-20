@@ -46,7 +46,7 @@ struct Export {
 impl Export {
     fn new(name: String) -> io::Result<Self> {
         let mut builder = tempfile::Builder::new();
-        builder.prefix("working-set-export-");
+        builder.prefix("ratio-export-");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
