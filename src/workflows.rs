@@ -548,97 +548,203 @@ async fn index(
     let more_templates = templates.len() as i64 > PAGE_SIZE;
     templates.truncate(PAGE_SIZE as usize);
     let digest = digest::section(&s, &auth, &plan).await?;
-    Ok(page(
+    Ok(crate::ui::section_page(
         &auth,
         "Workflows",
         "workflows",
         html! {
-            h1 { "Workflows" }
-            @if !paid(&plan) {
-                p class="notice" { "Plus includes project views and issue templates. Max adds cross-project views and a weekly portfolio digest. " a href="/billing" { "Compare plans" } }
-            }
-            section id="views" class="stack" {
-                h2 { "Saved views" }
-                @if views.is_empty() { p class="muted" { "No saved views on this page." } }
-                @for v in &views {
-                    div class="row" {
-                        div {
-                            @if authorize_view(&plan, v.project_id).is_ok() {
-                                a href=(format!("/workflows/views/{}",v.id)) { (v.name) }
-                            } @else { strong { (v.name) } }
-                            p class="muted" {
-                                @if let Some(project_id) = v.project_id {
-                                    @if let Some(project) = projects.iter().find(|p| p.id == project_id) { (project.name) }
-                                } @else { "All projects" }
-                                " · " (option_label(&v.filters.layout, LAYOUTS)) " · " (option_label(&v.filters.scope, SCOPES))
-                                @if !v.filters.status.is_empty() { " · " (option_label(&v.filters.status,STATUSES)) }
-                                @if !v.filters.priority.is_empty() { " · " (option_label(&v.filters.priority,PRIORITIES)) }
-                                @if !v.filters.critical.is_empty() { " · " (option_label(&v.filters.critical,CRITICAL)) }
-                                @if !v.filters.kind.is_empty() { " · " (option_label(&v.filters.kind,KINDS)) }
-                                @if !v.filters.search.is_empty() { " · “" (v.filters.search) "”" }
+            div.workflow-workspace {
+                header.view-head {
+                    h1 { "Workflows" }
+                    div.view-actions {
+                        span.workflow-plan { (match plan.as_str() { "plus" => "Plus plan", "max" => "Max plan", _ => "Free plan" }) }
+                        @if plan != "max" { a.action-secondary href="/billing" { "Compare plans" } }
+                    }
+                }
+                @if views.len() > 5 || templates.len() > 5 {
+                    nav.workflow-jumps aria-label="Workflow sections" {
+                        a href="#views" { "Saved views" }
+                        a href="#templates" { "Issue templates" }
+                        a href="#portfolio-digest" { "Weekly digest" }
+                    }
+                }
+                section.workflow-section id="views" aria-labelledby="saved-views-title" {
+                    header.workflow-label {
+                        h2 id="saved-views-title" { "Saved views" }
+                        @if !paid(&plan) { span.workflow-access { "Save with Plus or Max" } }
+                    }
+                    div.workflow-body {
+                        @if !paid(&plan) {
+                            p { "Reopen an issue list or board with its filters, sort order and grouping. Max also saves views across projects." }
+                            @if pages.save == Some(1) {
+                                div.workflow-current {
+                                    strong { "Your current view" }
+                                    (view_summary(&pages.filters, selected_project, &projects))
+                                    a href=(pages.filters.issue_url(selected_project)) { "Return to filtered issues" }
+                                }
+                            }
+                        } @else if views.is_empty() && pages.views == 0 && pages.save != Some(1) {
+                            p { "Save your first filtered issue list or board." }
+                        }
+                        @if paid(&plan) && (!projects.is_empty() || plan == "max") {
+                            div.workflow-create {
+                                details open[pages.save == Some(1)] {
+                                    summary { "Save an issue view" }
+                                    form.workflow-form method="post" action="/workflows/views" {
+                                        (csrf(&auth))
+                                        @if plan == "plus" && pages.save == Some(1) && selected_project.is_none() {
+                                            p { "Choose a project for this view. Max can save a view across projects." }
+                                        }
+                                        div.workflow-fields {
+                                            label.field { "View name" input name="name" required maxlength="100"; }
+                                            label.field { "Project" select name="project" required[plan != "max"] {
+                                                @if plan == "max" { option value="" selected[selected_project.is_none()] { "All projects" } }
+                                                @else { option value="" disabled selected[selected_project.is_none()] { "Choose a project" } }
+                                                @for project in &projects { (project_option(project,selected_project)) }
+                                            } }
+                                        }
+                                        @if pages.save == Some(1) {
+                                            p.workflow-source {
+                                                span { "From Issues" }
+                                                (view_summary(&pages.filters, selected_project, &projects))
+                                            }
+                                        }
+                                        details.workflow-options open[pages.save != Some(1)] {
+                                            summary { "Filters and display" }
+                                            fieldset.workflow-fieldset {
+                                                legend { "Filters" }
+                                                div.workflow-fields {
+                                                    label.field.workflow-span { "Search issues" input name="search" maxlength="250" value=(&pages.filters.search); }
+                                                    (select_field("Status","status",STATUSES,Some("All statuses"),&pages.filters.status))
+                                                    (select_field("Priority","priority",PRIORITIES,Some("All priorities"),&pages.filters.priority))
+                                                    (select_field("Issue type","kind",KINDS,Some("All types"),&pages.filters.kind))
+                                                    (select_field("Security","critical",CRITICAL,Some("All issues"),&pages.filters.critical))
+                                                    (select_field("Include","scope",SCOPES,None,&pages.filters.scope))
+                                                }
+                                            }
+                                            fieldset.workflow-fieldset {
+                                                legend { "Display" }
+                                                div.workflow-fields {
+                                                    (select_field("Layout","layout",LAYOUTS,None,&pages.filters.layout))
+                                                    (select_field("Sort by","sort",VIEW_SORTS,None,&pages.filters.sort_order))
+                                                    (select_field("Group by","group",VIEW_GROUPS,None,&pages.filters.grouping))
+                                                }
+                                            }
+                                        }
+                                        div.view-actions {
+                                            button.action-primary type="submit" { "Save view" }
+                                            @if pages.save == Some(1) {
+                                                a href=(pages.filters.issue_url(selected_project)) { "Return to filtered issues" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } @else if plan == "plus" && projects.is_empty() {
+                            p { a href="/projects" { "Create a project" } " to save a project view." }
+                        }
+                        @if !views.is_empty() {
+                            ul.workflow-records aria-label="Saved views" {
+                                @for v in &views {
+                                    li.workflow-record {
+                                        @if authorize_view(&plan, v.project_id).is_ok() {
+                                            a.workflow-record-main href=(format!("/workflows/views/{}",v.id)) {
+                                                strong { (v.name) }
+                                                (view_summary(&v.filters, v.project_id, &projects))
+                                            }
+                                        } @else {
+                                            div.workflow-record-main {
+                                                span.workflow-record-name {
+                                                    strong { (v.name) }
+                                                    span.workflow-access { @if v.project_id.is_some() { "Open with Plus or Max" } @else { "Open with Max" } }
+                                                }
+                                                (view_summary(&v.filters, v.project_id, &projects))
+                                            }
+                                        }
+                                        (delete_button(&auth, "views", v.id, &v.name))
+                                    }
+                                }
+                            }
+                        } @else if pages.views > 0 { p { "No saved views on this page." } }
+                        (pager(&pages, true, more_views))
+                    }
+                }
+                section.workflow-section id="templates" aria-labelledby="templates-title" {
+                    header.workflow-label {
+                        h2 id="templates-title" { "Issue templates" }
+                        @if !paid(&plan) { span.workflow-access { "Create with Plus or Max" } }
+                    }
+                    div.workflow-body {
+                        @if !paid(&plan) {
+                            p { "Start recurring issues with the same description, next action and properties." }
+                        } @else if templates.is_empty() && pages.templates == 0 {
+                            p { "Create your first template for recurring issues." }
+                        }
+                        @if paid(&plan) {
+                            div.workflow-create {
+                                details {
+                                    summary { "Create a template" }
+                                    form.workflow-form method="post" action="/workflows/templates" {
+                                        (csrf(&auth))
+                                        label.field { "Template name" input name="name" required maxlength="100"; }
+                                        fieldset.workflow-fieldset {
+                                            legend { "Issue defaults" }
+                                            div.workflow-fields {
+                                                label.field.workflow-span { "Issue title" input name="title" required maxlength="240"; }
+                                                label.field.workflow-span { "Description" textarea name="body" rows="4" {} }
+                                                label.field.workflow-span { "Next action" textarea name="next_action" rows="2" maxlength="2000" {} }
+                                                (select_field("Status","status",STATUSES,None,"ready"))
+                                                (select_field("Priority","priority",PRIORITIES,None,"normal"))
+                                                (select_field("Issue type","kind",KINDS,None,"feature"))
+                                            }
+                                        }
+                                        button.action-primary type="submit" { "Save template" }
+                                    }
+                                }
                             }
                         }
-                        (delete_button(&auth, "views", v.id, &v.name))
+                        @if !templates.is_empty() {
+                            ul.workflow-records aria-label="Issue templates" {
+                                @for t in &templates {
+                                    li.workflow-record {
+                                        a.workflow-record-main href=(format!("/workflows/templates/{}",t.id)) {
+                                            strong { (t.name) } span.workflow-summary { (t.title) }
+                                        }
+                                        (delete_button(&auth, "templates", t.id, &t.name))
+                                    }
+                                }
+                            }
+                        } @else if pages.templates > 0 { p { "No issue templates on this page." } }
+                        (pager(&pages, false, more_templates))
                     }
                 }
-                (pager(&pages, true, more_views))
-                @if paid(&plan) && (!projects.is_empty() || plan == "max") {
-                    details open[pages.save == Some(1)] {
-                        summary { "Save an issue view" }
-                        form method="post" action="/workflows/views" class="stack" {
-                            (csrf(&auth))
-                            label class="field" { "View name" input name="name" required maxlength="100"; }
-                            label class="field" { "Project" select name="project" required[plan != "max"] {
-                                @if plan == "max" { option value="" selected[selected_project.is_none()] { "All projects" } }
-                                @else { option value="" disabled selected[selected_project.is_none()] { "Choose a project" } }
-                                @for project in &projects { (project_option(project,selected_project)) }
-                            } }
-                            label class="field" { "Search issues" input name="search" maxlength="250" value=(&pages.filters.search); }
-                            (select_field("Status","status",STATUSES,Some("All statuses"),&pages.filters.status))
-                            (select_field("Priority","priority",PRIORITIES,Some("All priorities"),&pages.filters.priority))
-                            (select_field("Issue type","kind",KINDS,Some("All types"),&pages.filters.kind))
-                            (select_field("Security","critical",CRITICAL,Some("All issues"),&pages.filters.critical))
-                            (select_field("Include","scope",SCOPES,None,&pages.filters.scope))
-                            (select_field("Layout","layout",LAYOUTS,None,&pages.filters.layout))
-                            (select_field("Sort by","sort",VIEW_SORTS,None,&pages.filters.sort_order))
-                            (select_field("Group by","group",VIEW_GROUPS,None,&pages.filters.grouping))
-                            button type="submit" { "Save view" }
-                        }
-                    }
-                } @else if plan == "plus" && projects.is_empty() {
-                    p { a href="/projects" { "Create a project" } " to save your first issue view." }
-                }
+                (digest)
             }
-            section id="templates" class="stack" {
-                h2 { "Issue templates" }
-                @if templates.is_empty() { p class="muted" { "No issue templates on this page." } }
-                @for t in &templates {
-                    div class="row" {
-                        div { a href=(format!("/workflows/templates/{}",t.id)) { (t.name) } p class="muted" { (t.title) } }
-                        (delete_button(&auth, "templates", t.id, &t.name))
-                    }
-                }
-                (pager(&pages, false, more_templates))
-                @if paid(&plan) {
-                    details {
-                        summary { "Create a template" }
-                        form method="post" action="/workflows/templates" class="stack" {
-                            (csrf(&auth))
-                            label class="field" { "Template name" input name="name" required maxlength="100"; }
-                            label class="field" { "Issue title" input name="title" required maxlength="240"; }
-                            label class="field" { "Description" textarea name="body" rows="5" {} }
-                            label class="field" { "Next action" textarea name="next_action" rows="2" maxlength="2000" {} }
-                            (select_field("Status","status",STATUSES,None,"ready"))
-                            (select_field("Priority","priority",PRIORITIES,None,"normal"))
-                            (select_field("Issue type","kind",KINDS,None,"feature"))
-                            button type="submit" { "Save template" }
-                        }
-                    }
-                }
-            }
-            (digest)
         },
+        None,
     ))
+}
+
+fn view_summary(filters: &Filters, project: Option<Uuid>, projects: &[Project]) -> Markup {
+    let scope = project.map_or("All projects", |id| {
+        projects
+            .iter()
+            .find(|p| p.id == id)
+            .map_or("Project", |p| p.name.as_str())
+    });
+    html! {
+        span.workflow-summary {
+            (scope) " · " (option_label(&filters.layout, LAYOUTS)) " · " (option_label(&filters.scope, SCOPES))
+            @for (value, options) in [(&filters.status, STATUSES), (&filters.priority, PRIORITIES),
+                                     (&filters.kind, KINDS), (&filters.critical, CRITICAL)] {
+                @if !value.is_empty() { " · " (option_label(value, options)) }
+            }
+            @if !filters.search.is_empty() { " · “" (&filters.search) "”" }
+            @if filters.sort_order != "updated" { " · " (option_label(&filters.sort_order, VIEW_SORTS)) }
+            @if filters.grouping == "none" { " · Ungrouped" }
+            @else if filters.grouping == "priority" { " · Grouped by priority" }
+        }
+    }
 }
 
 fn option_label<'a>(value: &'a str, options: &'a [(&'a str, &'a str)]) -> &'a str {
@@ -670,10 +776,17 @@ fn project_option(project: &Project, selected: Option<Uuid>) -> Markup {
 }
 
 fn delete_button(auth: &Auth, group: &str, id: Uuid, name: &str) -> Markup {
-    html! { form method="post" action=(format!("/workflows/{group}/{id}/delete")) {
-        (csrf(auth))
-        button class="secondary" type="submit" aria-label=(format!("Delete {name}")) { "Delete" }
-    } }
+    let item = if group == "views" { "view" } else { "template" };
+    html! {
+        details.workflow-delete {
+            summary aria-label=(format!("Delete {name}")) { "Delete" }
+            form method="post" action=(format!("/workflows/{group}/{id}/delete")) {
+                (csrf(auth))
+                p { "Delete “" (name) "”?" }
+                button.action-secondary.danger type="submit" { "Delete " (item) }
+            }
+        }
+    }
 }
 
 fn pager(pages: &Pages, views: bool, more: bool) -> Markup {
@@ -687,7 +800,7 @@ fn pager(pages: &Pages, views: bool, more: bool) -> Markup {
     };
     html! {
         @if current > 0 || more {
-            nav class="toolbar" aria-label=(if views { "Saved view pages" } else { "Template pages" }) {
+            nav class="workflow-jumps" aria-label=(if views { "Saved view pages" } else { "Template pages" }) {
                 @if current > 0 { a href=(url(current-1)) { "Previous" } }
                 @if more { a href=(url(current.saturating_add(1))) { "Next" } }
             }
@@ -713,27 +826,44 @@ async fn show_template(
         &t.name,
         "workflows",
         html! {
-            a href="/workflows#templates" { "All templates" }
-            h1 { (t.name) }
-            section class="stack" {
-                h2 { (t.draft.title) }
-                p class="muted" { (option_label(&t.draft.kind,KINDS)) " · " (option_label(&t.draft.status,STATUSES)) " · " (option_label(&t.draft.priority,PRIORITIES)) " priority" }
-                @if !t.draft.body.is_empty() { pre { (t.draft.body) } }
-                @if !t.draft.next_action.is_empty() { h3 { "Next action" } p { (t.draft.next_action) } }
-            }
-            @if paid(&plan) {
-                @if projects.iter().any(|p| !p.archived) {
-                    form method="post" action=(format!("/workflows/templates/{}/apply",t.id)) class="toolbar" {
-                        (csrf(&auth))
-                        input type="hidden" name="command_id" value=(Uuid::new_v4());
-                        label class="field" { "Create issue in" select name="project" required {
-                            @for project in projects.iter().filter(|p| !p.archived) { (project_option(project,None)) }
-                        } }
-                        button type="submit" { "Create issue from template" }
+            div.workflow-workspace {
+                a.workflow-back href="/workflows#templates" { "All templates" }
+                header.view-head { h1 { (t.name) } }
+                section.workflow-section aria-labelledby="template-preview" {
+                    header.workflow-label { h2 id="template-preview" { "Issue preview" } }
+                    div.workflow-body {
+                        h3.workflow-draft-title { (t.draft.title) }
+                        dl.workflow-properties {
+                            div { dt { "Type" } dd { (option_label(&t.draft.kind,KINDS)) } }
+                            div { dt { "Status" } dd { (option_label(&t.draft.status,STATUSES)) } }
+                            div { dt { "Priority" } dd { (option_label(&t.draft.priority,PRIORITIES)) } }
+                        }
+                        @if !t.draft.body.is_empty() { p.prose { (t.draft.body) } }
+                        @if !t.draft.next_action.is_empty() {
+                            div.workflow-next { h4 { "Next action" } p.prose { (t.draft.next_action) } }
+                        }
                     }
-                } @else { p { a href="/projects" { "Open projects" } " to create or activate a project for this issue." } }
-            } @else {
-                p class="notice" { a href="/billing" { "Plus and Max" } " can create issues from this template." }
+                }
+                section.workflow-section aria-labelledby="template-apply" {
+                    header.workflow-label { h2 id="template-apply" { "Use template" } }
+                    div.workflow-body {
+                        @if paid(&plan) {
+                            @if projects.iter().any(|p| !p.archived) {
+                                form.workflow-form method="post" action=(format!("/workflows/templates/{}/apply",t.id)) {
+                                    (csrf(&auth))
+                                    input type="hidden" name="command_id" value=(Uuid::new_v4());
+                                    label.field { "Create issue in" select name="project" required {
+                                        @for project in projects.iter().filter(|p| !p.archived) { (project_option(project,None)) }
+                                    } }
+                                    button.action-primary type="submit" { "Create issue from template" }
+                                }
+                            } @else { p { a href="/projects" { "Open projects" } " to create or activate a project for this issue." } }
+                        } @else {
+                            p { "Plus and Max can create issues from this template." }
+                            a.action-secondary href="/billing" { "Compare plans" }
+                        }
+                    }
+                }
             }
         },
     ))

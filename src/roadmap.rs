@@ -20,7 +20,7 @@ use serde::Deserialize;
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use crate::{AppError, AppResult, AppState, auth::Auth, store, ui::page};
+use crate::{AppError, AppResult, AppState, auth::Auth, store, ui::section_page};
 use writes::*;
 
 pub fn routes() -> Router<AppState> {
@@ -123,18 +123,19 @@ async fn roadmap(
             .or_else(|| projects.first()),
     };
     let Some(project) = project else {
-        return Ok(page(
+        return Ok(section_page(
             &auth,
             "Roadmap",
             "roadmap",
             html! {
-                header { h1 { "Roadmap" } }
-                section class="empty" {
+                header.view-head { h1 { "Roadmap" } }
+                section.empty-state {
                     h2 { "Plan your first milestone" }
                     p { "Create a project to set target dates and connect the work that depends on them." }
-                    a class="button" href="/projects" { "Create a project" }
+                    a.action-primary href="/projects" { "Create a project" }
                 }
             },
+            None,
         ));
     };
 
@@ -188,37 +189,54 @@ async fn roadmap(
         html! {}
     };
 
-    Ok(page(
+    Ok(section_page(
         &auth,
         "Roadmap",
         "roadmap",
         html! {
-            header class="toolbar" {
-                div { h1 { "Roadmap" } p class="muted" { (project.name) " · " (milestones.len()) " " @if milestones.len() == 1 { "milestone" } @else { "milestones" } } }
-                @if projects.len() > 1 {
-                    form method="get" action="/roadmap" class="row" {
-                        label { "Project" select name="project" {
-                            @for p in &projects {
-                                option value=(p.id) selected[p.id == project.id] { (p.name) @if p.archived { " (archived)" } }
-                            }
-                        } }
-                        button class="secondary" type="submit" { "Switch project" }
-                    }
+            link rel="stylesheet" href="/roadmap/timeline.css";
+            header.view-head {
+                div {
+                    h1 { "Roadmap" }
+                    p.muted { (project.name) " · " (milestones.len()) " " @if milestones.len() == 1 { "milestone" } @else { "milestones" } }
                 }
-                div.row {
-                    a href=(format!("/health?project={}",project.id)) { "Project health" }
-                    @if !project.archived && !milestones.is_empty() {
-                        a.button href=(format!("/roadmap?project={}&new=true#new-milestone",project.id)) { "New milestone" }
+                div.view-actions {
+                    a.action-quiet href=(format!("/health?project={}",project.id)) { (crate::ui::icon("health")) "Project health" }
+                    @if !project.archived && !milestones.is_empty() && !query.new {
+                        a.action-primary href=(format!("/roadmap?project={}&new=true#new-milestone",project.id)) { (crate::ui::icon("plus")) "New milestone" }
                     }
                 }
             }
-            @if project.archived { p class="notice" { "Archived project · Read-only" } }
-            (timeline::timeline(project.id,&milestones,&deps,selected.map(|m|m.id),today,&weeks,&releases))
-            (detail)
-            @if !project.archived { (inspector::creation(&auth,project.id,milestones.is_empty() || query.new)) }
-            (calendar::release_editor(&auth,project.id,project.archived,&releases))
-            (calendar::calendar_editor(&auth,project.id,project.archived,&weeks))
+            @if projects.len() > 1 {
+                form.view-tools method="get" action="/roadmap" {
+                    label.field { "Project" select name="project" {
+                        @for p in &projects {
+                            option value=(p.id) selected[p.id == project.id] { (p.name) @if p.archived { " (archived)" } }
+                        }
+                    } }
+                    button.secondary type="submit" { "Switch project" }
+                }
+            }
+            @if project.archived { p.status-note { "Archived project · Read-only" } }
+            @if query.new && !project.archived { (inspector::creation(&auth,project.id,true)) }
+            div.rm-workbench {
+                div class=(if selected.is_some() { "rm-work rm-has-selection" } else { "rm-work" }) {
+                    @let schedule = html! {
+                        div.rm-schedule-column {
+                            (timeline::timeline(project.id,&milestones,&deps,selected.map(|m|m.id),today,&weeks,&releases))
+                            @if !project.archived && !query.new && milestones.is_empty() { (inspector::creation(&auth,project.id, true)) }
+                            section.rm-settings aria-label="Calendar settings" {
+                                (calendar::release_editor(&auth,project.id,project.archived,&releases))
+                                (calendar::calendar_editor(&auth,project.id,project.archived,&weeks))
+                            }
+                        }
+                    };
+                    @if query.milestone.is_some() { (detail) (schedule) }
+                    @else { (schedule) (detail) }
+                }
+            }
         },
+        Some(project.id),
     ))
 }
 

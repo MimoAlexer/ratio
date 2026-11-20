@@ -8,7 +8,7 @@ A desktop issue tracker for one developer per workspace, backed by a shared acco
 
 Install Ratio on Windows or Linux from the [private GitHub releases](https://github.com/MimoAlexer/ratio/releases). Connect both computers to the same HTTPS server and approve each device using the same account. Each installation has its own persistent session. The desktop host is Rust using Tao with WebView2 on Windows and WebKitGTK on Linux. The issue workspace, backend and data model are shared with the web service.
 
-[Install and sign in](desktop/README.md) · [Private project board](https://github.com/users/MimoAlexer/projects/4/views/2) · [Issues and milestones](docs/github.md) · [Design direction and attribution](docs/design/direction.md) · [Original plans](docs/planning/product-plan.md)
+[Install and sign in](desktop/README.md) · [Private project board](https://github.com/users/MimoAlexer/projects/4/views/2) · [Issues and milestones](docs/github.md) · [Design direction and attribution](docs/design/direction.md) · [0.2 design review and screenshots](docs/design/ratio-0.2/release-review.md) · [Original plans](docs/planning/product-plan.md)
 
 ![Ratio issue list in the Linux desktop app](docs/images/ratio-issues.png)
 

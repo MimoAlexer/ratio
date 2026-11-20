@@ -201,13 +201,6 @@ pub fn launcher_html(
             "ORIGIN" => &origin,
             "DEMO_ORIGIN" => &demo_origin,
             "MESSAGE" => &status,
-            "MESSAGE_HIDDEN" => {
-                if status.is_empty() {
-                    "hidden"
-                } else {
-                    ""
-                }
-            }
             "SAVED_HIDDEN" => {
                 if saved.is_none() {
                     "hidden"

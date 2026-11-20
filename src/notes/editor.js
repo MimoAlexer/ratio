@@ -189,15 +189,41 @@
     const insert = tools?.querySelector("[data-insert-link]");
     if (!input || !insert) return;
     searchLinks(input, tools.dataset.suggestionsUrl);
+    const selected = () => input.value !== "" && input.list &&
+      Array.from(input.list.options).some(option => option.value === input.value);
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.isComposing && selected()) {
+        event.preventDefault();
+        insert.click();
+      }
+    });
+    const message = tools.querySelector("[role=status]");
+    input.addEventListener("input", () => {
+      input.removeAttribute("aria-invalid");
+      if (message) message.textContent = "";
+    });
+    // Let the native datalist consume Enter when a suggestion is highlighted.
+    // Otherwise its implicit form submission should insert a link, even if the
+    // new note's required title/path fields have not been filled in yet.
+    const save = form.querySelector('button[type="submit"]:not([formaction])');
+    save?.addEventListener("click", event => {
+      if (event.detail === 0 && document.activeElement === input) {
+        event.preventDefault();
+        insert.click();
+      }
+    });
     tools.hidden = false;
     insert.addEventListener("click", event => {
       event.preventDefault();
       const token = input.value;
-      if (!token || !input.list || !Array.from(input.list.options).some(option => option.value === token)) {
+      if (!selected()) {
+        input.setAttribute("aria-invalid", "true");
+        if (message) message.textContent = "Choose a suggested note or issue, then insert the link.";
         input.focus();
         return;
       }
       body.setRangeText(token, body.selectionStart, body.selectionEnd, "end");
+      if (tools instanceof HTMLDetailsElement) tools.open = false;
       body.focus();
       body.dispatchEvent(new Event("input", {bubbles: true}));
       input.value = "";

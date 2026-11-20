@@ -29,7 +29,7 @@
     let reloading = false;
     for (const event of ["input", "change", "compositionstart"]) {
         document.addEventListener(event, e => {
-            if (e.target instanceof Element && e.target.closest(fields)) interacted = true;
+            if (e.target instanceof Element && !e.target.closest(".command-dialog") && e.target.closest(fields)) interacted = true;
         }, true);
     }
     window.addEventListener("submit", event => {

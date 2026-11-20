@@ -219,6 +219,79 @@ impl Drop for TestApp {
 }
 
 #[sqlx::test]
+async fn invalid_issue_edit_retains_submitted_text_and_can_be_corrected(db: PgPool) -> Result<()> {
+    let app = TestApp::listen(db).await?;
+    let owner = Tenant::seed(&app).await?;
+    let issue = app.create(&owner, "Saved issue").await?;
+    let path = format!("/issues/{issue}/edit");
+    let revision = app.revision(&owner, issue).await?;
+    let invalid = app
+        .client
+        .post(format!("{}{path}", app.url))
+        .header(COOKIE, &owner.cookie)
+        .form(&[
+            ("csrf", owner.csrf.clone()),
+            ("command_id", Uuid::new_v4().to_string()),
+            ("revision", revision.to_string()),
+            ("title", "   ".into()),
+            ("body", "\nDraft <body>".into()),
+            ("labels", "one, two  ,three".into()),
+            ("priority", "urgent".into()),
+        ])
+        .send()
+        .await?;
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+    let html = invalid.text().await?;
+    let form = html
+        .split_once(&format!("action=\"{path}\""))
+        .context("correctable edit form")?
+        .1;
+    assert!(form.contains("Enter an issue title between 1 and 240 characters."));
+    assert!(form.contains("aria-invalid=\"true\""));
+    assert!(form.contains("value=\"   \"") && form.contains("\n\nDraft &lt;body&gt;"));
+    assert!(
+        form.contains("value=\"one, two  ,three\"") && form.contains("value=\"urgent\" selected")
+    );
+    assert_eq!(app.revision(&owner, issue).await?, revision);
+    let retry = form
+        .split_once("name=\"command_id\" value=\"")
+        .context("retry command")?
+        .1
+        .split('"')
+        .next()
+        .context("retry command value")?
+        .parse()?;
+    let corrected = [
+        ("title", "Corrected issue"),
+        ("body", "\nDraft <body>"),
+        ("labels", "one, two  ,three"),
+        ("priority", "urgent"),
+    ];
+    assert_eq!(
+        app.post(&owner, &path, retry, Some(revision), &corrected)
+            .await?,
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(app.revision(&owner, issue).await?, revision + 1);
+    let row: (String, String, String, Vec<String>) =
+        sqlx::query_as("SELECT title,body,priority,labels FROM issues WHERE owner_id=$1 AND id=$2")
+            .bind(owner.owner)
+            .bind(issue)
+            .fetch_one(&app.db)
+            .await?;
+    assert_eq!(
+        row,
+        (
+            "Corrected issue".into(),
+            "\nDraft <body>".into(),
+            "urgent".into(),
+            vec!["one".into(), "two".into(), "three".into()]
+        )
+    );
+    Ok(())
+}
+
+#[sqlx::test]
 async fn resume_order_is_explicit_and_finishing_or_archiving_reveals_previous_work(
     db: PgPool,
 ) -> Result<()> {
@@ -487,12 +560,25 @@ async fn manual_critical_beside_checkpoint_can_close_independently_and_respects_
         StatusCode::FORBIDDEN
     );
     assert_eq!(app.revision(&owner, finding).await?, revision);
-    let mut close_fields = fields.to_vec();
-    close_fields.push(("finding_closed", "true"));
+    let close_path = format!("/issues/{finding}/edit");
+    let close_form = home
+        .split_once(&format!("action=\"{close_path}\""))
+        .and_then(|(_, rest)| rest.split_once("</form>"))
+        .map(|(fields, _)| fields)
+        .context("close manual finding from Home")?;
+    assert!(close_form.contains("name=\"finding_closed\" value=\"true\""));
     assert_eq!(
-        app.change(&owner, finding, "edit", &close_fields).await?,
+        app.change(&owner, finding, "edit", &[("finding_closed", "true")])
+            .await?,
         StatusCode::SEE_OTHER
     );
+    let status: String =
+        sqlx::query_scalar("SELECT status FROM issues WHERE owner_id=$1 AND id=$2")
+            .bind(owner.owner)
+            .bind(finding)
+            .fetch_one(&app.db)
+            .await?;
+    assert_eq!(status, "done");
     assert!(
         !app.read(&owner, "/")
             .await?
@@ -655,5 +741,290 @@ async fn grouped_issue_pages_sort_across_results_and_keep_board_lanes_visible(
         app.get(&tenant, "/issues?sort=invalid").await?.status(),
         StatusCode::BAD_REQUEST
     );
+    Ok(())
+}
+
+fn issue_preview(page: &str) -> Option<&str> {
+    page.split_once("id=\"issue-preview\"")
+        .and_then(|(_, after)| after.split_once("</aside>"))
+        .map(|(preview, _)| preview)
+}
+
+#[sqlx::test]
+async fn workbench_inspects_only_the_current_result_page_and_preserves_its_query(
+    db: PgPool,
+) -> Result<()> {
+    let app = TestApp::listen(db).await?;
+    let owner = Tenant::seed(&app).await?;
+    // The latest checkpoint is on page two, and a completed issue has a newer stamp.
+    sqlx::query(
+        "INSERT INTO issues(owner_id,project_id,number,title,status,next_action,checkpoint_at)
+         SELECT $1,$2,n,'Audit ' || lpad(n::text,2,'0'),
+                CASE WHEN n=3 THEN 'done' ELSE 'ready' END,
+                'Verify result ' || n,
+                CASE WHEN n=3 THEN now() + interval '1 day'
+                     WHEN n IN (2,49,52) THEN now() + n * interval '1 second' END
+           FROM generate_series(1,52) n",
+    )
+    .bind(owner.owner)
+    .bind(owner.project)
+    .execute(&app.db)
+    .await?;
+    let query = format!("project={}&q=Audit&group=none&sort=title", owner.project);
+    let first = app.read(&owner, &format!("/issues?{query}")).await?;
+    assert!(
+        issue_preview(&first)
+            .context("preview on first result page")?
+            .contains("Verify result 49")
+    );
+    let second = app.read(&owner, &format!("/issues?{query}&p=2")).await?;
+    assert!(
+        issue_preview(&second)
+            .context("preview on second result page")?
+            .contains("Verify result 52")
+    );
+
+    let id: Uuid = sqlx::query_scalar("SELECT id FROM issues WHERE owner_id=$1 AND number=51")
+        .bind(owner.owner)
+        .fetch_one(&app.db)
+        .await?;
+    let base = reqwest::Url::parse(&app.url)?;
+    let link = second
+        .split("href=\"")
+        .filter_map(|s| s.split_once('"'))
+        .map(|(href, _)| href.replace("&amp;", "&"))
+        .filter_map(|href| base.join(&href).ok())
+        .find(|href| {
+            href.query_pairs()
+                .any(|(k, v)| k == "inspect" && v == id.to_string())
+        })
+        .context("native preview link for a visible issue")?;
+    let params: std::collections::HashMap<_, _> = link.query_pairs().collect();
+    for (key, expected) in [
+        ("q", "Audit"),
+        ("group", "none"),
+        ("sort", "title"),
+        ("p", "2"),
+    ] {
+        assert_eq!(params.get(key).map(|v| v.as_ref()), Some(expected));
+    }
+    assert_eq!(
+        params.get("project").map(|v| v.as_ref()),
+        Some(owner.project.to_string().as_str())
+    );
+    let chosen = app
+        .read(&owner, &format!("/issues?{}", link.query().unwrap()))
+        .await?;
+    let preview = issue_preview(&chosen).context("selected issue")?;
+    assert!(preview.contains("Audit 51") && preview.contains(&format!("href=\"/issues/{id}\"")));
+    let off_page = app
+        .read(&owner, &format!("/issues?{query}&inspect={id}"))
+        .await?;
+    assert!(!off_page.contains("Audit 51") && !off_page.contains("Verify result 51"));
+    let collapsed = app
+        .read(&owner, &format!("/issues?{query}&p=2&inspect=none"))
+        .await?;
+    assert!(issue_preview(&collapsed).is_none());
+    assert!(collapsed.contains(&format!("href=\"/issues/{id}\"")));
+    Ok(())
+}
+
+#[sqlx::test]
+async fn workbench_scopes_the_preview_and_keeps_native_board_commands(db: PgPool) -> Result<()> {
+    let app = TestApp::listen(db).await?;
+    let owner = Tenant::seed(&app).await?;
+    let other = Tenant::seed(&app).await?;
+    let own = app.create(&owner, "Visible release fix").await?;
+    let private = app.create(&other, "Unpublished diagnostics report").await?;
+    let source: Uuid = sqlx::query_scalar(
+        "INSERT INTO notes(owner_id,project_id,title,path,body)
+         VALUES($1,$2,'Release notes','release.md','Check the signing key') RETURNING id",
+    )
+    .bind(owner.owner)
+    .bind(owner.project)
+    .fetch_one(&app.db)
+    .await?;
+    sqlx::query(
+        "INSERT INTO note_issue_sources(owner_id,project_id,note_id,issue_id,source_anchor,excerpt,note_revision)
+         VALUES($1,$2,$3,$4,'block-signing','Check the signing key',1)",
+    )
+    .bind(owner.owner)
+    .bind(owner.project)
+    .bind(source)
+    .bind(own)
+    .execute(&app.db)
+    .await?;
+    let other_project: Uuid = sqlx::query_scalar(
+        "INSERT INTO projects(owner_id,key,name) VALUES($1,'DOC','Documentation') RETURNING id",
+    )
+    .bind(owner.owner)
+    .fetch_one(&app.db)
+    .await?;
+    let hidden: Uuid = sqlx::query_scalar(
+        "INSERT INTO issues(owner_id,project_id,number,title,next_action)
+         VALUES($1,$2,1,'External review','Distribute the private proof') RETURNING id",
+    )
+    .bind(owner.owner)
+    .bind(other_project)
+    .fetch_one(&app.db)
+    .await?;
+    let scoped = format!("/issues?project={}", owner.project);
+    let first = app.read(&owner, &scoped).await?;
+    let preview =
+        issue_preview(&first).context("fallback to the first issue without a checkpoint")?;
+    assert!(preview.contains("Visible release fix"));
+    assert!(preview.contains("Issue created"));
+    assert!(preview.contains(&format!("href=\"/notes/{source}#block-signing\"")));
+    for (id, restricted) in [
+        (private, "Unpublished diagnostics report"),
+        (hidden, "Distribute the private proof"),
+    ] {
+        let page = app.read(&owner, &format!("{scoped}&inspect={id}")).await?;
+        assert!(!page.contains(restricted));
+    }
+    let board = app
+        .read(&owner, &format!("{scoped}&view=board&inspect={own}"))
+        .await?;
+    assert!(issue_preview(&board).is_none());
+    let action = format!("/issues/{own}/status");
+    let form = board
+        .split("<form ")
+        .filter_map(|s| s.split_once("</form>"))
+        .map(|(form, _)| form)
+        .find(|form| form.contains(&format!("action=\"{action}\"")))
+        .context("native status form on the board")?;
+    assert!(form.contains("method=\"post\""));
+    assert!(form.contains("name=\"status\""));
+    let input = |name: &str| -> Result<&str> {
+        form.split("<input ")
+            .filter_map(|s| s.split_once('>'))
+            .map(|(attrs, _)| attrs)
+            .find(|attrs| attrs.contains(&format!("name=\"{name}\"")))
+            .and_then(|attrs| attrs.split_once("value=\""))
+            .and_then(|(_, tail)| tail.split_once('"'))
+            .map(|(value, _)| value)
+            .with_context(|| format!("missing {name} in board status form"))
+    };
+    let response = app
+        .client
+        .post(format!("{}{action}", app.url))
+        .header(COOKIE, &owner.cookie)
+        .form(&[
+            ("csrf", input("csrf")?),
+            ("command_id", input("command_id")?),
+            ("revision", input("revision")?),
+            ("status", "done"),
+        ])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let done = app
+        .read(&owner, &format!("{scoped}&view=board&status=done"))
+        .await?;
+    assert!(done.contains("Visible release fix"));
+    Ok(())
+}
+
+#[sqlx::test]
+async fn home_recommends_the_highest_priority_unblocked_ready_issue(db: PgPool) -> Result<()> {
+    let app = TestApp::listen(db).await?;
+    let owner = Tenant::seed(&app).await?;
+    sqlx::query(
+        "INSERT INTO issues(owner_id,project_id,number,title,status,priority) VALUES
+         ($1,$2,1,'Waiting for schema','ready','urgent'),($1,$2,2,'Ship parser','ready','high'),
+         ($1,$2,3,'Trim log level','ready','normal'),($1,$2,4,'Prepare schema','backlog','normal')",
+    )
+    .bind(owner.owner)
+    .bind(owner.project)
+    .execute(&app.db)
+    .await?;
+    sqlx::query(
+        "INSERT INTO issue_blockers(owner_id,project_id,issue_id,blocker_id)
+         SELECT i.owner_id,i.project_id,i.id,b.id FROM issues i JOIN issues b USING(owner_id,project_id)
+          WHERE i.owner_id=$1 AND i.number=1 AND b.number=4",
+    )
+    .bind(owner.owner)
+    .execute(&app.db)
+    .await?;
+    let resume = app.resume(&owner).await?;
+    assert!(resume.contains("Next ready issue") && resume.contains("Ship parser"));
+    assert!(!resume.contains("Waiting for schema"));
+    sqlx::query("UPDATE issues SET status='done' WHERE owner_id=$1 AND number=4")
+        .bind(owner.owner)
+        .execute(&app.db)
+        .await?;
+    assert!(app.resume(&owner).await?.contains("Waiting for schema"));
+    Ok(())
+}
+
+#[sqlx::test]
+async fn default_list_pages_have_stable_ties_and_count_only_visible_issues(
+    db: PgPool,
+) -> Result<()> {
+    let app = TestApp::listen(db).await?;
+    let owner = Tenant::seed(&app).await?;
+    let outsider = Tenant::seed(&app).await?;
+    let retired: Uuid = sqlx::query_scalar(
+        "INSERT INTO projects(owner_id,key,name,archived) VALUES($1,'OLD','Retired',true) RETURNING id",
+    )
+    .bind(owner.owner)
+    .fetch_one(&app.db)
+    .await?;
+    // Reverse insertion makes UUID order distinct from storage order at the page boundary.
+    sqlx::query(
+        "INSERT INTO issues(id,owner_id,project_id,number,title,status,updated_at,checkpoint_at)
+         SELECT lpad(to_hex(n),32,'0')::uuid,$1,$2,n,'Visible '||n,
+                CASE WHEN n>50 THEN 'in_progress' ELSE 'ready' END,
+                now(),CASE WHEN n=20 THEN now() END FROM generate_series(52,1,-1) n",
+    )
+    .bind(owner.owner)
+    .bind(owner.project)
+    .execute(&app.db)
+    .await?;
+    sqlx::query(
+        "INSERT INTO issues(owner_id,project_id,number,title,archived,checkpoint_at) VALUES
+         ($1,$2,53,'Unshipped decoder adjustment',true,now()),($1,$3,1,'Retired renderer cleanup',false,now()),
+         ($4,$5,1,'Private keyboard report',false,now())",
+    )
+    .bind(owner.owner)
+    .bind(owner.project)
+    .bind(retired)
+    .bind(outsider.owner)
+    .bind(outsider.project)
+    .execute(&app.db)
+    .await?;
+
+    let expected: Vec<_> = (51..=52)
+        .chain(1..=50)
+        .map(|n| format!("Visible {n}"))
+        .collect();
+    for (path, titles, selected) in [
+        ("/issues", &expected[..50], "Visible 20"),
+        ("/issues?p=2", &expected[50..], "Visible 49"),
+    ] {
+        let page = app.read(&owner, path).await?;
+        assert!(
+            page.contains("title=\"Matching issues\">52</span>"),
+            "{path}"
+        );
+        let rows: Vec<_> = page
+            .split("class=\"issue-title\">")
+            .skip(1)
+            .filter_map(|s| s.split_once("</span>").map(|(title, _)| title))
+            .collect();
+        assert_eq!(rows, titles, "{path}");
+        assert!(
+            issue_preview(&page)
+                .context("selected visible issue")?
+                .contains(selected)
+        );
+        for excluded in [
+            "Unshipped decoder adjustment",
+            "Retired renderer cleanup",
+            "Private keyboard report",
+        ] {
+            assert!(!page.contains(excluded), "{excluded} on {path}");
+        }
+    }
     Ok(())
 }

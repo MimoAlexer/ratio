@@ -10,6 +10,7 @@ use crate::{AppError, AppResult};
 #[derive(FromRow)]
 struct ReleaseClock {
     project_id: Uuid,
+    release_name: String,
     key: String,
     timezone: String,
     created: NaiveDate,
@@ -213,7 +214,7 @@ fn select_window(clock: &ReleaseClock, requested: Option<NaiveDate>, plan: &str)
 }
 
 const CLOCK: &str = r#"
-    SELECT r.project_id, p.key, u.timezone,
+    SELECT r.project_id, r.name AS release_name, p.key, u.timezone,
            (r.created_at AT TIME ZONE u.timezone)::date AS created,
            (LEAST(COALESCE(r.published_at, now()), now()) AT TIME ZONE u.timezone)::date AS observed_through,
            LEAST(COALESCE(r.published_at, now()), now()) AS cutoff, r.published_on,
@@ -294,8 +295,10 @@ pub(super) async fn history(
         .ok_or(AppError::NotFound)?;
     let Some(window) = select_window(&clock, week, plan) else {
         tx.commit().await?;
-        return Ok(html! { section.panel id="review" { h2 { "Release review" }
-        p { "This release falls outside your plan’s chart history." } } });
+        return Ok(
+            html! { section.content-section.release-review id="review" { h2 { "Release review" }
+            p { "This release falls outside your plan’s chart history." } } },
+        );
     };
     // A missing imported assignment makes earlier zeroes ambiguous.
     let coverage_start = if clock.missing_history > 0 {
@@ -353,7 +356,7 @@ type Issues = BTreeMap<Uuid, Issue>;
 fn issue_link(id: Uuid, key: &str, issues: &Issues) -> Markup {
     match issues.get(&id) {
         Some(i) => {
-            html! { a href=(format!("/issues/{id}")) { (key) "-" (i.number) " · " (&i.title) } }
+            html! { a.review-issue-link href=(format!("/issues/{id}")) { code { (key) "-" (i.number) } " " span { (&i.title) } } }
         }
         None => html! { span { "Issue " (id) } },
     }
@@ -364,7 +367,7 @@ fn issue_list(ids: &[Uuid], key: &str, issues: &Issues, next_actions: bool) -> M
     ordered.sort_by_key(|id| issues.get(id).map(|i| i.number));
     html! {
         @if ordered.is_empty() { p.muted { "No issues." } }
-        @else { ul.issue-list {
+        @else { ul.issue-list.review-issue-list {
             @for id in ordered {
                 li {
                     (issue_link(id, key, issues))
@@ -405,88 +408,131 @@ fn render(
     let ship = clock
         .published_on
         .filter(|date| *date >= window.first && *date <= window.last);
+    let first_format = if window.first.year() != window.last.year() {
+        "%d %b %Y"
+    } else if window.first.month() != window.last.month() {
+        "%d %b"
+    } else {
+        "%d"
+    };
     html! {
-        section.panel.stack id="review" aria-label="Release review" {
-            h2 { "Release review" }
-            nav.toolbar aria-label="Review week" {
-                @if window.week > monday(window.earliest) {
-                    a href=(week_url(release, window.week - Days::new(7))) { "← Previous week" }
+        section.content-section.release-review id="review" aria-labelledby="review-heading" {
+            header.review-head {
+                div {
+                    h2 id="review-heading" { "Release review" }
+                    p {
+                        a href=(format!("/releases/{release}")) { (&clock.release_name) } " · "
+                        @if window.first != window.last { (window.first.format(first_format)) "–" }
+                        (window.last.format("%d %b %Y")) " · " (&clock.timezone)
+                    }
                 }
-                form.row method="get" action=(format!("/releases/{release}#review")) {
-                    label { "Week of " input type="date" name="week" value=(window.first) min=(window.earliest) max=(window.latest) required; }
-                    button.secondary type="submit" { "View week" }
+                nav.review-week aria-label="Review week" {
+                    @if window.week > monday(window.earliest) {
+                        a.action-quiet href=(week_url(release, window.week - Days::new(7))) { "← Previous week" }
+                    }
+                    @if window.week < monday(window.latest) {
+                        a.action-quiet href=(week_url(release, window.week + Days::new(7))) { "Next week →" }
+                    }
+                    details.review-week-picker {
+                        summary { "Change week" }
+                        form.row method="get" action=(format!("/releases/{release}#review")) {
+                            label { "Week of" input type="date" name="week" value=(window.first) min=(window.earliest) max=(window.latest) required; }
+                            button.secondary type="submit" { "View week" }
+                        }
+                    }
                 }
-                @if window.week < monday(window.latest) {
-                    a href=(week_url(release, window.week + Days::new(7))) { "Next week →" }
-                }
-            }
-            p.muted { (window.first.format("%b %d, %Y")) " – " (window.last.format("%b %d, %Y")) " · " (&clock.timezone) }
-            @if window.first == clock.created || (window.first < clock.created && clock.created <= window.last) {
-                @if clock.missing_history == 0 {
-                    p.notice { "History starts here. Release tracking began " (clock.created) "." }
-                }
-            } @else if window.first == window.earliest && window.first > clock.created {
-                p.notice { "Chart history is available from " (window.earliest) " on your plan. Opening counts include earlier assignments." }
             }
             @if clock.missing_history > 0 {
-                p.notice { "History starts here. " (clock.missing_history) " release item"
+                p.status-note { "History starts here. " (clock.missing_history) " release item"
                     @if clock.missing_history > 1 { "s have" } @else { " has" }
                     " no recorded assignment history. Counts cover observed assignments only." }
+            } @else if window.first <= clock.created && clock.created <= window.last {
+                p.review-footnote { "Release tracking began " (clock.created) "." }
+            } @else if window.first == window.earliest && window.first > clock.created {
+                p.review-footnote { "Chart history is available from " (window.earliest) " on your plan. Opening counts include earlier assignments." }
             }
             @if let Some(r) = review {
-                section.stack {
-                    h3 { "Observed burnup" }
-                    p.muted { "Scope counts assigned issues except Canceled. Done counts completed issues still in scope." }
-                    @if clock.published_on.is_some() && window.last >= clock.observed_through {
-                        p.muted { "Observations end at publication." }
-                    } @else if clock.published_on.is_none() && window.last == clock.today {
-                        p.muted { "Today’s observation includes changes recorded so far." }
+                @let has_scope = r.days.iter().any(|day| !day.scope.is_empty()) || !r.changes.is_empty() || !r.opening.is_empty();
+                @if !has_scope {
+                    p.status-note { "No issues in the observed scope this week. Daily scope and Done counts were zero." }
+                    @if let Some(day) = ship { p { a href="#manifest" { "Shipped " (day) " · Open published manifest" } } }
+                } @else {
+                div.review-instruments {
+                    section.review-instrument aria-labelledby="burnup-heading" {
+                        header.review-instrument-head {
+                            h3 id="burnup-heading" { "Observed burnup" }
+                            span { "Issues" }
+                        }
+                        @if let Some(day) = r.days.last() {
+                            p.review-readout {
+                                a href=(format!("#done-{}", day.date)) { (day.done.len()) " done" }
+                                " of "
+                                a href=(format!("#scope-{}", day.date)) { (day.scope.len()) " in scope" }
+                                " on " (day.date.format("%a %d %b"))
+                                @if clock.published_on.is_none() && day.date == clock.today { " so far" }
+                            }
+                        }
+                        (burnup(r, window, ship))
+                        div.review-legend {
+                            span { i.review-key-scope aria-hidden="true" {} "Scope" }
+                            span { i.review-key-done aria-hidden="true" {} "Done" }
+                            @if let Some(date) = ship {
+                                a href="#manifest" { "Shipped " (date) }
+                            }
+                        }
                     }
-                    (burnup(r, window, ship))
-                    table {
-                        caption { "Daily observations" }
-                        thead { tr { th scope="col" { "Date" } th scope="col" { "Scope" } th scope="col" { "Done" } } }
-                        tbody {
-                            @for day in &r.days {
-                                tr {
-                                    th scope="row" { (day.date) }
-                                    td { a href=(format!("#scope-{}", day.date)) { (day.scope.len()) } }
-                                    td { a href=(format!("#done-{}", day.date)) { (day.done.len()) } }
+                    section.review-instrument aria-labelledby="waterfall-heading" {
+                        header.review-instrument-head {
+                            h3 id="waterfall-heading" { "Open work waterfall" }
+                            span { "Issues" }
+                        }
+                        p.review-readout {
+                            a href="#review-opening" { (r.opening.len()) " opening" } " · "
+                            a href="#review-carryover" { (r.ending.len()) " carryover" }
+                        }
+                        (waterfall(r))
+                    }
+                }
+                }
+                div.review-evidence {
+                    details {
+                        summary { "Daily observations" }
+                        p.review-footnote { "Scope includes assigned issues except Canceled. Done counts completed issues still in scope." }
+                        @if clock.published_on.is_some() && window.last >= clock.observed_through {
+                            p.review-footnote { "Observations end at publication." }
+                        } @else if clock.published_on.is_none() && window.last == clock.today {
+                            p.review-footnote { "Today’s observation includes changes recorded so far." }
+                        }
+                        @for day in &r.days {
+                            details.review-day {
+                                summary { (day.date.format("%a %d %b %Y")) " · " (day.scope.len()) " in scope · " (day.done.len()) " done" }
+                                section.review-selection id=(format!("scope-{}", day.date)) tabindex="-1" {
+                                    h4 { "Scope on " (day.date.format("%d %b %Y")) " · " (day.scope.len()) }
+                                    (issue_list(&day.scope, &clock.key, issues, false))
+                                }
+                                section.review-selection id=(format!("done-{}", day.date)) tabindex="-1" {
+                                    h4 { "Done on " (day.date.format("%d %b %Y")) " · " (day.done.len()) }
+                                    (issue_list(&day.done, &clock.key, issues, false))
                                 }
                             }
                         }
                     }
-                    @for day in &r.days {
-                        details {
-                            summary { (day.date) " · " (day.scope.len()) " in scope · " (day.done.len()) " done" }
-                            h4 id=(format!("scope-{}", day.date)) tabindex="-1" { "Scope on " (day.date) }
-                            (issue_list(&day.scope, &clock.key, issues, false))
-                            h4 id=(format!("done-{}", day.date)) tabindex="-1" { "Done on " (day.date) }
-                            (issue_list(&day.done, &clock.key, issues, false))
-                        }
+                    details {
+                        summary { "Weekly change history" }
+                        (waterfall_sources(r, &clock.key, issues))
                     }
                 }
-            }
-            @if let Some(day) = ship {
-                p { a href="#manifest" { span aria-hidden="true" { "◆ " } "Shipped " (day) " · Open published manifest" } }
-            }
-            @if let Some(r) = review {
-                section.stack {
-                    h3 { "Open work waterfall" }
-                    (waterfall(r))
-                    (waterfall_sources(r, &clock.key, issues))
-                }
             } @else {
-                p.muted { "No scope observations in this week." }
+                p.status-note { "No scope observations in this week." }
+                @if let Some(day) = ship {
+                    p { a href="#manifest" { "Shipped " (day) " · Open published manifest" } }
+                }
             }
         }
     }
 }
 
-const ACCENT: &str = "var(--accent, currentColor)";
-
 fn burnup(review: &Review, window: &Window, shipment: Option<NaiveDate>) -> Markup {
-    let left = 45.0;
     let max = review
         .days
         .iter()
@@ -496,55 +542,58 @@ fn burnup(review: &Review, window: &Window, shipment: Option<NaiveDate>) -> Mark
         .max(1);
     let mut ticks = vec![0, max / 2, max];
     ticks.dedup();
-    let y = |value: usize| 143.0 - 105.0 * value as f64 / max as f64;
-    let x = |date: NaiveDate| left + 512.0 * (date - window.week).num_days() as f64 / 6.0;
+    let y = |value: usize| 126.0 - 104.0 * value as f64 / max as f64;
+    let x = |date: NaiveDate| {
+        format!(
+            "{:.2}%",
+            9.0 + 85.0 * (date - window.week).num_days() as f64 / 6.0
+        )
+    };
     html! {
-        div.review-chart-frame tabindex="0" role="region" aria-label="Observed burnup chart" {
-            svg.chart viewBox="0 0 600 178" width="100%" role="group" aria-label="Daily observed scope and Done, in issues" {
+        figure.review-burnup aria-label="Observed burnup chart" {
+            svg width="100%" height="160" role="group" aria-label="Daily scope and Done issues. Select a mark for that day’s issues." {
                 @for tick in ticks {
-                    line x1="40" x2="578" y1=(y(tick)) y2=(y(tick)) stroke="currentColor" opacity="0.2" {}
-                    text x="32" y=(y(tick)+4.0) text-anchor="end" fill="currentColor" font-size="11" { (tick) }
+                    line.review-grid x1="9%" x2="94%" y1=(y(tick)) y2=(y(tick)) {}
+                    text.review-axis x="6%" y=(y(tick)+4.0) text-anchor="end" { (tick) }
                 }
-                g fill="none" stroke-width="2" {
+                g fill="none" {
                     @for pair in review.days.windows(2) {
                         @let (a,b) = (&pair[0],&pair[1]);
-                        line x1=(x(a.date)) y1=(y(a.scope.len())) x2=(x(b.date)) y2=(y(b.scope.len())) stroke="currentColor" {}
-                        line x1=(x(a.date)) y1=(y(a.done.len())) x2=(x(b.date)) y2=(y(b.done.len())) stroke=(ACCENT) stroke-dasharray="5 4" {}
+                        line.review-scope-line x1=(x(a.date)) y1=(y(a.scope.len())) x2=(x(b.date)) y2=(y(b.scope.len())) {}
+                        line.review-done-line x1=(x(a.date)) y1=(y(a.done.len())) x2=(x(b.date)) y2=(y(b.done.len())) {}
                     }
                 }
                 @for day in &review.days {
-                    @let xx = x(day.date);
                     @for (name, value) in [("scope", day.scope.len()), ("done", day.done.len())] {
                         @let yy = y(value);
-                        a href=(format!("#{name}-{}", day.date)) aria-label=(format!("{}: {value} {name} issues", day.date)) {
-                            title { (day.date) " · " (value) " " (name) }
+                        a.review-point href=(format!("#{name}-{}", day.date)) aria-label=(format!("{}, {value} {name} issues. View issues.", day.date)) {
+                            title { (day.date.format("%a %d %b %Y")) " · " (value) " " (name) }
+                            @let radius = if name=="done" && day.scope.len()==value { 5 } else { 12 };
+                            circle.review-hit cx=(x(day.date)) cy=(yy) r=(radius) {}
                             @if name == "scope" {
-                                rect x=(xx-10.0) y=(yy-10.0) width="20" height="20" fill="transparent" {}
-                                rect x=(xx-5.5) y=(yy-5.5) width="11" height="11" fill="var(--surface, Canvas)" stroke="currentColor" stroke-width="1.8" {}
+                                rect.review-scope-mark x=(x(day.date)) y=(yy) width="10" height="10" transform="translate(-5 -5)" {}
                             } @else {
-                                circle cx=(xx) cy=(yy) r=(if day.scope.len()==value { 4 } else { 10 }) fill="transparent" {}
-                                circle cx=(xx) cy=(yy) r="3.6" fill=(ACCENT) {}
+                                circle.review-done-mark cx=(x(day.date)) cy=(yy) r="3" {}
                             }
                         }
                     }
                 }
                 @for date in window.week.iter_days().take(7) {
                     @let observed = review.days.iter().any(|day| day.date == date);
-                    text x=(x(date)) y="167" text-anchor="middle" font-size="11" fill=(if observed { "currentColor" } else { "var(--faint, GrayText)" }) {
+                    text.review-axis.review-axis-unobserved[!observed].review-axis-minor[date.weekday().num_days_from_monday()%2==1] x=(x(date)) y="150" text-anchor="middle" {
                         @if !observed { title { (date) " · No observation" } }
                         (date.format("%a %d"))
                     }
                 }
                 @if let Some(date) = shipment {
-                    @let xx = x(date);
-                    a href="#manifest" aria-label=(format!("Open published manifest from {date}")) {
+                    a.review-point href="#manifest" aria-label=(format!("Open published manifest from {date}")) {
                         title { "Published manifest · " (date) }
-                        path d=(format!("M {xx} 4 l 7 7 -7 7 -7 -7 Z")) fill=(ACCENT) {}
+                        circle.review-hit cx=(x(date)) cy="8" r="8" {}
+                        rect.review-shipped-mark x=(x(date)) y="4" width="8" height="8" {}
                     }
                 }
             }
         }
-        p.muted { "□ Scope (solid) · ● Done (dashed)" }
     }
 }
 
@@ -593,58 +642,45 @@ fn steps(review: &Review) -> Vec<Step> {
 
 fn waterfall(review: &Review) -> Markup {
     let bars = steps(review);
-    let last = bars.len() - 1;
     let peak = bars
         .iter()
         .map(|bar| bar.to.max(bar.from))
         .max()
         .unwrap_or(0)
-        .max(1) as f64;
-    let y = |n: usize| 142.0 - 110.0 * n as f64 / peak;
+        .max(1);
     html! {
-        div.review-chart-frame tabindex="0" role="region" aria-label="Open work waterfall chart" {
-            svg.chart viewBox="0 0 600 178" width="100%" role="group" aria-label="Weekly changes to open issue inventory" {
-                defs {
-                    pattern id="review-decrease" width="6" height="6" patternUnits="userSpaceOnUse" {
-                        path d="M-1 1 1 -1 M0 6 6 0 M5 7 7 5" fill="none" stroke="currentColor" stroke-width="1" opacity=".7" {}
+        table.review-waterfall {
+            caption.sr-only { "Weekly reconciliation of open issues" }
+            thead { tr {
+                th scope="col" { "Stage" }
+                th scope="col" class="review-track-head" { span.sr-only { "Open inventory range" } }
+                th scope="col" { "Change" }
+                th scope="col" { "Open" }
+            } }
+            tbody { @for (i, bar) in bars.iter().enumerate() {
+                @let total = i==0 || i+1==bars.len();
+                @let diff = bar.from.abs_diff(bar.to);
+                @let sign = if bar.to>bar.from { "+" } else if bar.from>bar.to { "−" } else { "" };
+                @let start = 100.0 * bar.from.min(bar.to) as f64 / peak as f64;
+                @let width = 100.0 * diff as f64 / peak as f64;
+                tr {
+                    th scope="row" { a href=(format!("#{}",bar.anchor)) aria-label=(format!("{}, {} open after stage. View source issues.",bar.label,bar.to)) { (bar.label) } }
+                    td class="review-track-cell" {
+                        span.review-track aria-hidden="true" {
+                            i class=(if total { "review-total" } else if bar.from>bar.to { "review-drop" } else { "review-rise" })
+                                style=(format!("--bar-start:{start:.4}%;--bar-range:{width:.4}%")) {}
+                        }
                     }
+                    td.mono { @if total { "—" } @else { (sign) (diff) } }
+                    td.mono { (bar.to) }
                 }
-                line x1="13" x2="584" y1="142" y2="142" stroke="currentColor" opacity="0.24" {}
-                @for (i, bar) in bars.iter().enumerate() {
-                    @let xx = 26 + i*96;
-                    @let high = y(bar.from.max(bar.to));
-                    @let height = (y(bar.from) - y(bar.to)).abs().max(2.0);
-                    @let total = i == 0 || i == last;
-                    @let growth = !total && bar.to > bar.from;
-                    @let sign = if total || bar.from == bar.to { "" } else if growth { "+" } else { "−" };
-                    @let value = bar.from.abs_diff(bar.to);
-                    @if i < last {
-                        line x1=(xx+54) x2=(xx+96) y1=(y(bar.to)) y2=(y(bar.to)) stroke="currentColor" stroke-dasharray="3 3" opacity=".55" {}
-                    }
-                    a href=(format!("#{}", bar.anchor)) aria-label=(format!("{}: {sign}{value} issues", bar.label)) {
-                        title { (bar.label) " · " (sign) (value) }
-                        @let fill = if total || value == 0 { "currentColor" } else if growth { ACCENT } else { "url(#review-decrease)" };
-                        rect x=(xx) y=(high) width="54" height=(height) fill=(fill)
-                            stroke=(if growth { ACCENT } else { "currentColor" }) stroke-width="1" {}
-                        text x=(xx+27) y=(high-8.0) text-anchor="middle" font-size="13" fill="currentColor" { (sign) (value) }
-                        text x=(xx+27) y="165" text-anchor="middle" font-size="11" fill="currentColor" { (bar.label) }
-                    }
-                }
-            }
+            } }
         }
     }
 }
 
 fn waterfall_sources(review: &Review, key: &str, issues: &Issues) -> Markup {
     html! {
-        table {
-            caption { "Weekly reconciliation" }
-            thead { tr { th scope="col" { "Stage" } th scope="col" { "Issues" } th scope="col" { "Open after stage" } } }
-            tbody { @for bar in steps(review) {
-                tr { th scope="row" { a href=(format!("#{}", bar.anchor)) { (bar.label) } }
-                    td { (bar.to.abs_diff(bar.from)) } td { (bar.to) } }
-            } }
-        }
         details {
             summary { "Opening issues · " (review.opening.len()) }
             h4 id="review-opening" tabindex="-1" { "Opening issues" }
@@ -658,7 +694,7 @@ fn waterfall_sources(review: &Review, key: &str, issues: &Issues) -> Markup {
                     h4 id=(movement.anchor()) tabindex="-1" { (movement.label()) }
                     @if count == 0 { p.muted { "No recorded changes." } }
                     @else {
-                        table {
+                        div.review-events { table {
                             thead { tr { th scope="col" { "When" } th scope="col" { "Issue" } th scope="col" { "Change" } th scope="col" { "Open after event" } } }
                             tbody { @for c in review.changes.iter().filter(|c| c.movement == movement) {
                                 tr {
@@ -678,7 +714,7 @@ fn waterfall_sources(review: &Review, key: &str, issues: &Issues) -> Markup {
                                     td { (c.open_after) }
                                 }
                             } }
-                        }
+                        } }
                     }
                 }
             }
@@ -757,6 +793,7 @@ mod tests {
     fn clips_to_entitled_calendar_days_and_keeps_partial_weeks() {
         let mut clock = ReleaseClock {
             project_id: Uuid::nil(),
+            release_name: "Beta".into(),
             key: "P".into(),
             timezone: "UTC".into(),
             created: date("2025-01-01"),
@@ -807,6 +844,36 @@ mod tests {
         assert_eq!(chart.matches("No observation").count(), 4);
         assert_eq!(chart.matches("href=\"#done-").count(), 3);
         assert!(!chart.contains("href=\"#done-2025-03-27\""));
+    }
+
+    #[test]
+    fn observed_zero_and_missing_history_have_distinct_evidence() {
+        let first = date("2025-03-24");
+        let last = date("2025-03-30");
+        let clock = ReleaseClock {
+            project_id: Uuid::nil(),
+            release_name: "Beta".into(),
+            key: "PT".into(),
+            timezone: "UTC".into(),
+            created: first,
+            observed_through: last,
+            cutoff: Utc::now(),
+            published_on: None,
+            today: last,
+            missing_history: 0,
+            first_assignment: None,
+        };
+        let window = select_window(&clock, None, "max").unwrap();
+        let review = reconstruct(Inventory::new(), Vec::new(), first, last);
+        let tracked =
+            render(Uuid::nil(), &clock, &window, Some(&review), &Issues::new()).into_string();
+        assert!(tracked.contains("Daily scope and Done counts were zero"));
+        assert!(tracked.contains("Daily observations"));
+        assert!(tracked.contains("id=\"done-2025-03-30\""));
+        assert!(!tracked.contains("id=\"burnup-heading\""));
+        let missing = render(Uuid::nil(), &clock, &window, None, &Issues::new()).into_string();
+        assert!(missing.contains("No scope observations in this week"));
+        assert!(!missing.contains("Daily observations"));
     }
 
     #[sqlx::test]

@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use axum::{
     Router,
     extract::{Query, State},
-    response::Html,
+    http::header,
+    response::{Html, IntoResponse},
     routing::get,
 };
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
@@ -15,7 +16,16 @@ use uuid::Uuid;
 use crate::{AppError, AppResult, AppState, auth::Auth, store, ui};
 
 pub(super) fn routes() -> Router<AppState> {
-    Router::new().route("/insights", get(insights))
+    Router::new()
+        .route("/insights", get(insights))
+        .route("/assets/cycle-observation.js", get(observation_script))
+}
+
+async fn observation_script() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        include_str!("observation.js"),
+    )
 }
 
 const KINDS: [(&str, &str); 4] = [
@@ -283,14 +293,18 @@ async fn insights(
         ));
     }
     if projects.is_empty() {
-        return Ok(ui::page(
+        return Ok(ui::section_page(
             &auth,
             "Insights",
             "insights",
             html! {
-                header.page-header { h1 { "Project activity" } }
-                section.empty { h2 { "Track your first project" } p { "Cycle time appears when an issue moves from In progress to Done." } a.button href="/projects" { "Create a project" } }
+                header.view-head { h1 { "Insights" } }
+                section.empty-state { h2 { "Track your first project" }
+                    p { "Cycle time appears when an issue moves from In progress to Done." }
+                    a.action-primary href="/projects#new-project" { "Create a project" }
+                }
             },
+            None,
         ));
     }
     let selection = Selection {
@@ -327,29 +341,37 @@ async fn insights(
         .min(data.open.len().div_ceil(PAGE_SIZE).max(1));
     let mut sorted_days = data.done.iter().map(|o| o.days).collect::<Vec<_>>();
     sorted_days.sort_by(f64::total_cmp);
-    Ok(ui::page(
+    Ok(ui::section_page(
         &auth,
         "Insights",
         "insights",
         html! {
-            header.page-header {
-                p.muted { (title) }
-                h1 { "Project activity" }
-            }
-            (controls(&selection, &projects, &plan))
-            section.content-section aria-labelledby="cycle-heading" {
-                h2 id="cycle-heading" { "Cycle time" }
+            header.view-head { h1 { "Insights" } }
+            (controls(&selection, &projects, &plan, title))
+            section.content-section.cycle-study aria-labelledby="cycle-heading" {
                 @if data.done.is_empty() {
-                    p.empty { "No measured completions in this period." }
+                    (cycle_heading(None))
+                    div.cycle-empty {
+                        strong { "No measured completions in this period" }
+                        @if !data.unknown.is_empty() {
+                            p { "The completed issues below are missing a usable start or finish." }
+                        } @else if !data.open.is_empty() {
+                            p { "Open work appears below. Cycle time is measured once an issue has a recorded start and completion." }
+                        } @else {
+                            p { "Choose another period or work type to look for recorded completions." }
+                        }
+                    }
+                    (coverage(lower, today, &timezone))
                 } @else {
-                    p.chart-stat { strong.metric { (display_days(quantile(&sorted_days, 0.5))) } " days median" }
-                    p.muted { (data.done.len()) " completed " (if data.done.len()==1 { "issue" } else { "issues" }) " · First start to latest Done" }
-                    (plot(&data.done, view, lower.unwrap_or_else(|| data.done.last().unwrap().finish_date), today))
-                }
-                @if let Some(start) = lower {
-                    p.muted { "Completions from " (start) " through " (today) " · " (timezone) }
-                } @else {
-                    p.muted { "All recorded completions through " (today) " · " (timezone) }
+                    div.cycle-instrument {
+                        div.cycle-plot-area {
+                            (cycle_heading(Some((quantile(&sorted_days, 0.5), data.done.len()))))
+                            (plot(&data.done, view, lower.unwrap_or_else(|| data.done.last().unwrap().finish_date), today))
+                            (coverage(lower, today, &timezone))
+                        }
+                        (observation(&data.done[0]))
+                    }
+                    script defer src="/assets/cycle-observation.js" {}
                 }
                 @if !data.unknown.is_empty() {
                     details { summary { (data.unknown.len()) " excluded with missing or inconsistent dates" }
@@ -367,36 +389,84 @@ async fn insights(
             }
             (sources(&selection, &data, now, page, open_page))
         },
+        project,
     ))
 }
 
-fn controls(s: &Selection<'_>, projects: &[store::Project], plan: &str) -> Markup {
+fn cycle_heading(median: Option<(f64, usize)>) -> Markup {
+    html! {
+        div.cycle-heading {
+            div { h2 id="cycle-heading" { "Cycle time" }
+                p { "First start to latest Done" }
+            }
+            @if let Some((days, n)) = median {
+                div.cycle-stat { strong { (display_days(days)) " d" }
+                    span { "median · " a href="#observations" aria-label=(format!("View {n} completed issues")) { (n) " completed" } }
+                }
+            }
+        }
+    }
+}
+
+fn coverage(lower: Option<NaiveDate>, today: NaiveDate, timezone: &str) -> Markup {
+    html! {
+        p.cycle-coverage {
+            @if let Some(start) = lower {
+                time datetime=(start) { (start.format("%d %b %Y")) } " – "
+            } @else { "All history through " }
+            time datetime=(today) { (today.format("%d %b %Y")) } " · " (timezone)
+        }
+    }
+}
+
+fn controls(
+    s: &Selection<'_>,
+    projects: &[store::Project],
+    plan: &str,
+    project_name: &str,
+) -> Markup {
     let entitlement = match plan {
         "max" => "All recorded history",
         "plus" => "Last 12 months",
         _ => "Last 30 days",
     };
+    let period = match s.period {
+        "4w" => "4 weeks",
+        "6w" => "6 weeks",
+        "8w" => "8 weeks",
+        _ => entitlement,
+    };
     html! {
-        form.toolbar method="get" action="/insights" {
-            label.field { "Project" select name="project" {
-                @if plan == "max" { option value="all" selected[s.project.is_none()] { "All projects" } }
-                @for p in projects { option value=(p.id) selected[s.project==Some(p.id)] { (p.name) @if p.archived { " (archived)" } } }
-            } }
-            label.field { "Period" select name="period" {
-                option value="plan" selected[s.period=="plan"] { (entitlement) }
-                @for (id, label) in [("4w","4 weeks"), ("6w","6 weeks"), ("8w","8 weeks")] {
-                    @if plan != "free" || id=="4w" { option value=(id) selected[s.period==id] { (label) } }
+        details.cycle-filter {
+            summary {
+                span.cycle-filter-action { (ui::icon("settings")) "Chart filters" }
+                span.cycle-filter-scope {
+                    (project_name) " · " (period)
+                    @if let Some((_, label)) = KINDS.iter().find(|(kind, _)| *kind == s.kind) { " · " (label) }
+                    @if s.view == "grouped" { " · By work type" }
                 }
-            } }
-            label.field { "Work type" select name="kind" {
-                option value="all" selected[s.kind=="all"] { "All types" }
-                @for (id, label) in KINDS { option value=(id) selected[s.kind==id] { (label) } }
-            } }
-            label.field { "View" select name="view" {
-                option value="time" selected[s.view=="time"] { "Completion date" }
-                option value="grouped" selected[s.view=="grouped"] { "By work type" }
-            } }
-            button.secondary type="submit" { "Apply" }
+            }
+            form.toolbar method="get" action="/insights" {
+                label.field { "Project" select name="project" {
+                    @if plan == "max" { option value="all" selected[s.project.is_none()] { "All projects" } }
+                    @for p in projects { option value=(p.id) selected[s.project==Some(p.id)] { (p.name) @if p.archived { " (archived)" } } }
+                } }
+                label.field { "Period" select name="period" {
+                    option value="plan" selected[s.period=="plan"] { (entitlement) }
+                    @for (id, label) in [("4w","4 weeks"), ("6w","6 weeks"), ("8w","8 weeks")] {
+                        @if plan != "free" || id=="4w" { option value=(id) selected[s.period==id] { (label) } }
+                    }
+                } }
+                label.field { "Work type" select name="kind" {
+                    option value="all" selected[s.kind=="all"] { "All types" }
+                    @for (id, label) in KINDS { option value=(id) selected[s.kind==id] { (label) } }
+                } }
+                label.field { "View" select name="view" {
+                    option value="time" selected[s.view=="time"] { "Completion date" }
+                    option value="grouped" selected[s.view=="grouped"] { "By work type" }
+                } }
+                button.action-primary type="submit" { "Apply filters" }
+            }
         }
     }
 }
@@ -409,6 +479,12 @@ fn display_days(value: f64) -> String {
         .trim_end_matches('0')
         .trim_end_matches('.')
         .to_owned()
+}
+
+fn duration_label(days: f64) -> String {
+    let value = display_days(days);
+    let unit = if value == "1" { "day" } else { "days" };
+    format!("{value} {unit}")
 }
 
 fn pct(value: f64) -> String {
@@ -450,13 +526,31 @@ fn weekly_bands(rows: &[Observation<'_>]) -> Vec<Vec<(NaiveDate, [f64; 3])>> {
     segments
 }
 
-fn mark(o: &Observation<'_>, x: f64, y: f64, dx: f64) -> Markup {
+fn observation(o: &Observation<'_>) -> Markup {
+    html! {
+        aside.cycle-readout aria-labelledby="cycle-readout-heading" {
+            p.cycle-readout-label id="cycle-readout-heading" { "Latest completion" }
+            p.cycle-readout-id { code data-cycle-field="key" { (o.issue.key) }
+                span data-cycle-field="kind" { (o.issue.kind) }
+            }
+            h3 data-cycle-field="title" { (o.issue.title) }
+            dl {
+                dt { "Elapsed" } dd data-cycle-field="elapsed" { (duration_label(o.days)) }
+                dt { "Started" } dd data-cycle-field="start" { (o.start.format("%d %b %Y · %H:%M UTC")) }
+                dt { "Done" } dd data-cycle-field="finish" { (o.finish.format("%d %b %Y · %H:%M UTC")) }
+            }
+            a.cycle-history-link href=(o.issue.history()) { "Issue history" (ui::icon("arrow")) }
+        }
+    }
+}
+
+fn mark(o: &Observation<'_>, x: f64, y: f64, dx: f64, current: bool) -> Markup {
     let mut label = format!(
-        "{} · {} · {} · {} days · completed {}",
+        "{} · {} · {} · {} · completed {}",
         o.issue.key,
         o.issue.title,
         o.issue.kind,
-        display_days(o.days),
+        duration_label(o.days),
         o.finish_date
     );
     if !o.issue.blockers.is_empty() {
@@ -472,10 +566,15 @@ fn mark(o: &Observation<'_>, x: f64, y: f64, dx: f64) -> Markup {
         ));
     }
     html! {
-        a class="cycle-point" href=(o.issue.history()) tabindex="0" aria-label=(label) {
+        a class=(if current { "cycle-point is-current" } else { "cycle-point" }) href=(o.issue.history()) tabindex="0" aria-label=(label)
+            data-key=(&o.issue.key) data-kind=(&o.issue.kind) data-title=(&o.issue.title)
+            data-elapsed=(duration_label(o.days))
+            data-start=(o.start.format("%d %b %Y · %H:%M UTC"))
+            data-finish=(o.finish.format("%d %b %Y · %H:%M UTC")) {
             title { (label) }
             g transform=(format!("translate({dx:.3} 0)")) color="var(--text, CanvasText)" {
-                circle cx=(pct(x)) cy=(y) r="9" fill="transparent" {}
+                circle class="cycle-hit" cx=(pct(x)) cy=(y) r="12" fill="transparent" {}
+                circle class="cycle-ring" cx=(pct(x)) cy=(y) r="8.5" fill="none" {}
                 use href=(format!("#cycle-{}", o.issue.kind)) x=(pct(x)) y=(y) {}
             }
         }
@@ -543,7 +642,8 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
         "%b %y"
     };
     html! {
-        figure.chart-frame {
+        figure.chart-frame.cycle-chart {
+            div.cycle-axis-title { (if grouped { "Work type" } else { "Elapsed days" }) }
             svg width="100%" height="229" role="group" aria-label=(if grouped {
                 "Elapsed days from first start to latest completion by work type. Select a mark to open its issue history."
             } else { "Elapsed days from first start to latest completion by finish date. Select a mark to open its issue history." }) {
@@ -562,7 +662,7 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
                     } @else {
                         @let y = y_days(days);
                         line x1=(pct(left)) x2=(pct(right)) y1=(y) y2=(y) stroke="currentColor" stroke-dasharray=(if tick==0 {"none"} else {"2 4"}) opacity="0.31" {}
-                        text x=(pct(left-1.5)) y=(y+4.0) text-anchor="end" font-size="12" fill="currentColor" { (display_days(days)) "d" }
+                        text x=(pct(left-2.0)) y=(y+4.0) text-anchor="end" font-size="12" fill="currentColor" { (display_days(days)) "d" }
                     }
                 }
                 @if grouped {
@@ -600,11 +700,11 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
                         }
                     }
                 }
-                @for (o, offset) in rows.iter().zip(offsets) {
+                @for (n, (o, offset)) in rows.iter().zip(offsets).enumerate() {
                     @if grouped {
                         @let index = KINDS.iter().position(|(k,_)| *k == o.issue.kind).unwrap_or(0);
-                        (mark(o, left + o.days/ceiling * (right-left), row_y(index)+offset, 0.0))
-                    } @else { (mark(o, x_date(o.finish_date), y_days(o.days), offset)) }
+                        (mark(o, left + o.days/ceiling * (right-left), row_y(index)+offset, 0.0, n == 0))
+                    } @else { (mark(o, x_date(o.finish_date), y_days(o.days), offset, n == 0)) }
                 }
             }
             figcaption.chart-legend {
@@ -616,7 +716,7 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
                         }
                     }
                 }
-                span { (if grouped { "Elapsed calendar days" } else { "Completion date" }) " · One mark per completed issue" }
+                span.cycle-x-label { (if grouped { "Elapsed days" } else { "Completion date" }) }
                 @if !bands.is_empty() { span { "Weekly median and shaded middle 50% for weeks with 4+ completions" } }
                 @if has_overlaps { span { "Overlapping marks are offset" } }
             }
@@ -667,8 +767,43 @@ fn timestamp(t: DateTime<Utc>) -> Markup {
     html! { time datetime=(t.to_rfc3339()) { (t.format("%Y-%m-%d %H:%M:%S")) } }
 }
 
+// On narrow screens the elapsed value expands the precise source timestamps.
+fn timing_cell(
+    kind: &str,
+    key: &str,
+    days: Option<f64>,
+    first: (&str, DateTime<Utc>),
+    last: (&str, Option<DateTime<Utc>>),
+) -> Markup {
+    let (first_name, first_date) = first;
+    let (last_name, last_date) = last;
+    let elapsed = days
+        .map(duration_label)
+        .unwrap_or_else(|| "Unknown duration".into());
+    html! {
+        td.cycle-kind {
+            span { (kind) }
+            span.cycle-mobile-when {
+                " · "
+                @if let Some(date) = last_date {
+                    (last_name) " " time datetime=(date.to_rfc3339()) { (date.format("%d %b %Y")) }
+                } @else { "Start unknown" }
+            }
+            details.cycle-timing {
+                summary aria-label=(format!("{key} · {elapsed} · Exact timing")) {
+                    @if let Some(value) = days { (display_days(value)) " d" } @else { "—" }
+                }
+                dl {
+                    dt { (first_name) } dd { (timestamp(first_date)) " UTC" }
+                    dt { (last_name) } dd { @if let Some(date) = last_date { (timestamp(date)) " UTC" } @else { "Unknown" } }
+                }
+            }
+        }
+    }
+}
+
 fn source(issue: &Issue) -> Markup {
-    html! { a href=(issue.history()) { code { (issue.key) } " " (issue.title) }
+    html! { a.cycle-source-link href=(issue.history()) { code { (issue.key) } span { (&issue.title) } }
         @if !issue.blockers.is_empty() {
             br; a href=(format!("/issues/{}#blockers", issue.id)) { "Blocked by " (issue.blockers.join(", ")) }
         }
@@ -693,13 +828,20 @@ fn sources(
 ) -> Markup {
     html! {
         @if !data.done.is_empty() {
-            section.content-section id="observations" aria-labelledby="done-heading" {
-                h2 id="done-heading" { "Completed issues" }
-                div.table-wrap { table.data-table {
+            section.content-section id="observations" tabindex="-1" aria-labelledby="done-heading" {
+                div.section-head.cycle-source-head { h2 id="done-heading" { "Completed issues" }
+                    span { (data.done.len()) }
+                }
+                div.table-wrap.cycle-table { table.data-table {
                     thead { tr { th scope="col" { "Issue" } th scope="col" { "Work type" } th scope="col" { "First start (UTC)" } th scope="col" { "Latest Done (UTC)" } th scope="col" { "Days" } } }
                     tbody {
                         @for row in data.done.iter().skip((page-1)*PAGE_SIZE).take(PAGE_SIZE) {
-                            tr { td { (source(row.issue)) } td { (row.issue.kind) } td { (timestamp(row.start)) } td { (timestamp(row.finish)) } td { (display_days(row.days)) } }
+                            tr { td class="cycle-source" { (source(row.issue)) }
+                                (timing_cell(&row.issue.kind, &row.issue.key, Some(row.days), ("Started", row.start), ("Done", Some(row.finish))))
+                                td class="cycle-date" data-label="Started" { (timestamp(row.start)) }
+                                td class="cycle-date" data-label="Done" { (timestamp(row.finish)) }
+                                td class="cycle-duration" { (display_days(row.days)) }
+                            }
                         }
                     }
                 } }
@@ -707,18 +849,22 @@ fn sources(
             }
         }
         section.content-section id="open-age" aria-labelledby="open-heading" {
-            h2 id="open-heading" { "Open issue age" }
+            div.section-head.cycle-source-head { h2 id="open-heading" { "Open issue age" }
+                span { (data.open.len()) } }
             @if data.open.is_empty() { p.muted { "No open issues in this selection." } }
             @else {
-                p.muted { (data.open.len()) " open · Age since first In progress, including reopened work." }
-                div.table-wrap { table.data-table {
+                p.muted { "Time since first In progress, including reopened work." }
+                div.table-wrap.cycle-table { table.data-table {
                     thead { tr { th scope="col" { "Issue" } th scope="col" { "Status" } th scope="col" { "Created (UTC)" } th scope="col" { "First start (UTC)" } th scope="col" { "Days since start" } } }
                     tbody {
                         @for issue in data.open.iter().skip((open_page-1)*PAGE_SIZE).take(PAGE_SIZE) {
+                            @let age = days_between(issue.first_start, now);
                             tr {
-                                td { (source(issue)) } td { (status_label(&issue.status)) } td { (timestamp(issue.created_at)) }
-                                td { @if let Some(start)=issue.first_start { (timestamp(start)) } @else { "—" } }
-                                td { @if let Some(age)=days_between(issue.first_start, now) { (display_days(age)) } @else { "—" } }
+                                td class="cycle-source" { (source(issue)) }
+                                (timing_cell(status_label(&issue.status), &issue.key, age, ("Created", issue.created_at), ("Started", issue.first_start)))
+                                td class="cycle-date" data-label="Created" { (timestamp(issue.created_at)) }
+                                td class="cycle-date" data-label="Started" { @if let Some(start)=issue.first_start { (timestamp(start)) } @else { "—" } }
+                                td class="cycle-duration" { @if let Some(age)=age { (display_days(age)) } @else { "—" } }
                             }
                         }
                     }

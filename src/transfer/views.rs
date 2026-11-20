@@ -1,7 +1,7 @@
 use super::{Report, *};
-use crate::ui::{csrf, page};
+use crate::ui::{csrf, format_bytes, icon, page_in_project, section_page};
 use axum::{extract::Query, response::Html};
-use maud::html;
+use maud::{Markup, html};
 
 #[derive(Deserialize)]
 pub(super) struct Filter {
@@ -15,12 +15,11 @@ pub(super) async fn index(
     Query(filter): Query<Filter>,
 ) -> AppResult<Html<String>> {
     let projects = store::projects(&s.db, auth.user_id).await?;
-    if filter
-        .project
-        .is_some_and(|id| !projects.iter().any(|p| p.id == id))
-    {
+    let scoped_project = projects.iter().find(|p| Some(p.id) == filter.project);
+    if filter.project.is_some() && scoped_project.is_none() {
         return Err(AppError::NotFound);
     }
+    let archived_destination = scoped_project.filter(|p| p.archived);
     let used = store::storage_used(&s.db, auth.user_id).await?;
     let plan: String = sqlx::query_scalar("SELECT plan FROM users WHERE id=$1")
         .bind(auth.user_id)
@@ -45,35 +44,155 @@ pub(super) async fn index(
     };
     let images:Vec<(Uuid,String,String,bool)>=sqlx::query_as("SELECT b.id,p.name,b.path,p.archived FROM transfer_blobs b JOIN projects p ON p.id=b.project_id AND p.owner_id=b.owner_id WHERE b.owner_id=$1 AND b.trashed_at IS NULL AND ($2::uuid IS NULL OR b.project_id=$2) ORDER BY p.name,b.path,b.id LIMIT 51 OFFSET $3").bind(auth.user_id).bind(filter.project).bind((i64::from(page_number)-1)*50).fetch_all(&s.db).await?;
     let more_images = images.len() > 50;
-    Ok(page(
+    Ok(section_page(
         &auth,
         "Import and export",
         "transfer",
         html! {
-            header {h1 {"Import and export"} p class="muted" {"Move a project to another workspace or bring Markdown notes and Linear issues into this one."}}
-            @if let Some((id,finished))=preview {p {a href=(format!("/transfer/review/{id}")) {@if finished {"View last import"} @else {"Open current import preview"}}}}
-            section class="panel stack" {h2 {"Import into a project"}
-                @if projects.iter().any(|p|!p.archived) {
-                    form class="stack" method="post" action="/transfer/preview" enctype="multipart/form-data" {(csrf(&auth))
-                        label class="field" {"Destination project" select name="project" required { @for p in projects.iter().filter(|p|!p.archived) {option value=(p.id) selected[filter.project==Some(p.id)] {(p.name)}}}}
-                        label class="field" {"Import format" select name="format" {option value="vault" {"Markdown vault or Ratio export (.zip)"} option value="linear" {"One Linear project (.csv)"}}}
-                        label class="field" {"Folder inside ZIP (optional)" input type="text" name="folder" placeholder="e.g. My Vault/Projects" maxlength="1024";}
-                        label class="field" {"File" input type="file" name="file" accept=".zip,.csv" required;}
-                        p class="muted" {"ZIP files can contain up to 2,000 entries and 64 MiB of expanded data. Supported images are PNG, JPEG, GIF and WebP, up to " (limits.image_bytes/1_000_000) " MB per image. Linear CSV accepts up to 2,000 rows and 8 MiB. The preview lists changes and unresolved references before you import."}
-                        p class="muted" {(format!("{:.1} MB used · {:.1} MB available",used as f64/1_000_000.0,(limits.storage_bytes-used).max(0) as f64/1_000_000.0))}
-                        div {button type="submit" {"Preview import"}}
+            header.view-head {
+                h1 { "Import and export" }
+                @if let Some((id, finished)) = preview {
+                    a.action-quiet href=(format!("/transfer/review/{id}")) {
+                        @if finished { "View last import" } @else { "Open current import preview" }
+                        (icon("arrow"))
                     }
-                } @else {p {"Create or restore a project to import files. " a href="/projects" {"Open projects"}}}
+                }
             }
-            section class="panel stack" {h2 {"Export a project"} p class="muted" {"Download Markdown, images, a versioned manifest and recorded native history in one ZIP. Archived projects are available here. Browser restore accepts 64 MiB compressed and expanded, 2,000 entries, an 8 MiB manifest and 16 MiB or 25,000 rows of history. Larger exports remain readable in Markdown tools. For full service recovery, the operator restores the PostgreSQL backup, including image bytes and history."}
-                @if projects.is_empty() {p {"Your projects will appear here."}} @else {ul class="issue-list" {@for p in &projects {li class="row" {span {(p.name) @if p.archived {" · Archived"}} a class="button secondary" download href=(format!("/transfer/export/{}",p.id)) aria-label=(format!("Download {} ZIP",p.name)) {"Download ZIP"}}}}}
+            div.transfer-workspace {
+                section.content-section.transfer-import aria-labelledby="import-title" {
+                    div.section-head { h2 id="import-title" { "Import into a project" } }
+                    @if projects.iter().any(|p| !p.archived) {
+                        div.transfer-columns {
+                            form.transfer-form.form-stack method="post" action="/transfer/preview" enctype="multipart/form-data" {
+                                (csrf(&auth))
+                                div.transfer-pair {
+                                    label.field { "Destination project"
+                                        select name="project" required aria-describedby=[archived_destination.map(|_| "archived-import-hint")] {
+                                            @if archived_destination.is_some() {
+                                                option value="" selected disabled { "Choose an active project" }
+                                            }
+                                            @for p in projects.iter().filter(|p| !p.archived) {
+                                                option value=(p.id) selected[filter.project == Some(p.id)] { (p.name) }
+                                            }
+                                        }
+                                    }
+                                    label.field { "Import format"
+                                        select name="format" {
+                                            option value="vault" { "Markdown or Ratio ZIP" }
+                                            option value="linear" { "Linear CSV" }
+                                        }
+                                    }
+                                }
+                                @if let Some(project) = archived_destination {
+                                    p.transfer-hint id="archived-import-hint" { (project.name) " is archived. Select an active destination for this import." }
+                                }
+                                label.field {
+                                    "Source file"
+                                    input type="file" name="file" accept=".zip,.csv" required aria-describedby="import-file-hint";
+                                }
+                                p.transfer-hint id="import-file-hint" { "ZIP up to 64 MiB or CSV up to 8 MiB." }
+                                details.transfer-disclosure {
+                                    summary { "Import a folder inside a ZIP" }
+                                    label.field { "Folder path"
+                                        input type="text" name="folder" maxlength="1024" aria-describedby="import-folder-hint" placeholder="My Vault/Projects";
+                                    }
+                                    p.transfer-hint id="import-folder-hint" { "Leave empty for a full archive or a CSV." }
+                                }
+                                div.transfer-submit {
+                                    button.action-primary type="submit" { "Preview import" (icon("arrow")) }
+                                    span { "Review changes before importing." }
+                                }
+                            }
+                            aside.transfer-reference aria-labelledby="file-limits" {
+                                h3 id="file-limits" { "File requirements" }
+                                dl {
+                                    div { dt { "Markdown or Ratio ZIP" }
+                                        dd { "Up to 2,000 entries and 64 MiB, compressed and expanded. PNG, JPEG, GIF and WebP images can each use up to " (limits.image_bytes / 1_000_000) " MB." }
+                                    }
+                                    div { dt { "Linear CSV" }
+                                        dd { "Up to 2,000 issues and 8 MiB. Include a Title column and an ID or Identifier column." }
+                                    }
+                                }
+                                p.transfer-capacity {
+                                    strong { (format_bytes((limits.storage_bytes - used).max(0))) }
+                                    " available in this workspace"
+                                    span { (format_bytes(used)) " used" }
+                                }
+                            }
+                        }
+                    } @else {
+                        div.empty-state { p { "Create or restore a project to import files." }
+                            a.action-secondary href="/projects" { "Open projects" }
+                        }
+                    }
+                }
+                section.content-section.transfer-export aria-labelledby="export-title" {
+                    div.section-head { h2 id="export-title" { "Export a project" } }
+                    p.transfer-intro { "Download a ZIP with Markdown, images, the project manifest and recorded native history." }
+                    @if projects.is_empty() {
+                        p.status-note { "No projects to export." }
+                    } @else {
+                        ul.record-list.transfer-records {
+                            @for p in &projects {
+                                li.record-row {
+                                    div.transfer-project {
+                                        span.transfer-key { (p.key) }
+                                        span { (p.name) }
+                                        @if p.archived { small { "Archived" } }
+                                    }
+                                    a.action-secondary download href=(format!("/transfer/export/{}", p.id)) aria-label=(format!("Download ZIP for {}", p.name)) {
+                                        (icon("down")) "Download ZIP"
+                                    }
+                                }
+                            }
+                        }
+                        details.transfer-disclosure {
+                            summary { "Restore limits and backups" }
+                            p { "Browser restore accepts 64 MiB compressed and expanded, up to 2,000 entries, an 8 MiB manifest, and history of up to 16 MiB and 25,000 rows. Larger exports can still be opened in Markdown tools." }
+                            p { "For full service recovery, the operator restores the PostgreSQL backup, including image bytes and history." }
+                        }
+                    }
+                }
+                section.content-section.transfer-images id="images" aria-labelledby="images-title" {
+                    div.section-head {
+                        h2 id="images-title" { "Imported images" }
+                        a.action-quiet href=(super::trash::list_url(filter.project, 1)) { "Image trash" (icon("arrow")) }
+                    }
+                    @if let Some(project) = scoped_project {
+                        p.transfer-intro { "Images in " (project.name) }
+                    }
+                    @if images.is_empty() {
+                        p.transfer-intro {
+                            @if page_number > 1 { "No images on this page." } @else { "No imported images." }
+                        }
+                    } @else {
+                        ul.record-list.transfer-records {
+                            @for (id, project, path, archived) in images.into_iter().take(50) {
+                                li.record-row {
+                                    div.transfer-image-name {
+                                        a href=(format!("/transfer/assets/{id}")) { (path) }
+                                        small { (project) }
+                                    }
+                                    @if !archived {
+                                        form method="post" action=(format!("/transfer/assets/{id}/trash")) {
+                                            (csrf(&auth))
+                                            button.action-quiet type="submit" aria-label=(format!("Move to trash — {path}")) { "Move to trash" }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    @if page_number > 1 || more_images {
+                        nav.toolbar aria-label="Image pages" {
+                            @if page_number > 1 { a href=(image_page(page_number - 1)) { "Previous images" } }
+                            @if more_images { a href=(image_page(page_number.saturating_add(1))) { "More images" } }
+                        }
+                    }
+                }
             }
-            p {a href=(super::trash::list_url(filter.project,1)) {"Image trash"}}
-            @if !images.is_empty() || page_number>1 {section id="images" class="panel stack" {h2 {"Imported images"}
-                ul class="issue-list" {@for (id,project,path,archived) in images.into_iter().take(50) {li class="row" {span {a href=(format!("/transfer/assets/{id}")) {(path)} " · " (project)} @if !archived {form method="post" action=(format!("/transfer/assets/{id}/trash")) {(csrf(&auth)) button class="secondary" type="submit" aria-label=(format!("Move {path} to trash")) {"Move to trash"}}}}}}
-                nav class="toolbar" aria-label="Image pages" {@if page_number>1 {a href=(image_page(page_number-1)) {"Previous images"}} @if more_images {a href=(image_page(page_number.saturating_add(1))) {"More images"}}}
-            }}
         },
+        filter.project,
     ))
 }
 
@@ -102,24 +221,123 @@ pub(super) async fn review(
         "Import preview"
     };
     let active = !done && !review.stale && review.expires_at > Utc::now();
-    Ok(page(
+    let (unchanged, changes): (Vec<_>, Vec<_>) =
+        r.rows.iter().partition(|(_, action)| action == "Unchanged");
+    Ok(page_in_project(
         &auth,
         title,
         "transfer",
         html! {
-            header {a href="/transfer" {"Import and export"} h1 {(title)} p {(review.name) " · " @if review.format=="linear" {"Linear CSV"} @else {"Markdown ZIP"}}}
-            section class="panel stack" {
-                p {(format!("{} new · {} updated · {} unchanged · {} conflicts",r.created,r.updated,r.unchanged,r.conflicts))}
-                @if !r.fields.is_empty(){p {(r.fields.join(" · "))}}
-                p class="muted" {(format!("Storage change: {:+} bytes",r.growth))}
-                @if !r.warnings.is_empty(){details open {summary {(format!("{} import notices",r.warnings.len()))} ul {@for warning in &r.warnings {li {(warning)}}}}}
-                @if active {form class="stack" method="post" action=(format!("/transfer/commit/{id}")) {(csrf(&auth))
-                    @if r.conflicts>0 {fieldset {legend {"When both copies changed"} label {input type="radio" name="decision" value="local" checked; " Keep the local value for each conflict"} label {input type="radio" name="decision" value="incoming"; " Use the incoming value for each conflict"}}} @else {input type="hidden" name="decision" value="local";}
-                    p class="muted" {"This preview expires at " (review.expires_at.format("%H:%M UTC")) "."}
-                    div {button type="submit" {"Import changes"}}
-                }} @else if done {a href=(format!("/projects/{}",review.project_id)) {"Open project"}} @else {p class="notice" {"The project changed or this preview expired. " a href=(format!("/transfer?project={}",review.project_id)) {"Create a fresh preview"}}}
+            header.view-head {
+                div {
+                    a.transfer-back href=(format!("/transfer?project={}", review.project_id)) { "Import and export" }
+                    h1 { (title) }
+                }
+                @if done {
+                    a.action-primary href=(format!("/projects/{}", review.project_id)) { "Open project" (icon("arrow")) }
+                }
             }
-            @if !r.rows.is_empty(){section class="panel stack" {h2 {"Changes"} table {thead {tr {th scope="col" {"File or record"} th scope="col" {"Action"}}} tbody {@for (name,action) in r.rows {tr {th scope="row" {(name)} td {(action)}}}}}}}
+            div.transfer-workspace {
+                section.content-section.transfer-review aria-labelledby="review-title" {
+                    div.section-head {
+                        h2 id="review-title" { (review.name) }
+                        span.transfer-format { @if review.format == "linear" { "Linear CSV" } @else { "Markdown ZIP" } }
+                    }
+                    div.transfer-report-grid {
+                        div {
+                            dl.transfer-totals {
+                                @for (label, count) in [("New", r.created), ("Updated", r.updated), ("Unchanged", r.unchanged), ("Conflicts", r.conflicts)] {
+                                    div { dt { (label) } dd { (count) } }
+                                }
+                            }
+                            p.transfer-storage { "Storage change " span { (format!("{:+} bytes", r.growth)) }
+                                @if !done && r.conflicts > 0 { " with local values kept" }
+                            }
+                        }
+                        @if !r.fields.is_empty() || !r.warnings.is_empty() {
+                            div.transfer-report-evidence {
+                                @if !r.fields.is_empty() {
+                                    details.transfer-disclosure {
+                                        summary { @if review.format == "linear" { "Recognized CSV columns" } @else { "Supported archive data" } }
+                                        @if review.format == "linear" {
+                                            p { (r.fields.join(", ")) }
+                                        } @else {
+                                            ul { @for field in &r.fields { li { (field) } } }
+                                        }
+                                    }
+                                }
+                                @if !r.warnings.is_empty() {
+                                    details.transfer-disclosure.transfer-notices open[r.warnings.len() <= 4] {
+                                        summary { (r.warnings.len()) @if r.warnings.len() == 1 { " import notice" } @else { " import notices" } }
+                                        ul { @for warning in &r.warnings { li { (warning) } } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                @if !active && !done {
+                    div.status-note {
+                        p { @if review.stale { "This project changed after the preview." } @else { "This preview expired." } }
+                        a.action-secondary href=(format!("/transfer?project={}", review.project_id)) { "Create a fresh preview" }
+                    }
+                }
+                @if !r.rows.is_empty() {
+                    section.content-section.transfer-changes aria-labelledby="changes-title" {
+                        div.section-head {
+                            h2 id="changes-title" { "Changes" }
+                            @if active && changes.len() > 10 { a.action-quiet href="#import-decision" { "Go to import decision" (icon("down")) } }
+                        }
+                        @if !changes.is_empty() {
+                            (change_table(&changes, "Changes to files and records"))
+                        }
+                        @if !unchanged.is_empty() {
+                            details.transfer-disclosure {
+                                summary { "Unchanged files and records (" (r.unchanged) ")" }
+                                (change_table(&unchanged, "Unchanged files and records"))
+                            }
+                        }
+                    }
+                }
+                @if active {
+                    form.content-section.transfer-decision.form-stack id="import-decision" method="post" action=(format!("/transfer/commit/{id}")) {
+                        (csrf(&auth))
+                        @if r.conflicts > 0 {
+                            fieldset.transfer-conflicts aria-describedby="transfer-choice-hint" {
+                                legend { "Conflicting changes" }
+                                p id="transfer-choice-hint" {
+                                    "One choice applies to all conflicts in this import."
+                                    @if review.format != "linear" { " Sealed releases and recorded events can only be kept locally or restored into a new project." }
+                                }
+                                label { input type="radio" name="decision" value="local" checked; "Keep local values" }
+                                label { input type="radio" name="decision" value="incoming"; "Use incoming values" }
+                            }
+                        } @else {
+                            input type="hidden" name="decision" value="local";
+                        }
+                        div.transfer-submit {
+                            button.action-primary type="submit" { "Import changes" (icon("arrow")) }
+                            a.action-quiet href=(format!("/transfer?project={}", review.project_id)) { "Back to imports" }
+                            span { "Preview expires " time datetime=(review.expires_at.to_rfc3339()) { (review.expires_at.format("%d %b, %H:%M UTC")) } }
+                        }
+                    }
+                }
+            }
         },
+        Some(review.project_id),
     ))
+}
+
+fn change_table(rows: &[&(String, String)], label: &str) -> Markup {
+    html! {
+        div.transfer-change-table tabindex=[(rows.len() > 10).then_some("0")] role=[(rows.len() > 10).then_some("region")] aria-label=[(rows.len() > 10).then_some(label)] {
+            table {
+                caption.sr-only { (label) }
+                thead { tr { th scope="col" { "File or record" } th scope="col" { "Change" } } }
+                tbody { @for (name, action) in rows {
+                    tr { th scope="row" { (name) } td { (action) } }
+                } }
+            }
+        }
+    }
 }

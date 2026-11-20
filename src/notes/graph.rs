@@ -14,6 +14,7 @@ struct Node {
     entity: Entity,
     id: Uuid,
     title: String,
+    path: Option<String>,
 }
 struct Source {
     excerpt: String,
@@ -114,33 +115,56 @@ fn glyph(entity: Entity, x: i32, y: i32) -> Markup {
 }
 
 fn compact_diagram(focus: &Node, edges: &[Edge]) -> Markup {
-    let rows = edges.len().div_ceil(2) as i32;
-    let height = 50 + 60 * rows;
+    // Keep type at its native size at every width. Percentage coordinates adapt the
+    // two columns while HTML labels inside the SVG can wrap at word boundaries.
+    let row_height = 66;
+    let height = row_height * edges.len() as i32 + 16;
     let middle = height / 2;
+    let first = 8 + row_height / 2;
+    let last = height - first;
     html! {
-        svg class="relationship-graph" width="100%" viewBox=(format!("0 0 600 {height}"))
+        svg.relationship-graph.map-graph width="100%" height=(height)
             role="group" aria-label=(format!("Local graph of {}", focus.title)) {
             title { (focus.title) " and its direct relationships" }
-            @for (i, edge) in edges.iter().enumerate() {
-                @let left = i % 2 == 0;
-                @let x = if left { 200 } else { 400 };
-                @let y = 49 + (i as i32 / 2) * 60;
-                @let text_x = if left { x - 15 } else { x + 15 };
-                @let align = if left { "end" } else { "start" };
-                path d=(format!("M{} {middle} C{} {middle}, {} {y}, {} {y}", if left { 286 } else { 314 }, if left { 249 } else { 351 }, if left { 249 } else { 351 }, if left { x+10 } else { x-10 }))
-                    fill="none" stroke="currentColor" stroke-opacity=".4" stroke-width="1.5" {}
-                a data-relationship-edge="true" href=(&edge.href) aria-label=(format!("{} · {} · {}", edge.relation, edge.peer.entity.name(), edge.peer.title)) {
-                    title { (&edge.relation) " · " (&edge.peer.title) @if let Some(section)=&edge.section { " § " (section) } }
-                    rect x=(if left { 0 } else { 384 }) y=(y-22) width="216" height="44" fill="transparent" {}
-                    g data-graph-node="true" { (glyph(edge.peer.entity, x, y)) }
-                    text x=(text_x) y=(y-4) text-anchor=(align) font-size="11" fill="currentColor" opacity=".75" { (&edge.relation) }
-                    text x=(text_x) y=(y+13) text-anchor=(align) font-size="14" fill="currentColor" { @if let Some(section)=&edge.section { "§ " (shortened(section,16)) } @else { (shortened(&edge.peer.title, 19)) } }
+            defs {
+                @for entity in [Entity::Note, Entity::Issue, Entity::Release] {
+                    symbol id=(format!("graph-symbol-{}", entity.route())) viewBox="-10 -10 20 20" {
+                        (glyph(entity, 0, 0))
+                    }
                 }
             }
-            circle cx="300" cy=(middle) r="14" fill="none" stroke="currentColor" stroke-opacity=".6" {}
-            g data-graph-node="true" { (glyph(focus.entity, 300, middle)) }
-            text x="300" y=(middle-22) text-anchor="middle" font-size="12" font-weight="600" fill="currentColor" { (shortened(&focus.title, 16)) }
-            text x="300" y=(middle+30) text-anchor="middle" font-size="11" fill="currentColor" { (focus.entity.name()) }
+            line.map-wire x1="29%" y1=(middle) x2="37%" y2=(middle) {}
+            line.map-wire x1="37%" y1=(first) x2="37%" y2=(last) {}
+            g data-graph-node="true" {
+                circle cx="29%" cy=(middle) r="3.5" fill="currentColor" {}
+                foreignObject x="0" y=(middle-33) width="29%" height="66" {
+                    div.map-focus xmlns="http://www.w3.org/1999/xhtml" {
+                        small { (focus.entity.name()) }
+                        span { (&focus.title) }
+                    }
+                }
+            }
+            @for (i, edge) in edges.iter().enumerate() {
+                @let top = 8 + i as i32 * row_height;
+                @let y = top + row_height/2;
+                line.map-wire x1="37%" y1=(y) x2="43%" y2=(y) {}
+                a data-relationship-edge="true" href=(&edge.href) aria-label=(format!("{} · {} · {}{}", edge.relation, edge.peer.entity.name(), edge.peer.title, edge.section.as_ref().map(|s|format!(" § {s}")).unwrap_or_default())) {
+                    title { (&edge.relation) " · " (&edge.peer.title) @if let Some(section)=&edge.section { " § " (section) } }
+                    rect class="map-hit" x="41%" y=(top+3) width="59%" height=(row_height-6) rx="3" fill="transparent" {}
+                    g data-graph-node="true" {
+                        use x="43%" y=(y-10) width="20" height="20" href=(format!("#graph-symbol-{}",edge.peer.entity.route())) {}
+                    }
+                    foreignObject x="43%" y=(top+2) width="57%" height=(row_height-4) {
+                        div.map-peer xmlns="http://www.w3.org/1999/xhtml" {
+                            small { (&edge.relation) }
+                            span {
+                                (&edge.peer.title)
+                                @if let Some(section)=&edge.section { " § " (section) }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -167,7 +191,7 @@ fn lane_diagram(focus: &Node, edges: &[Edge]) -> Markup {
     let height = y + 8;
     let last_edge_y = y - 38;
     html! {
-        svg class="relationship-graph" width="100%" viewBox=(format!("0 0 680 {height}")) role="group" aria-label=(format!("Local graph of {}",focus.title)) {
+        svg class="relationship-graph lane-graph" width="680" height=(height) viewBox=(format!("0 0 680 {height}")) role="group" aria-label=(format!("Local graph of {}",focus.title)) {
             title { (focus.title) " and its direct relationships" }
             path d=(format!("M25 35 V{last_edge_y}")) fill="none" stroke="currentColor" stroke-opacity=".45" {}
             g data-graph-node="true" {
@@ -214,56 +238,79 @@ fn render_panel(focus: &Node, edges: &[Edge], stats: &GraphStats, view: GraphVie
     let end = stats.start + edges.len() as i64;
     let other_edges = stats.total_edges - edges.len() as i64;
     html! {
-        section id="relationships" class="panel relationships" aria-labelledby="relationships-heading" {
-            h2 id="relationships-heading" { "Relationships" }
-            @if let GraphView::Standalone { nodes, .. } = view {
-                form method="get" action=(focus.graph_url()) {
-                    label { "Maximum nodes per page, including this item "
-                        input type="number" name="nodes" min="2" max=(MAX_NODES) value=(nodes) required;
-                    }
-                    button type="submit" { "Update graph" }
+        section.relationships.relationships-inline[!expanded].relationships-full[expanded] id="relationships"
+            aria-labelledby="relationships-heading" {
+            div.relationships-head {
+                h2 id="relationships-heading" {
+                    @if expanded { "Relationship graph" } @else { "Relationships" }
+                    @if !expanded && !edges.is_empty() { span.relationship-count { (stats.total_edges) } }
+                }
+                @if !expanded && !edges.is_empty() {
+                    a.relationship-action href=(focus.graph_url()) { "Open full graph" }
                 }
             }
             @if edges.is_empty() {
-                p { "No linked items yet." }
+                p.relationship-summary { "No linked items yet." }
             } @else {
-                @if expanded {
-                    p { (displayed_nodes) " of " (stats.total_nodes) " nodes · " (stats.start+1) "–" (end) " of " (stats.total_edges) " relationships" }
-                    @if other_edges > 0 {
-                        p { (other_edges) " relationships outside this page." }
+                @if let GraphView::Standalone { nodes, .. } = view {
+                    div.graph-tools {
+                        div {
+                            p.relationship-summary { (displayed_nodes) " of " (stats.total_nodes) " nodes · " (stats.start+1) "–" (end) " of " (stats.total_edges) " relationships" }
+                            @if other_edges > 0 { p.relationship-summary { (other_edges) " relationships outside this page." } }
+                        }
+                        div.graph-commands {
+                            a.relationship-jump href="#relationship-list" { "Jump to list" }
+                            details.graph-options {
+                                summary { "Graph options" }
+                                form method="get" action=(focus.graph_url()) {
+                                    label.field for="graph-size" { "Nodes per page" }
+                                    div.graph-options-controls {
+                                        input id="graph-size" type="number" name="nodes" min="2" max=(MAX_NODES) value=(nodes) required aria-describedby="graph-size-help";
+                                        button.action-secondary type="submit" { "Update graph" }
+                                    }
+                                    small id="graph-size-help" { "Includes the starting item. Choose 2–" (MAX_NODES) "." }
+                                }
+                            }
+                        }
                     }
-                    a href="#relationship-list" { "Jump to relationship list" }
-                } @else {
-                    p { "1–" (end) " of " (stats.total_edges) " relationships · "
-                        a href=(focus.graph_url()) { "Open full graph" }
-                    }
+                } @else if stats.total_edges > end {
+                    p.relationship-summary { "1–" (end) " of " (stats.total_edges) " relationships" }
                 }
-                details open[expanded] {
-                    summary { "Local graph" }
+                details.graph-drawing open[expanded] {
+                    summary { @if expanded { "Diagram" } @else { "Graph preview" } }
                     @if show_lanes {
-                        div class="graph-viewport" tabindex="0" role="region" aria-label="Scrollable relationship graph" { (lane_diagram(focus,edges)) }
+                        div.graph-viewport tabindex="0" role="region" aria-label="Scrollable relationship graph" { (lane_diagram(focus,edges)) }
                     } @else { (compact_diagram(focus,edges)) }
                 }
-                ol id="relationship-list" class="relationship-list" start=(stats.start + 1) {
+                @if expanded { h3.relationship-list-title { "Linked items" } }
+                ol.relationship-list id="relationship-list" tabindex="-1" role="list" start=(stats.start + 1) {
                     @for edge in edges {
                         li {
-                            span class="muted" { (&edge.relation) " · " (edge.peer.entity.name()) " " }
-                            a href=(&edge.href) { (&edge.peer.title) @if let Some(section)=&edge.section { " § " (section) } }
-                            @if edge.peer.entity != Entity::Release {
-                                " " a href=(view.url(&edge.peer,1)) aria-label=(format!("Explore relationships for {}", edge.peer.title)) { "Explore" }
+                            div.relationship-record {
+                                span.relationship-kind data-kind=(edge.peer.entity.route()) { span.sr-only { (edge.peer.entity.name()) } }
+                                div.relationship-info {
+                                    span.relationship-type { (&edge.relation) }
+                                    a.relationship-target href=(&edge.href) {
+                                        span { (&edge.peer.title) @if let Some(section)=&edge.section { " § " (section) } }
+                                        @if let Some(path) = &edge.peer.path { small.relationship-path { (path) } }
+                                    }
+                                }
+                                @if edge.peer.entity != Entity::Release {
+                                    a.relationship-action.relationship-explore href=(view.url(&edge.peer,1)) aria-label=(format!("Explore relationships for {}", edge.peer.title)) title=(format!("Explore relationships for {}", edge.peer.title)) { "Graph" }
+                                }
                             }
                             @if let Some(source) = &edge.source {
-                                @if !source.found { p { "The source paragraph has changed. Saved excerpt from revision " (source.revision) "." } }
+                                @if !source.found { p.relationship-summary { "The source paragraph has changed. Saved excerpt from revision " (source.revision) "." } }
                                 blockquote { (&source.excerpt) }
                             }
                         }
                     }
                 }
                 @if expanded && stats.pages > 1 {
-                    nav aria-label="Relationship pages" {
-                        p { "Page " (page) " of " (stats.pages) }
+                    nav.graph-pages aria-label="Relationship pages" {
+                        span { "Page " (page) " of " (stats.pages) }
                         @if page > 1 { a rel="prev" href=(view.url(focus,page-1)) { "Previous relationships" } }
-                        @if i64::from(page)<stats.pages { " " a rel="next" href=(view.url(focus,page+1)) { "Next relationships" } }
+                        @if i64::from(page)<stats.pages { a rel="next" href=(view.url(focus,page+1)) { "Next relationships" } }
                     }
                 }
             }
@@ -323,17 +370,22 @@ async fn full_graph(
     let view = query.view()?;
     let focus = load_focus(&state.db, auth.user_id, entity, id).await?;
     let panel = neighborhood(&state.db, auth.user_id, &focus.0, focus.1, view).await?;
-    Ok(ui::page(
+    Ok(ui::page_in_project(
         &auth,
         "Local graph",
         entity.route(),
         html! {
-            header {
-                a href=(focus.0.url()) { "Back to " (entity.name().to_lowercase()) }
-                h1 { (&focus.0.title) }
+            div.graph-page {
+                header.view-head {
+                    div {
+                        a.graph-back href=(focus.0.url()) { (ui::icon("arrow")) "Back to " (entity.name().to_lowercase()) }
+                        h1 { (&focus.0.title) }
+                    }
+                }
+                (panel)
             }
-            (panel)
         },
+        Some(focus.1),
     ))
 }
 
@@ -364,7 +416,15 @@ async fn load_focus(db: &PgPool, owner: Uuid, entity: Entity, id: Uuid) -> AppRe
         .fetch_optional(db)
         .await?
         .ok_or(AppError::NotFound)?;
-    Ok((Node { entity, id, title }, project))
+    Ok((
+        Node {
+            entity,
+            id,
+            title,
+            path: None,
+        },
+        project,
+    ))
 }
 
 // The first branch in each query names the returned columns. A UNION collapses
@@ -412,6 +472,8 @@ struct RelationshipRow {
     kind: String,
     peer: Uuid,
     title: String,
+    note_title: Option<String>,
+    note_path: Option<String>,
     fragment: Option<String>,
     written_target: String,
     source_anchor: Option<String>,
@@ -435,7 +497,8 @@ impl RelationshipRow {
         let peer = Node {
             entity,
             id: self.peer,
-            title: self.title,
+            title: self.note_title.unwrap_or(self.title),
+            path: self.note_path,
         };
         let mut href = peer.url();
         let mut source = None;
@@ -527,7 +590,8 @@ async fn neighborhood(
         r#"
         WITH edges AS ({edges_sql}),
         visible AS (
-            SELECT e.*, COALESCE(n.title || ' · ' || n.path, p.key || '-' || i.number::text || ' · ' || i.title, r.name) AS title
+            SELECT e.*, COALESCE(n.title || ' · ' || n.path, p.key || '-' || i.number::text || ' · ' || i.title, r.name) AS title,
+                   n.title AS note_title, n.path AS note_path
             FROM edges e
             LEFT JOIN notes n ON e.kind='notes' AND n.id=e.peer AND n.owner_id=$1 AND n.project_id=$3
             LEFT JOIN issues i ON e.kind='issues' AND i.id=e.peer AND i.owner_id=$1 AND i.project_id=$3
@@ -584,6 +648,7 @@ mod tests {
             entity,
             id: Uuid::from_u128(id),
             title: title.to_owned(),
+            path: None,
         }
     }
 

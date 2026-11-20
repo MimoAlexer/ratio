@@ -304,7 +304,7 @@ fn interval(first: NaiveDate, median: NaiveDate, upper: NaiveDate) -> Markup {
     let p85 = position(upper);
     let x50 = format!("{p50:.2}%");
     let x85 = format!("{p85:.2}%");
-    html! { figure.chart {
+    html! { figure.chart.release-readiness-interval {
         svg width="100%" height="103" role="img" aria-label=(format!("Projected readiness: median week of {median}, 85th-percentile week of {upper}. The projection starts {first}.")) {
             defs { pattern id="readiness-hatch" width="6" height="6" patternUnits="userSpaceOnUse" {
                 path d="M-1 1 1 -1 M0 6 6 0 M5 7 7 5" stroke="currentColor" fill="none" opacity=".35" {}
@@ -351,7 +351,7 @@ pub(super) async fn forecast(
     }
     if !ctx.paid {
         return Ok(
-            html! { section.panel { h2 { "Release readiness" } p { "Fixed-scope forecasts and pace scenarios are available on " a href="/billing" { "Plus and Max" } "." } } },
+            html! { section.content-section.release-forecast id="forecast" { h2 { "Release readiness" } p { "Fixed-scope forecasts and pace scenarios are available on " a href="/billing" { "Plus and Max" } "." } } },
         );
     }
     if pace == Some(0) {
@@ -361,10 +361,12 @@ pub(super) async fn forecast(
     }
     let scope = scope(&mut tx, owner, release).await?;
     if scope.total == 0 || scope.total == scope.done {
-        return Ok(html! { section.panel { h2 { "Release readiness" } p {
-            @if scope.total == 0 { "Add a non-canceled issue to forecast this draft." }
-            @else { "All " (scope.total) " issues in scope are already Done." }
-        } } });
+        return Ok(
+            html! { section.content-section.release-forecast id="forecast" { h2 { "Release readiness" } p {
+                @if scope.total == 0 { "Add a non-canceled issue to forecast this draft." }
+                @else { "All " (scope.total) " issues in scope are already Done." }
+            } } },
+        );
     }
     let sample = sample(&mut tx, owner, &ctx, &scope).await?;
     let first = sample.end + Duration::weeks(1);
@@ -383,53 +385,62 @@ pub(super) async fn forecast(
     let reason = sample.unavailable();
     let modeled = (model && reason.is_none()).then(|| percentiles(&sample, &scope, &work));
     let url = format!("/releases/{release}");
-    Ok(html! { section.panel id="forecast" {
-        h2 { "Release readiness" }
-        p { strong { (scope.total-scope.done) (if scope.total-scope.done==1 { " issue remaining" } else { " issues remaining" }) } " · " (scope.done) " of " (scope.total) " Done" }
-        p.muted { "Estimates hold today’s scope fixed and start with the next full week, " (first) " (" (&ctx.timezone) "). Horizon: " (HORIZON) " calendar weeks." }
-        @if !off.is_empty() { details { summary { (off.len()) " planned weeks off" } ul { @for date in &off { li { "Week of " (date) } } } } }
-        h3 { "Historical forecast" }
-        p { "Sample uses up to " (SAMPLE_WEEKS) " complete weeks of project issues with these current work types: " (scope.kinds.join(", ")) ". Done entries add one. Returning from Done to open work subtracts one. Assignments and cancellations leave weekly progress unchanged." }
-        p.muted { "Project tracking began " (ctx.created.format("%Y-%m-%d %H:%M")) "."
-            @if let Some(date)=sample.coverage.first_observation { " First recorded cohort event: " (date.format("%Y-%m-%d %H:%M")) "." }
-            @if let Some(date)=sample.coverage.baseline { " Latest history baseline: " (date.format("%Y-%m-%d %H:%M")) "." }
-            " Current partial week beginning " (sample.end) " excluded."
-        }
-        @if sample.coverage.incomplete == 0 && !sample.weeks.is_empty() {
-            p { (sample.weeks.len()) " complete weeks · " (sample.start) " through " (sample.end-Duration::days(1))
-                " · " (sample.positive()) " positive · average " (format!("{:.2}", sample.net() as f64/sample.weeks.len() as f64)) " net issues/week" }
+    Ok(
+        html! { section.content-section.release-forecast id="forecast" {
+            div.section-head { h2 { "Release readiness" } }
+            p { strong { (scope.total-scope.done) (if scope.total-scope.done==1 { " issue remaining" } else { " issues remaining" }) } " · " (scope.done) " of " (scope.total) " Done" }
+            p.release-meta { "Fixed scope · next full week " (first) " · " (HORIZON) "-week horizon · " (&ctx.timezone) }
+            @if !off.is_empty() { details { summary { (off.len()) " planned weeks off" } ul { @for date in &off { li { "Week of " (date) } } } } }
+            h3 { "Historical forecast" }
+            @if let Some(reason)=reason {
+                p.status-note { (reason) }
+            } @else if let Some([median,upper])=modeled {
+                (estimate("Median readiness",median))
+                (estimate("85th-percentile readiness",upper))
+                @if let (Some(median),Some(upper))=(median,upper) { (interval(first,median,upper)) }
+                a href=(format!("{url}#forecast")) { "Hide forecast" }
+            } @else {
+                form method="get" action=(format!("{url}#forecast")) {
+                    input type="hidden" name="model" value="true";
+                    button.secondary type="submit" { "Model fixed-scope readiness" }
+                }
+            }
             details {
-                summary { "Weekly counts and issue events" }
-                div.table-wrap { table { thead { tr { th scope="col" { "Week of" } th scope="col" { "Done entries" } th scope="col" { "Reopenings" } th scope="col" { "Net" } } }
-                    tbody { @for (day, week) in sample.weeks.iter().rev() { tr {
-                        th scope="row" { a href=(format!("{url}/forecast/weeks/{day}")) { (day) } }
-                        td { (week.entries) } td { (week.reopenings) } td { (week.net()) }
-                    } } }
-                } }
+                summary { "Forecast source and method" }
+                p { "Sample uses up to " (SAMPLE_WEEKS) " complete weeks of project issues with these current work types: " (scope.kinds.join(", ")) ". Done entries add one. Returning from Done to open work subtracts one. Assignments and cancellations leave weekly progress unchanged." }
+                p.muted { "Project tracking began " (ctx.created.format("%Y-%m-%d %H:%M")) "."
+                    @if let Some(date)=sample.coverage.first_observation { " First recorded cohort event: " (date.format("%Y-%m-%d %H:%M")) "." }
+                    @if let Some(date)=sample.coverage.baseline { " Latest history baseline: " (date.format("%Y-%m-%d %H:%M")) "." }
+                    " Current partial week beginning " (sample.end) " excluded."
+                }
+                @if modeled.is_some() {
+                    p.muted { (TRIALS) " trials resample whole observed weeks with replacement (seed " (SEED) "). Each trial stops the first time all scoped issues are Done. Publication is a separate action." }
+                }
+                @if sample.coverage.incomplete == 0 && !sample.weeks.is_empty() {
+                    p { (sample.weeks.len()) " complete weeks · " (sample.start) " through " (sample.end-Duration::days(1))
+                        " · " (sample.positive()) " positive · average " (format!("{:.2}", sample.net() as f64/sample.weeks.len() as f64)) " net issues/week" }
+                    div.table-wrap { table {
+                        caption { "Weekly counts and issue events" }
+                        thead { tr { th scope="col" { "Week of" } th scope="col" { "Done entries" } th scope="col" { "Reopenings" } th scope="col" { "Net" } } }
+                        tbody { @for (day, week) in sample.weeks.iter().rev() { tr {
+                            th scope="row" { a href=(format!("{url}/forecast/weeks/{day}")) { (day) } }
+                            td { (week.entries) } td { (week.reopenings) } td { (week.net()) }
+                        } } }
+                    } }
+                }
             }
-        }
-        @if let Some(reason)=reason { p.notice { (reason) } }
-        @else if let Some([median,upper])=modeled {
-            (estimate("Median readiness",median))
-            (estimate("85th-percentile readiness",upper))
-            @if let (Some(median),Some(upper))=(median,upper) { (interval(first,median,upper)) }
-            p.muted { (TRIALS) " trials resample whole observed weeks with replacement (seed " (SEED) "). Each trial stops the first time all scoped issues are Done. Publication is a separate action." }
-            a href=(format!("{url}#forecast")) { "Hide forecast" }
-        } @else {
-            form method="get" action=(format!("{url}#forecast")) {
-                input type="hidden" name="model" value="true";
-                button type="submit" { "Model fixed-scope readiness" }
+            details open[pace.is_some()] {
+                summary { "Manual pace scenario" }
+                form method="get" action=(format!("{url}#forecast")) class="release-publish-controls" {
+                    label { "Net issues per available week" input required type="number" name="pace" min="1" max=(u16::MAX) value=[pace]; }
+                    button.secondary type="submit" { "Run scenario" }
+                }
+                @if let Some(p)=pace {
+                    (estimate(&format!("Scenario at {p} net {} per available week", if p == 1 { "issue" } else { "issues" }), completion(&scope,&work,|| i64::from(p))))
+                }
             }
-        }
-        h3 { "Manual pace scenario" }
-        form method="get" action=(format!("{url}#forecast")) class="toolbar" {
-            label { "Net issues per available week" input required type="number" name="pace" min="1" max=(u16::MAX) value=[pace]; }
-            button type="submit" { "Run scenario" }
-        }
-        @if let Some(p)=pace {
-            (estimate(&format!("Scenario at {p} net {} per available week", if p == 1 { "issue" } else { "issues" }), completion(&scope,&work,|| i64::from(p))))
-        }
-    } })
+        } },
+    )
 }
 
 #[derive(Deserialize, Default)]
@@ -484,7 +495,7 @@ async fn events(
     rows.truncate(25);
     let base = format!("/releases/{release}/forecast/weeks/{week}");
     let counts = sample.weeks[&week];
-    Ok(ui::page(
+    Ok(ui::page_in_project(
         &auth,
         "Forecast source events",
         "releases",
@@ -507,6 +518,7 @@ async fn events(
                 @if more { a href=(format!("{base}?page={}",page.saturating_add(1))) { "Older events" } }
             }
         },
+        Some(ctx.project),
     ))
 }
 

@@ -53,13 +53,14 @@ fn public_page(title: &str, body: Markup) -> Html<String> {
                 meta name="referrer" content="strict-origin";
                 title { (title) " · Ratio" }
                 link rel="stylesheet" href="/assets/app.css";
+                link rel="stylesheet" href="/assets/support.css";
                 link rel="icon" type="image/svg+xml" href="/assets/mark.svg";
                 script defer src="/assets/workspace.js" {}
             }
             body.auth-page {
                 main.auth-shell {
                     div.auth-card {
-                        a.auth-brand href="/welcome" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Ratio" }
+                        div.auth-brandbar { a.auth-brand href="/welcome" aria-label="Ratio home" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Ratio" } }
                         h1 { (title) }
                         (body)
                     }
@@ -117,20 +118,20 @@ async fn login(
             script src="/assets/note-editor.js" data-clear-note-drafts=(owner) defer {}
         }
         @match query.result.as_deref().filter(|_|cleanup.is_some()){
-            Some("deleted")=>{p role="status" {"Your workspace was deleted."}}
-            Some("signed-out")=>{p role="status" {"You’re signed out."}}
+            Some("deleted")=>{p.status-note role="status" {"Your workspace was deleted."}}
+            Some("signed-out")=>{p.status-note role="status" {"You’re signed out."}}
             _=>{}
         }
-        p {"Use your email address to open or create a private workspace."}
-        form method="post" action="/login" {
+        p {"Your first sign-in creates a private workspace."}
+        form.auth-form method="post" action="/login" {
             input type="hidden" name="csrf" value=(nonce);
             input type="hidden" name="next" value=(next);
-            label.field { "Email address" input name="email" type="email" autocomplete="email" maxlength="254" value=[(query.demo == Some(true) && !state.config.production).then_some(crate::sample::DEMO_EMAIL)] required; }
-            button type="submit" {"Email me a sign-in link"}
+            label.field { "Email address" input name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254" value=[(query.demo == Some(true) && !state.config.production).then_some(crate::sample::DEMO_EMAIL)] required; }
+            button.action-primary type="submit" {"Email me a sign-in link"}
         }
-        p {a href="/recover" {"Recover your account"}}
-        @if is_desktop_client(&headers) {
-            p {a href="/desktop/start" {"Pair this desktop using your browser"}}
+        div.auth-links {
+            a href="/recover" {"Recover your account"}
+            @if is_desktop_client(&headers) { a href="/desktop/start" {"Pair this desktop using your browser"} }
         }
     }).into_response();
     if cleanup.is_some() {
@@ -217,8 +218,10 @@ async fn check_inbox(
         html! {
             p {"If a link can be sent to that address, it will arrive shortly. Sign-in links expire after 15 minutes."}
             @if let Some(raw)=preview {
-                p { "Local development email preview" }
-                p {a href=(format!("/login/confirm?token={raw}")) {"Open local sign-in link"}}
+                div.auth-preview {
+                    p { "Local development email preview" }
+                    a href=(format!("/login/confirm?token={raw}")) {"Open local sign-in link"}
+                }
             }
             a href="/login" {"Use another email address"}
         },
@@ -231,8 +234,8 @@ fn invalid_link() -> Response {
         public_page(
             "This link has expired",
             html! {
-                p {"Request a new link if this one has expired or was already used."}
-                a href="/login" {"Request a new sign-in link"}
+                p {"Sign-in links work once and expire after 15 minutes."}
+                a.button.action-primary href="/login" {"Request a new sign-in link"}
             },
         ),
     )
@@ -261,10 +264,10 @@ async fn confirm(
         "Confirm sign-in",
         html! {
             p {"Continue to the private workspace for " strong {(email)} "."}
-            form action="/login/confirm" method="post" {
+            form.auth-form action="/login/confirm" method="post" {
                 input type="hidden" name="token" value=(query.token);
                 input type="hidden" name="csrf" value=(nonce);
-                button type="submit" {"Continue to workspace"}
+                button.action-primary type="submit" {"Continue to workspace"}
             }
             a href="/login" {"Use another email address"}
         },
@@ -374,6 +377,29 @@ async fn settings(
     State(state): State<AppState>,
     Query(query): Query<LoginQuery>,
 ) -> AppResult<Html<String>> {
+    let feedback = match query.result.as_deref() {
+        Some("revoked") => SettingsFeedback::SessionsRevoked,
+        Some("timezone") => SettingsFeedback::TimezoneSaved,
+        Some("recovered") => SettingsFeedback::EmailRecovered,
+        _ => SettingsFeedback::None,
+    };
+    settings_screen(&auth, &state, feedback).await
+}
+
+enum SettingsFeedback<'a> {
+    None,
+    SessionsRevoked,
+    TimezoneSaved,
+    EmailRecovered,
+    InvalidTimezone(&'a str),
+    InvalidDeletionEmail,
+}
+
+async fn settings_screen(
+    auth: &Auth,
+    state: &AppState,
+    feedback: SettingsFeedback<'_>,
+) -> AppResult<Html<String>> {
     let (plan, timezone, sessions, pairing): (String, String, i64, bool) = sqlx::query_as(
         "SELECT plan, timezone, (SELECT count(*) FROM user_sessions WHERE user_id=u.id
          AND expires_at>now()), EXISTS(SELECT 1 FROM desktop_devices d JOIN user_sessions s
@@ -395,59 +421,110 @@ async fn settings(
                 && u.username().is_empty()
                 && u.password().is_none()
         });
-    Ok(crate::ui::page(
-        &auth,
+    let zone_error = matches!(feedback, SettingsFeedback::InvalidTimezone(_));
+    let delete_error = matches!(feedback, SettingsFeedback::InvalidDeletionEmail);
+    let zone_value = match feedback {
+        SettingsFeedback::InvalidTimezone(value) => value,
+        _ => &timezone,
+    };
+    Ok(crate::ui::section_page(
+        auth,
         "Settings",
         "settings",
         html! {
-            h1 {"Settings"}
-            @match query.result.as_deref() {
-                Some("revoked") => {p role="status" {"Other sessions were signed out."}}
-                Some("timezone") => {p role="status" {"Time zone saved."}}
-                Some("recovered") => {p.notice role="status" {"Sign-in email updated. If you use a paid plan, review the email for receipts in " a href="/billing" {"Billing"} "."}}
-                _=>{}
-            }
-            section.panel {
-                h2 {"Account"}
-                dl {
-                    dt {"Sign-in email"} dd {(auth.email)}
-                    dt {"Plan"} dd {(plan)}
+            header.view-head { h1 { "Settings" } }
+            div.settings-sheet {
+                @match feedback {
+                    SettingsFeedback::SessionsRevoked => { p.status-note role="status" { "Other sessions were signed out." } }
+                    SettingsFeedback::TimezoneSaved => { p.status-note role="status" { "Time zone saved." } }
+                    SettingsFeedback::EmailRecovered => { p.status-note role="status" { "Sign-in email updated. If you use a paid plan, review the email for receipts in " a href="/billing" {"Billing"} "." } }
+                    _ => {}
                 }
-                p {a href="/billing" {"Manage billing"}}
-                form method="post" action="/settings/timezone" {
-                    (crate::ui::csrf(&auth))
-                    label.field { "Workspace time zone" input name="timezone" value=(timezone) maxlength="128" required; }
-                    p { "Use an IANA time zone such as Europe/Zurich or America/New_York." }
-                    button type="submit" { "Save time zone" }
+                section.settings-section aria-labelledby="workspace-settings" {
+                    h2 #workspace-settings { "Workspace" }
+                    dl.account-properties {
+                        div.account-property { dt { "Sign-in email" } dd { (auth.email) } }
+                        div.account-property {
+                            dt { "Plan" }
+                            dd { span.account-plan { (plan) } a href="/billing" { "Manage billing" } }
+                        }
+                    }
+                    form.account-property.zone-form method="post" action="/settings/timezone" {
+                        (crate::ui::csrf(auth))
+                        label for="workspace-timezone" { "Workspace time zone" }
+                        div {
+                            div.zone-entry {
+                                input #workspace-timezone name="timezone" value=(zone_value) maxlength="128"
+                                    autocapitalize="none" spellcheck="false" required
+                                    autofocus[zone_error] aria-invalid=[zone_error.then_some("true")]
+                                    aria-describedby=(if zone_error { "zone-error zone-help" } else { "zone-help" });
+                                button.action-primary type="submit" { "Save time zone" }
+                            }
+                            @if zone_error { p.field-error #zone-error role="alert" { "Unknown time zone. Check the spelling and try again." } }
+                            p.form-hint #zone-help { "Use an IANA time zone such as Europe/Zurich or America/New_York." }
+                        }
+                    }
                 }
-            }
-            section.panel {
-                h2 {"Sessions"}
-                p {(sessions) @if sessions==1 {" active session, including this browser."} @else {" active sessions, including this browser."}}
-                form method="post" action="/logout" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of this browser"}}
-                @if pairing {p {"A desktop sign-in is awaiting confirmation."}}
-                @if sessions>1 || pairing {form method="post" action="/settings/sessions/revoke" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of other devices"}}}
-            }
-            (recovery::settings(&auth))
-            section.panel {
-                h2 {"Delete workspace"}
-                p {"Deleting your account signs out every device and removes your projects, issues, notes and connections. Export a copy before continuing."}
-                p { "Deletion also requests cancellation of your subscription and any open checkout. Stripe may retain billing records." }
-                p {a href="/transfer" {"Export workspace data"}}
-                form method="post" action="/settings/delete" {
-                    (crate::ui::csrf(&auth))
-                    label for="delete-email" {"Type your sign-in email to confirm deletion"}
-                    input #delete-email type="email" name="email" autocomplete="off" required;
-                    button.danger type="submit" {"Delete my workspace permanently"}
+                section.settings-section aria-labelledby="account-access" {
+                    h2 #account-access { "Account access" }
+                    details.account-disclosure {
+                        summary {
+                            span { "Sessions" }
+                            span.account-disclosure-note {
+                                (sessions) @if sessions==1 { " active session" } @else { " active sessions" }
+                                ", including this browser"
+                            }
+                        }
+                        div.account-detail {
+                            @if pairing { p { "A desktop sign-in is awaiting confirmation." } }
+                            div.session-actions {
+                                form method="post" action="/logout" {
+                                    (crate::ui::csrf(auth))
+                                    button.action-secondary type="submit" { "Sign out of this browser" }
+                                }
+                                @if sessions>1 || pairing {
+                                    form method="post" action="/settings/sessions/revoke" {
+                                        (crate::ui::csrf(auth))
+                                        button.action-secondary type="submit" { "Sign out of other devices" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    (recovery::settings(auth))
                 }
-            }
-            @if support.is_some() || status.is_some() {
-                section.panel { h2 {"Support"}
-                    @if let Some(addr)=support {p {a href=(format!("mailto:{addr}")) {(addr)}}}
-                    @if let Some(url)=status {p {a href=(url.as_str()) {"Service status"}}}
+                @if support.is_some() || status.is_some() {
+                    section.settings-section aria-labelledby="workspace-support" {
+                        h2 #workspace-support { "Support" }
+                        div.settings-support {
+                            @if let Some(addr)=support { a href=(format!("mailto:{addr}")) { (addr) } }
+                            @if let Some(url)=status { a href=(url.as_str()) { "Service status" } }
+                        }
+                    }
+                }
+                section.settings-section aria-labelledby="workspace-data" {
+                    h2 #workspace-data { "Workspace data" }
+                    details.account-disclosure open[delete_error] {
+                        summary { span { "Delete workspace" } span.account-disclosure-note { "Permanently remove your projects, issues and notes" } }
+                        div.account-detail {
+                            p { "Deleting your account signs out every device and removes your projects, issues, notes and connections. "
+                                a href="/transfer" { "Export workspace data" } " before continuing." }
+                            p { "Deletion also requests cancellation of your subscription and any open checkout. Stripe may retain billing records." }
+                            form.delete-form method="post" action="/settings/delete" {
+                                (crate::ui::csrf(auth))
+                                label for="delete-email" { "Type your sign-in email to confirm deletion" }
+                                input #delete-email type="email" name="email" autocomplete="off" autocapitalize="none" spellcheck="false" required
+                                    autofocus[delete_error] aria-invalid=[delete_error.then_some("true")]
+                                    aria-describedby=[delete_error.then_some("delete-email-error")];
+                                @if delete_error { p.field-error #delete-email-error role="alert" { "Enter your sign-in email, " (auth.email) ", to confirm deletion." } }
+                                button.action-secondary.danger type="submit" { "Delete my workspace permanently" }
+                            }
+                        }
+                    }
                 }
             }
         },
+        None,
     ))
 }
 
@@ -461,7 +538,7 @@ async fn save_timezone(
     auth: Auth,
     State(state): State<AppState>,
     Form(form): Form<TimezoneForm>,
-) -> AppResult<Redirect> {
+) -> AppResult<Response> {
     auth.check_csrf(&form.csrf)?;
     let zone = form.timezone.trim();
     if zone.is_empty()
@@ -476,16 +553,15 @@ async fn save_timezone(
         .fetch_one(&state.db)
         .await?
     {
-        return Err(AppError::BadRequest(
-            "Enter a valid IANA time zone, such as Europe/Zurich.".into(),
-        ));
+        let page = settings_screen(&auth, &state, SettingsFeedback::InvalidTimezone(zone)).await?;
+        return Ok((StatusCode::BAD_REQUEST, page).into_response());
     }
     sqlx::query("UPDATE users SET timezone=$1 WHERE id=$2")
         .bind(zone)
         .bind(auth.user_id)
         .execute(&state.db)
         .await?;
-    Ok(Redirect::to("/settings?result=timezone"))
+    Ok(Redirect::to("/settings?result=timezone").into_response())
 }
 
 async fn delete_account(
@@ -496,9 +572,8 @@ async fn delete_account(
 ) -> AppResult<Response> {
     auth.check_csrf(&form.csrf)?;
     if normalized_email(&form.email).as_deref() != Some(auth.email.as_str()) {
-        return Err(AppError::BadRequest(
-            "Type the email address shown in Settings.".into(),
-        ));
+        let page = settings_screen(&auth, &state, SettingsFeedback::InvalidDeletionEmail).await?;
+        return Ok((StatusCode::BAD_REQUEST, page).into_response());
     }
     let raw = session_cookie_raw(&headers, state.config.production).ok_or(AppError::Forbidden)?;
     let mut tx = state.db.begin().await?;
@@ -525,7 +600,7 @@ async fn delete_account(
             "Verify your email to delete this workspace",
             html! {
                 p { "Sign in again and confirm deletion from Settings within 15 minutes." }
-                a href="/login?next=%2Fsettings" { "Sign in again" }
+                a.button.action-primary href="/login?next=%2Fsettings" { "Sign in again" }
             },
         )
         .into_response());

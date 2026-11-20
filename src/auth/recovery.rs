@@ -28,12 +28,14 @@ pub(super) fn routes() -> Router<AppState> {
 
 pub(super) fn settings(auth: &Auth) -> Markup {
     html! {
-        section.panel {
-            h2 { "Account recovery" }
-            p { "Save a recovery code in your password manager so you can replace a lost email address. Generating a code replaces your previous code." }
-            form method="post" action="/settings/recovery" {
-                (ui::csrf(auth))
-                button.secondary type="submit" { "Generate recovery code" }
+        details.account-disclosure {
+            summary { span { "Account recovery" } span.account-disclosure-note { "Recover access if you lose your sign-in email" } }
+            div.account-detail {
+                p { "Save a recovery code in your password manager. Generating a new code replaces your previous code." }
+                form method="post" action="/settings/recovery" {
+                    (ui::csrf(auth))
+                    button.action-secondary type="submit" { "Generate recovery code" }
+                }
             }
         }
     }
@@ -60,10 +62,10 @@ async fn generate(
             "Confirm your email",
             "settings",
             html! {
-                section.panel {
-                    h1 { "Sign in again to generate a recovery code" }
+                header.view-head { h1 { "Confirm your email" } }
+                div.recovery-record {
                     p { "Use a fresh email link, then return to Account recovery in Settings." }
-                    a.button href="/login?next=%2Fsettings" { "Sign in again" }
+                    a.button.action-primary href="/login?next=%2Fsettings" { "Sign in again" }
                 }
             },
         ));
@@ -73,12 +75,12 @@ async fn generate(
         "Save your recovery code",
         "settings",
         html! {
-            section.panel {
-                h1 { "Save your recovery code" }
+            header.view-head { h1 { "Save your recovery code" } }
+            div.recovery-record {
                 p { "Keep this code in your password manager. Anyone who has it can move your workspace to a new email address." }
                 label.field { "Recovery code" input readonly value=(code) autocomplete="off" spellcheck="false"; }
-                p { "If you lose access to your inbox, choose Recover account on the sign-in page. You can generate a replacement code in Settings." }
-                a.button href="/settings" { "I’ve saved my code" }
+                p { "If you lose access to your inbox, choose “Recover your account” on the sign-in page. You can generate a replacement code in Settings." }
+                a.button.action-primary href="/settings" { "I’ve saved my code" }
             }
         },
     ))
@@ -137,12 +139,12 @@ fn nonce_page(
 async fn start(State(state): State<AppState>, headers: HeaderMap) -> Response {
     nonce_page("Recover your account", &headers, &state, |nonce| {
         html! {
-            p { "Enter your saved recovery code and an email address you can open. After you confirm that inbox, you’ll use it to sign in." }
-            form.stack method="post" action="/recover" {
+            p { "Use your saved recovery code to move your workspace to an email address you can open." }
+            form.auth-form method="post" action="/recover" {
                 input type="hidden" name="nonce" value=(nonce);
-                label.field { "Recovery code" input required name="code" type="password" autocomplete="off" maxlength="64"; }
-                label.field { "New email address" input required name="email" type="email" autocomplete="email" maxlength="254"; }
-                button type="submit" { "Send verification link" }
+                label.field { "Recovery code" input required name="code" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64"; }
+                label.field { "New email address" input required name="email" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254"; }
+                button.action-primary type="submit" { "Send verification link" }
             }
             a href="/login" { "Back to sign in" }
         }
@@ -198,7 +200,7 @@ async fn request(
             "Check your recovery link",
             html! {
                 p { "Local development is displaying the verification link for this request." }
-                a.button href=(url) { "Open local recovery link" }
+                a.button.action-primary href=(url) { "Open local recovery link" }
             },
         )
         .into_response());
@@ -254,10 +256,10 @@ async fn landing(
     nonce_page("Confirm account recovery", &headers, &state, |nonce| {
         html! {
             p { "Continuing changes your workspace’s sign-in email to this inbox and signs out every existing session. Continue only if you requested this change." }
-            form.stack method="post" action="/recover/confirm" {
+            form.auth-form method="post" action="/recover/confirm" {
                 input type="hidden" name="nonce" value=(nonce);
                 input type="hidden" name="token" value=(if valid_token(&query.token) { query.token.as_str() } else { "" });
-                button type="submit" { "Change email and sign in" }
+                button.action-primary type="submit" { "Change email and sign in" }
             }
             a href="/login" { "Back to sign in" }
         }

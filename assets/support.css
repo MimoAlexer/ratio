@@ -1,0 +1,673 @@
+/* Workspace preferences and sign-in share the form measures used by recovery. */
+.settings-sheet { --setting-label: min(30%, 12rem); max-inline-size: 50rem; }
+.settings-sheet .settings-section { margin: 0 0 var(--s6, 24px); }
+.settings-section > h2 {
+  margin: 0; padding-block-end: var(--s2, 8px); border-block-end: 1px solid var(--line);
+  font-size: 16px; line-height: 1.5; font-weight: 600;
+}
+.settings-sheet .account-properties { display: block; margin: 0; }
+.settings-sheet .account-property {
+  display: grid; grid-template-columns: var(--setting-label) minmax(0, 1fr);
+  align-items: baseline; column-gap: var(--s4, 16px); padding-block: var(--s3, 12px);
+  border-block-end: 1px solid var(--subtle-line);
+}
+.settings-sheet .account-property dt, .settings-sheet .zone-form > label {
+  margin: 0; color: var(--fg-2, var(--muted)); font-weight: 500; font-size: 14px;
+}
+.settings-sheet .account-property dd {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: var(--s2, 8px) var(--s4, 16px); margin: 0;
+}
+.settings-sheet .account-plan { text-transform: capitalize; }
+.settings-sheet .zone-form { max-width: none; border: 0; }
+.settings-sheet .zone-form > label { margin: 0; }
+.settings-sheet .zone-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2, 8px); }
+.settings-sheet .zone-entry input { flex: 1 1 12rem; max-inline-size: 20rem; }
+.settings-sheet .zone-entry button { margin: 0; }
+.settings-sheet .form-hint, .settings-sheet .account-disclosure p {
+  margin: 0; color: var(--fg-2, var(--muted)); font-size: 13px; line-height: 1.5;
+}
+.settings-sheet .zone-form .form-hint, .settings-sheet .field-error { margin-block-start: var(--s2, 8px); }
+.settings-sheet p.field-error { color: var(--risk); font-size: 13px; }
+.settings-sheet [aria-invalid="true"] { border-color: var(--risk); }
+.account-disclosure { padding: 0; border-block-end: 1px solid var(--subtle-line); }
+.account-disclosure:last-child { border-block-end: 0; }
+.account-disclosure > summary {
+  display: grid; grid-template-columns: var(--setting-label) minmax(0, 1fr) auto;
+  align-items: center; gap: var(--s4, 16px); width: 100%; min-height: 48px; padding: 8px 4px 8px 0;
+  font-size: 14px; font-weight: 500; list-style: none;
+}
+.account-disclosure > summary::-webkit-details-marker { display: none; }
+.account-disclosure > summary::after {
+  content: ''; width: 7px; height: 7px; border-inline-end: 1.5px solid currentColor;
+  border-block-end: 1.5px solid currentColor; transform: rotate(-45deg); margin-inline-end: 4px;
+  color: var(--fg-3, var(--faint));
+}
+.account-disclosure[open] > summary { margin-block-end: 0; }
+.account-disclosure[open] > summary::after { transform: rotate(45deg); }
+.account-disclosure > summary:hover { background: var(--raised); }
+.account-disclosure .account-disclosure-note { color: var(--fg-2, var(--muted)); font-size: 13px; font-weight: 400; }
+.account-disclosure .account-detail {
+  display: grid; gap: var(--s3, 12px); margin-inline-start: calc(var(--setting-label) + var(--s4, 16px));
+  padding-block: 0 var(--s4, 16px); max-inline-size: 60ch;
+}
+.account-detail .session-actions { display: flex; flex-wrap: wrap; gap: var(--s2, 8px); }
+.account-detail form, .settings-sheet .account-detail .form-stack { margin: 0; }
+.settings-sheet .account-detail .delete-form { display: grid; gap: var(--s2, 8px); }
+.settings-sheet .delete-form > input { max-inline-size: 24rem; }
+.settings-sheet .delete-form button { margin-block: var(--s1, 4px) 0; }
+.settings-sheet .settings-support { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s4, 16px); padding-block: var(--s3, 12px); }
+.settings-sheet .status-note { margin-block: 0 var(--s5, 20px); }
+.recovery-record { max-inline-size: 55ch; }
+.recovery-record > * { margin-block: 0 var(--s4, 16px); }
+.recovery-record input { font-family: var(--mono); }
+
+.auth-page .auth-shell {
+  display: grid; place-items: start center; min-block-size: 100vh; min-block-size: 100dvh;
+  padding: clamp(52px, 18vh, 160px) var(--s6, 24px) var(--s8, 32px);
+}
+.auth-page .auth-card { inline-size: min(100%, 26rem); overflow-wrap: anywhere; }
+.auth-page .auth-brandbar { border-block-end: 1px solid var(--line); padding-block-end: var(--s4, 16px); margin-block-end: var(--s6, 24px); }
+.auth-page .auth-brand { min-height: 32px; gap: var(--s2, 8px); margin: 0; }
+.auth-page .auth-card h1 { font-size: 24px; line-height: 1.25; margin: 0 0 var(--s2, 8px); }
+.auth-page .auth-card p { margin: 0 0 var(--s4, 16px); line-height: 1.5; }
+.auth-page .auth-card > p { color: var(--fg-2); }
+.auth-page .auth-card .auth-form { display: grid; gap: var(--s4, 16px); margin-block: var(--s5, 20px); }
+.auth-page .auth-form > * { margin: 0; }
+.auth-page .auth-card .auth-form > button { margin: 0; width: 100%; }
+.auth-page .auth-card .auth-links { display: flex; gap: var(--s2, 8px) var(--s4, 16px); flex-wrap: wrap; align-items: center; }
+.auth-page .auth-card .auth-preview { border-inline-start: 2px solid var(--control-line); padding-inline-start: var(--s3, 12px); margin-block: var(--s4, 16px); }
+.auth-page .auth-preview p { font-size: 12px; color: var(--fg-3, var(--faint)); margin-block: 0 var(--s1, 4px); }
+@media (max-width: 700px) {
+  .settings-sheet .account-property { grid-template-columns: minmax(7.75rem, 32%) minmax(0, 1fr); }
+  .account-disclosure > summary { grid-template-columns: minmax(7.75rem, 32%) minmax(0, 1fr) auto; }
+  .settings-sheet .zone-form { display: block; }
+  .settings-sheet .zone-form > label { display: block; margin-block: 0 var(--s2, 8px); }
+  .settings-sheet .zone-entry input { max-inline-size: none; }
+  .account-disclosure .account-detail { margin-inline-start: 0; }
+}
+@media (max-width: 480px) {
+  .settings-sheet .account-property { grid-template-columns: minmax(6rem, 31%) minmax(0, 1fr); }
+  .account-disclosure > summary { grid-template-columns: minmax(0, 1fr) auto; gap: 0 var(--s3, 12px); padding-block: var(--s3, 12px); }
+  .account-disclosure .account-disclosure-note { grid-row: 2; grid-column: 1; }
+  .account-disclosure > summary::after { grid-row: 1 / 3; grid-column: 2; }
+  .auth-page .auth-shell { padding-block-start: max(40px, 9vh); }
+}
+@media (pointer: coarse), (max-width: 600px) {
+  .settings-sheet :where(button, input, .account-property a), .auth-page :where(.auth-card a, .auth-card button, .auth-card input) { min-height: 44px; }
+  .settings-sheet .account-property a, .auth-page .auth-links a { display: inline-flex; align-items: center; }
+}
+/* Account usage and entitlements share one measure and one column grid. */
+.billing-sheet { width: min(100%, 54rem); }
+.billing-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 1fr);
+  gap: var(--s8);
+  padding-block: var(--s5) var(--s6);
+  border-block: 1px solid var(--line);
+}
+.billing-sheet :is(h2, p, dl, dd) { margin: 0; }
+.billing-sheet .billing-account > * + *, .billing-sheet .billing-preferences > * + * { margin-block-start: var(--s3); }
+.billing-account p, .billing-preferences p { max-width: 60ch; }
+.billing-account .billing-availability {
+  margin-block-start: var(--s4);
+  padding-inline-start: var(--s3);
+  border-inline-start: 2px solid var(--control-line);
+  color: var(--fg-2);
+  font-size: 13px;
+}
+.billing-sheet .billing-usage-values { margin-block: var(--s2); }
+.billing-usage-values > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding-block: var(--s1);
+  border-bottom: 1px solid var(--subtle-line);
+}
+.billing-usage-values dt { color: var(--fg-2); font-size: 13px; }
+.billing-usage-values dd { font-family: var(--mono); font-size: 12px; text-align: end; }
+.billing-usage-values dd span { color: var(--fg-3); }
+.billing-sheet .billing-footnote, .billing-explainer p, .billing-section-head p {
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.billing-usage .billing-footnote + .billing-footnote { margin-block-start: var(--s2); }
+.billing-export { display: inline-flex; align-items: center; min-block-size: var(--control); margin-block: 0 calc(-1 * var(--s1)); font-size: 13px; }
+.billing-comparison, .billing-preferences { padding-block: var(--s6); }
+.billing-preferences { border-top: 1px solid var(--line); }
+.billing-section-head { margin-block-end: var(--s4); }
+.billing-section-head h2 + p { margin-block-start: var(--s1); }
+.billing-sheet .billing-plan-table { display: table; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.billing-feature { width: 34%; }
+.billing-plan-table :is(td, th) {
+  min-width: 0;
+  padding: var(--s2) var(--s3);
+  text-align: start;
+  border-bottom: 1px solid var(--subtle-line);
+  overflow-wrap: anywhere;
+}
+.billing-plan-table th[scope="row"] { font-size: 13px; color: var(--fg-2); font-weight: 450; }
+.billing-plan-table thead th { vertical-align: top; color: var(--fg); font-size: 14px; font-weight: 600; }
+.billing-plan-table thead th:first-child { color: var(--fg-3); font-size: 13px; font-weight: 450; }
+.billing-plan-table .billing-current { box-shadow: inset 2px 0 var(--fg-2); background: var(--raised); }
+.billing-current-label { display: block; color: var(--fg-2); font-size: 12px; font-weight: 450; }
+.billing-plan-table td { color: var(--fg); font-size: 13px; }
+.billing-plan-table .billing-price td { font-family: var(--mono); font-weight: 500; }
+.billing-checkout { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s3); margin-block: var(--s4) var(--s2); }
+.billing-checkout > label { width: min(100%, 14rem); }
+.billing-checkout > button { margin-block: 0; }
+.billing-preferences .form-stack { max-width: 38rem; }
+.billing-explainer { width: fit-content; max-width: 100%; }
+.billing-explainer summary { font-size: 13px; }
+@media (max-width: 860px) {
+  .billing-overview { grid-template-columns: minmax(0, 1fr) minmax(14rem, 1fr); gap: var(--s6); }
+}
+@media (max-width: 680px) {
+  .billing-overview { grid-template-columns: 1fr; gap: var(--s5); padding-block: var(--s4); }
+  .billing-usage { border-top: 1px solid var(--subtle-line); padding-block-start: var(--s4); }
+  .billing-comparison, .billing-preferences { padding-block: var(--s5); }
+  .billing-plan-table :is(td, th) { padding-inline: var(--s1); }
+  .billing-plan-table :is(td, th):first-child { padding-inline-start: 0; }
+  .billing-feature { width: 32%; }
+  .billing-plan-table thead th { font-size: 13px; }
+  .billing-plan-table :is(th[scope="row"], td) { font-size: 12px; }
+}
+/* GitHub connection and repository access */
+.github-settings {
+  max-inline-size: 52rem;
+  container-type: inline-size;
+}
+.github-settings > .view-head { margin-block-end: var(--s6, 24px); }
+.github-settings .github-section,
+.github-settings .github-references > section {
+  display: grid;
+  grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s6, 24px);
+  padding: var(--s5, 20px) 0;
+  border: 0;
+  border-block-start: 1px solid var(--line);
+}
+.github-settings .github-section h2,
+.github-settings .github-references h2 {
+  margin: 0;
+  color: var(--fg-2, var(--muted));
+  font-size: 14px;
+  font-weight: 535;
+  line-height: 1.5;
+}
+.github-settings .github-section-body { min-width: 0; }
+.github-settings .github-section-body h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+.github-settings .github-section-body p,
+.github-settings .github-references p {
+  max-inline-size: 60ch;
+  margin: var(--s1, 4px) 0 0;
+  color: var(--fg-2, var(--muted));
+}
+.github-settings .github-section-body > :is(form, a),
+.github-settings .github-records > li > form {
+  margin-block-start: var(--s3, 12px);
+}
+.github-settings .github-manage {
+  padding: 0;
+  margin-block-start: var(--s3, 12px);
+  border: 0;
+}
+.github-settings summary {
+  min-block-size: var(--control, 32px);
+  align-content: center;
+  font-size: 13px;
+  color: var(--fg-2, var(--muted));
+}
+.github-settings .github-actions,
+.github-settings .github-assignment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2, 8px) var(--s3, 12px);
+  align-items: end;
+}
+.github-settings .github-actions { align-items: center; }
+.github-settings .github-assignment label { width: min(18rem, 100%); }
+.github-settings .github-assignment select { width: 100%; }
+.github-settings .github-assignment button { margin: 0; }
+.github-settings .github-remove {
+  margin-block-start: var(--s3, 12px);
+  padding-block-start: var(--s3, 12px);
+  border-block-start: 1px solid var(--line);
+}
+.github-settings .github-remove button { margin-block-start: var(--s2, 8px); }
+.github-settings .github-capacity,
+.github-settings .github-check-time,
+.github-settings .github-project {
+  color: var(--fg-3, var(--faint));
+  font-size: 12px;
+}
+.github-settings .github-project { display: inline-block; margin-block-start: 2px; }
+.github-settings .github-check-time time { font-family: var(--mono); }
+.github-settings .github-capacity { margin: var(--s1, 4px) 0 0; }
+.github-settings .github-records { padding: 0; margin: 0; list-style: none; }
+.github-settings p + .github-records { margin-block-start: var(--s4, 16px); }
+.github-settings .github-records > li + li {
+  border-block-start: 1px solid var(--line);
+  margin-block-start: var(--s4, 16px);
+  padding-block-start: var(--s4, 16px);
+}
+.github-settings .github-records .github-coverage-state { color: var(--fg, var(--text)); }
+.github-settings .github-references > section { row-gap: var(--s3, 12px); }
+.github-settings .github-references p { margin: 0; }
+.github-settings .github-references form { grid-column: 2; }
+.github-settings .github-references input { width: min(26rem, 100%); }
+
+@container (max-width: 34rem) {
+  .github-settings .github-section,
+  .github-settings .github-references > section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s3, 12px);
+  }
+  .github-settings .github-references form { grid-column: auto; }
+}
+/* Project transfers combine a measured form with its file requirements. */
+.transfer-workspace {
+  max-inline-size: 60rem;
+  container-type: inline-size;
+}
+.transfer-workspace .content-section { padding-block: var(--s6, 24px); }
+.transfer-workspace .section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s2, 8px) var(--s4, 16px);
+  margin-block-end: var(--s4, 16px);
+}
+.transfer-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 31rem) minmax(13rem, 1fr);
+  gap: clamp(24px, 4vw, 64px);
+  align-items: start;
+}
+.transfer-workspace .transfer-form,
+.transfer-workspace .transfer-decision {
+  display: grid;
+  align-content: start;
+  gap: var(--s4, 16px);
+  max-inline-size: 32rem;
+}
+.transfer-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: var(--s3, 12px);
+}
+.transfer-form .transfer-pair > label { margin: 0; }
+.transfer-workspace .transfer-hint,
+.transfer-disclosure p,
+.transfer-intro,
+.transfer-storage,
+.transfer-reference dd,
+.transfer-submit > span,
+.transfer-format,
+.transfer-conflicts p {
+  color: var(--fg-2, var(--muted));
+  font-size: 13px;
+  line-height: 1.5;
+}
+.transfer-form > .transfer-hint { margin: calc(-1 * var(--s2, 8px)) 0 0; }
+.transfer-workspace .transfer-disclosure {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.transfer-disclosure > summary {
+  padding-block: var(--s1, 4px);
+  font-size: 13px;
+  color: var(--fg-2, var(--muted));
+}
+.transfer-disclosure[open] > summary { margin-block-end: var(--s2, 8px); }
+.transfer-disclosure .field { max-inline-size: 27rem; }
+.transfer-disclosure .transfer-hint { margin-block: var(--s1, 4px) 0; }
+.transfer-workspace .transfer-submit {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2, 8px) var(--s3, 12px);
+}
+.transfer-submit > span { font-size: 12px; }
+.transfer-reference {
+  padding-inline-start: var(--s6, 24px);
+  border-inline-start: 1px solid var(--line);
+}
+.transfer-reference h3 { margin: 0 0 var(--s3, 12px); font-size: 14px; }
+.transfer-reference dl { display: grid; gap: var(--s3, 12px); margin: 0; }
+.transfer-reference dt { font-size: 13px; font-weight: 550; }
+.transfer-reference dd { margin: 2px 0 0; }
+.transfer-reference .transfer-capacity {
+  display: block;
+  margin: var(--s4, 16px) 0 0;
+  padding-block-start: var(--s3, 12px);
+  border-block-start: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--fg-2, var(--muted));
+}
+.transfer-capacity strong { font-family: var(--mono); font-weight: 500; color: var(--fg, var(--text)); }
+.transfer-capacity span { display: block; }
+.transfer-intro { max-width: 66ch; margin: 0; }
+.transfer-workspace .transfer-export .section-head { margin-block-end: var(--s2, 8px); }
+.transfer-workspace .transfer-records { padding: 0; margin: var(--s3, 12px) 0; list-style: none; }
+.transfer-records .record-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3, 12px);
+  padding-block: var(--s2, 8px);
+  border-block-end: 1px solid var(--subtle-line, var(--line));
+}
+.transfer-records .record-row > :last-child { flex-shrink: 0; }
+.transfer-project { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2, 8px) var(--s3, 12px); }
+.transfer-key { font: 12px/1.4 var(--mono); color: var(--fg-3, var(--faint)); }
+.transfer-image-name { display: grid; gap: 2px; min-width: 0; }
+.transfer-workspace small { color: var(--fg-3, var(--faint)); font-size: 12px; }
+.transfer-back { display: inline-block; margin-block-end: var(--s2, 8px); color: var(--fg-2, var(--muted)); font-size: 13px; }
+.transfer-review .section-head { justify-content: flex-start; }
+.transfer-report-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 27rem) minmax(0, 1fr);
+  gap: var(--s8, 32px);
+  align-items: start;
+}
+.transfer-report-evidence {
+  padding-inline-start: var(--s5, 20px);
+  border-inline-start: 1px solid var(--line);
+}
+.transfer-report-evidence :is(li, p) { font-size: 13px; line-height: 1.5; }
+.transfer-report-evidence ul { margin-block: 0; padding-inline-start: var(--s5, 20px); }
+.transfer-workspace .transfer-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-inline-size: 32rem;
+  padding-block: var(--s3, 12px);
+  margin: 0;
+  border-block: 1px solid var(--line);
+}
+.transfer-totals > div { display: flex; flex-direction: column-reverse; align-items: flex-start; }
+.transfer-totals dt { color: var(--fg-2, var(--muted)); font-size: 12px; }
+.transfer-totals dd {
+  margin: 0 0 2px;
+  font: 500 18px/1.3 var(--mono);
+  color: var(--fg, var(--text));
+}
+.transfer-storage { margin: var(--s3, 12px) 0; }
+.transfer-storage span { font-family: var(--mono); color: var(--fg, var(--text)); }
+.transfer-workspace .transfer-notices { margin-block-start: var(--s3, 12px); }
+.transfer-notices ul { max-inline-size: 70ch; margin: 0; padding-inline-start: var(--s5, 20px); }
+.transfer-notices li + li { margin-block-start: var(--s1, 4px); }
+.transfer-changes .transfer-disclosure { margin-block-start: var(--s2, 8px); }
+.transfer-change-table[role="region"] { max-height: 28rem; overflow: auto; }
+.transfer-change-table table { table-layout: fixed; }
+.transfer-change-table thead th { position: sticky; top: 0; background: var(--surface); }
+.transfer-change-table th:first-child { width: 48%; }
+.transfer-change-table tbody th { font-size: 13px; color: var(--fg, var(--text)); font-weight: 500; }
+.transfer-change-table td { color: var(--fg-2, var(--muted)); font-size: 13px; }
+.transfer-change-table :is(th, td) { overflow-wrap: anywhere; vertical-align: top; }
+.transfer-workspace .transfer-decision { max-inline-size: none; }
+.transfer-conflicts { max-inline-size: 32rem; padding: 0; margin: 0; border: 0; }
+.transfer-conflicts legend { padding: 0; font-size: 16px; }
+.transfer-conflicts p { margin: var(--s1, 4px) 0 var(--s2, 8px); }
+.transfer-workspace .transfer-conflicts label {
+  display: flex;
+  align-items: center;
+  gap: var(--s2, 8px);
+  min-height: var(--control, 32px);
+  width: fit-content;
+  margin: 0;
+  cursor: pointer;
+}
+@container (max-width: 48rem) {
+  .transfer-columns { grid-template-columns: minmax(0, 1fr); gap: var(--s5, 20px); }
+  .transfer-report-grid { grid-template-columns: minmax(0, 1fr); gap: var(--s3, 12px); }
+  .transfer-report-evidence { padding-inline-start: 0; border-inline-start: 0; }
+  .transfer-reference { max-inline-size: 32rem; border-inline-start: 0; padding-inline-start: 0; }
+  .transfer-reference dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transfer-reference .transfer-capacity { padding-block-start: var(--s2, 8px); }
+  .transfer-capacity span { display: inline; margin-inline-start: var(--s2, 8px); }
+}
+@container (max-width: 30rem) {
+  .transfer-pair { grid-template-columns: minmax(0, 1fr); }
+  .transfer-workspace .content-section { padding-block: var(--s5, 20px); }
+  .transfer-reference dl { grid-template-columns: minmax(0, 1fr); }
+  .transfer-reference .transfer-capacity span { display: block; margin-inline-start: 0; }
+  .transfer-workspace .section-head:not(:has(a)) { min-height: 0; padding-block: 0; margin-block-end: var(--s3, 12px); }
+  .transfer-disclosure > summary { min-height: 44px; align-content: center; }
+  .transfer-workspace .transfer-conflicts label { min-height: 44px; }
+}
+@container (max-width: 20rem) {
+  .transfer-records .record-row { align-items: flex-start; flex-wrap: wrap; }
+}
+.workflow-workspace {
+  max-inline-size: 58rem;
+  min-inline-size: 0;
+}
+
+.workflow-workspace > .view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s3, 12px);
+  margin: 0 0 var(--s6, 24px);
+}
+
+.workflow-plan,
+.workflow-access,
+.workflow-summary {
+  color: var(--fg-3, var(--faint));
+  font-size: .8125rem;
+}
+
+.workflow-workspace .view-actions,
+.workflow-jumps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s4, 16px);
+}
+
+.workflow-jumps { margin-block-end: var(--s3, 12px); }
+.workflow-jumps a, .workflow-back {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control, 32px);
+}
+
+.workflow-section {
+  display: grid;
+  grid-template-columns: minmax(9rem, .38fr) minmax(0, 1fr);
+  gap: var(--s6, 24px);
+  border-block-start: 1px solid var(--line);
+  padding-block: var(--s5, 20px);
+}
+
+.workflow-label h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.workflow-label .workflow-access {
+  display: block;
+  margin-block-start: var(--s1, 4px);
+}
+
+.workflow-body,
+.workflow-form,
+.workflow-current {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  min-inline-size: 0;
+  gap: var(--s3, 12px);
+}
+
+.workflow-body > p,
+.workflow-current > p { margin: 0; }
+
+.workflow-body > p { color: var(--fg-2, var(--muted)); max-inline-size: 64ch; }
+
+.workflow-body > :is(.workflow-create, .workflow-records, .workflow-digest, .workflow-delivery, .workflow-form, .workflow-current) {
+  inline-size: 100%;
+}
+
+.workflow-create > details, .workflow-delivery, .workflow-delete, .workflow-options {
+  border: 0;
+  padding: 0;
+}
+
+.workflow-workspace summary {
+  min-block-size: var(--control, 32px);
+  padding-block: var(--s1, 4px);
+  font-size: .8125rem;
+}
+
+.workflow-create details[open] > summary,
+.workflow-delivery[open] > summary { margin-block-end: var(--s3, 12px); }
+
+.workflow-create .workflow-form,
+.workflow-current {
+  padding: var(--s4, 16px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel, 6px);
+  background: var(--surface);
+}
+
+.workflow-form { align-items: start; gap: var(--s4, 16px); }
+.workflow-source { margin: 0; }
+.workflow-source > span:first-child { color: var(--fg-2, var(--muted)); font-size: .8125rem; }
+.workflow-options { inline-size: 100%; }
+.workflow-options[open] > .workflow-fieldset + .workflow-fieldset { margin-block-start: var(--s4, 16px); }
+.workflow-form > :is(label.field, .workflow-fieldset, .workflow-fields) { inline-size: 100%; }
+.workflow-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3, 12px);
+}
+.workflow-span { grid-column: 1 / -1; }
+
+.workflow-fieldset {
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+  border: 0;
+}
+.workflow-fieldset legend {
+  inline-size: 100%;
+  margin-block-end: var(--s3, 12px);
+  padding: var(--s3, 12px) 0 0;
+  border-block-start: 1px solid var(--line);
+  font-size: .875rem;
+}
+.workflow-form :is(.field, fieldset, button) { margin: 0; }
+
+.workflow-records {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workflow-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s3, 12px);
+  padding-block: var(--s2, 8px);
+  border-block-start: 1px solid var(--subtle-line);
+}
+.workflow-record-main {
+  display: grid;
+  gap: var(--s1, 4px);
+  padding: var(--s1, 4px);
+  color: var(--fg, var(--text));
+  text-decoration: none;
+  border-radius: var(--radius, 4px);
+}
+a.workflow-record-main:hover { background: var(--raised); }
+a.workflow-record-main:hover strong { text-decoration: underline; text-underline-offset: .18em; }
+.workflow-summary { display: block; line-height: 1.5; }
+.workflow-delete summary {
+  list-style: none;
+  color: var(--fg-3, var(--faint));
+  font-size: .75rem;
+  font-weight: 400;
+}
+.workflow-delete summary::-webkit-details-marker { display: none; }
+.workflow-delete summary:is(:hover, :focus-visible) { text-decoration: underline; }
+.workflow-record-name { display: grid; gap: var(--s1, 4px); }
+.workflow-delete[open] { max-inline-size: 15rem; }
+.workflow-delete p { margin: 0 0 var(--s2, 8px); }
+.workflow-delete[open] > summary { margin: 0; }
+
+.workflow-back { margin-block-end: var(--s2, 8px); }
+.workflow-draft-title { font-size: 1.0625rem; }
+.workflow-properties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2, 8px) var(--s5, 20px);
+  margin: 0;
+}
+.workflow-properties dt, .workflow-stats dt {
+  color: var(--fg-3, var(--faint));
+  font-size: .75rem;
+}
+.workflow-properties dd,
+.workflow-stats dd { margin: var(--s1, 4px) 0 0; }
+.workflow-next {
+  border-inline-start: 2px solid var(--control-line);
+  padding-inline-start: var(--s3, 12px);
+}
+.workflow-next h4 { margin-block-end: var(--s1, 4px); }
+.workflow-delivery[open] > :is(form, p) { margin-block-end: var(--s3, 12px); }
+.workflow-digest {
+  padding-block: var(--s4, 16px);
+  border-block-start: 1px solid var(--line);
+}
+.workflow-digest header { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2, 8px) var(--s3, 12px); }
+.workflow-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s4, 16px);
+  max-inline-size: 44rem;
+  margin: var(--s4, 16px) 0 0;
+}
+.workflow-stats dd { font: 500 1rem/1.4 var(--mono); }
+
+/* When a library has records, align its titles and criteria across the full list. */
+@media (min-width: 961px) {
+  .workflow-section:has(.workflow-records) { row-gap: var(--s2, 8px); }
+  .workflow-section:has(.workflow-records) > .workflow-body { display: contents; }
+  .workflow-section:has(.workflow-records) > .workflow-body > * { grid-column: 2; }
+  .workflow-section:has(.workflow-records) > .workflow-body > .workflow-records { grid-column: 1 / -1; }
+  .workflow-record { padding-block: var(--s1, 4px); align-items: baseline; }
+  .workflow-record-main {
+    grid-template-columns: minmax(11rem, .45fr) minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--s3, 12px);
+    min-block-size: var(--row, 36px);
+    padding: var(--s2, 8px) var(--s1, 4px);
+  }
+}
+
+@media (max-width: 720px) {
+  .workflow-section { grid-template-columns: 1fr; gap: var(--s2, 8px); }
+  .workflow-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2, 8px) var(--s3, 12px); }
+  .workflow-label .workflow-access { margin: 0; }
+  .workflow-section :is(summary, button), .workflow-back, .workflow-jumps a { min-block-size: 44px; }
+  .workflow-delete[open] { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .workflow-fields { grid-template-columns: 1fr; }
+  .workflow-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

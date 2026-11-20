@@ -33,6 +33,8 @@ struct IndexQuery {
     #[serde(default)]
     portfolio: bool,
     #[serde(default)]
+    new: bool,
+    #[serde(default)]
     page: u32,
 }
 
@@ -122,69 +124,113 @@ async fn index(
         .map(|id| format!("/releases?project={id}"))
         .unwrap_or_else(|| "/releases?portfolio=true".to_owned());
     let writable: Vec<_> = projects.iter().filter(|p| !p.archived).collect();
-    Ok(ui::page(
+    Ok(ui::section_page(
         &auth,
         "Releases",
         "releases",
         html! {
-            header {
-                h1 { "Releases" }
-                @if let Some(project) = selected { p class="muted" { (project.name) " · Release review" } }
-            }
-            @if !projects.is_empty() {
-                nav class="toolbar" aria-label="Release projects" {
-                    @for p in &projects {
-                        a class="button secondary" href=(format!("/releases?project={}",p.id)) aria-current=[(project == Some(p.id)).then_some("page")] { (p.name) }
-                    }
-                    @if plan == "max" { a class="button secondary" href="/releases?portfolio=true" { "All projects" } }
-                }
-            }
-            @if let Some((unique,entries,releases)) = totals {
-                section class="panel" { h2 { "Portfolio shipments" } p { strong { (unique) } " distinct issues · " (entries) " manifest entries across " (releases) " published releases" } }
-            }
-            @if !writable.is_empty() {
-                details class="panel" open[rows.is_empty()] {
-                    summary { "Create a release" }
-                    form method="post" action="/releases" class="stack" {
-                        (ui::csrf(&auth))
-                        label { "Project" select name="project" { @for p in &writable {
-                            option value=(p.id) selected[Some(p.id)==project] { (p.name) }
-                        } } }
-                        label { "Release name" input name="name" maxlength="150" placeholder="e.g. Public beta" required; }
-                        div class="grid" {
-                            label { "Version (optional)" input name="version" maxlength="100" placeholder="v1.0.0"; }
-                            label { "Target date (optional)" input type="date" name="target_on"; }
-                        }
-                        label { "GitHub Release URL (optional)" input type="url" name="source_url" maxlength="1024" placeholder="https://github.com/owner/repo/releases/tag/v1.0.0"; }
-                        button { "Create draft" }
+            header.view-head.release-index-head {
+                div {
+                    h1 { "Releases" }
+                    @if projects.len() == 1 && plan != "max" {
+                        p.muted { (&projects[0].name) }
                     }
                 }
-            }
-            @if rows.is_empty() {
-                section class="empty" { h2 { @if query.page > 0 { "No more releases" } @else if floor.is_some() && !projects.is_empty() { "No releases in this view" } @else { "No releases yet" } }
-                    @if projects.is_empty() { a class="button" href="/projects" { "Create a project" } }
-                    @else if query.page == 0 { p { @if let Some(since)=floor { "This view includes current drafts and releases published since " (since) "." } @else { "Create a draft to group issues and record what ships." } } }
-                }
-            } @else {
-                section class="panel" { h2 { "Release timeline" }
-                    @if let Some(since) = floor { p class="muted" { "Published releases since " (since) " · all current drafts" } }
-                    ul class="issue-list" { @for r in rows.iter().take(page_size as usize) {
-                        li { a href=(format!("/releases/{}",r.id)) { strong { (r.name) } } " "
-                            @if !r.version.is_empty() { span class="status" { (r.version) } }
-                            @if project.is_none() { span class="muted" { " · " (r.project_name) } }
-                            @match r.published_on {
-                                Some(date) => p { "Published " (date) " · " (r.entries) " shipped entries · " (r.first_shipments) " first shipments" },
-                                None => p { "Draft · " (r.members) " in scope" @if let Some(target) = r.target_on { " · target " (target) } },
-                            }
-                        }
+                @if !writable.is_empty() && !query.new {
+                    div.view-actions { a.button.action-primary href=(format!("{base}&new=true#new-release")) {
+                        (ui::icon("plus")) "New release"
                     } }
                 }
             }
-            nav class="toolbar" aria-label="Release pages" {
+            @if projects.len() > 1 || (plan == "max" && !projects.is_empty()) {
+                details.release-projects {
+                    summary { "Project · " (selected.map_or("All projects", |p| p.name.as_str())) }
+                    nav aria-label="Release projects" {
+                        @for p in &projects {
+                            a href=(format!("/releases?project={}",p.id)) aria-current=[(project == Some(p.id)).then_some("page")] { (p.name) @if p.archived { " (archived)" } }
+                        }
+                        @if plan == "max" { a href="/releases?portfolio=true" aria-current=[project.is_none().then_some("page")] { "All projects" } }
+                    }
+                }
+            }
+            @if let Some((unique,entries,releases)) = totals {
+                section.content-section { h2 { "Portfolio shipments" } p { strong { (unique) } " distinct issues · " (entries) " manifest entries across " (releases) " published releases" } }
+            }
+            @if !writable.is_empty() && query.new {
+                section.content-section.release-new id="new-release" {
+                    h2 { "Create a release" }
+                    form method="post" action="/releases" class="form-stack stack" {
+                        (ui::csrf(&auth))
+                        label { "Release name" input name="name" maxlength="150" placeholder="e.g. Public beta" required; }
+                        @if writable.len() == 1 {
+                            input type="hidden" name="project" value=(writable[0].id);
+                            p.muted { "Project · " (writable[0].name) }
+                        } @else {
+                            label { "Project" select name="project" { @for p in &writable {
+                                option value=(p.id) selected[Some(p.id)==project] { (p.name) }
+                            } } }
+                        }
+                        details.release-additional { summary { "Version, target date and GitHub link" }
+                            div.grid {
+                                label { "Version (optional)" input name="version" maxlength="100" placeholder="v1.0.0"; }
+                                label { "Target date (optional)" input type="date" name="target_on"; }
+                            }
+                            label { "GitHub Release URL (optional)" input type="url" name="source_url" maxlength="1024" placeholder="https://github.com/owner/repo/releases/tag/v1.0.0"; }
+                        }
+                        div.view-actions { button.action-primary { "Create draft" } a.action-quiet href=(&base) { "Cancel" } }
+                    }
+                }
+            }
+            @if rows.is_empty() && (!query.new || writable.is_empty()) {
+                section.empty-state {
+                    h2 { @if query.page > 0 { "No more releases" } @else if floor.is_some() && !projects.is_empty() { "No releases in this view" } @else { "No releases yet" } }
+                    @if projects.is_empty() {
+                        p { "Create a project to group issues into a release." }
+                        a.button.action-primary href="/projects" { "Create a project" }
+                    } @else if query.page == 0 {
+                        p { @if let Some(since)=floor { "This view includes current drafts and releases published since " (since) "." } @else { "Create a draft to group issues and record what ships." } }
+                    }
+                }
+            } @else if !rows.is_empty() {
+                @let visible = &rows[..rows.len().min(page_size as usize)];
+                @for (draft,heading) in [(true, "Drafts"), (false, "Published")] {
+                    @if visible.iter().any(|r| r.published_on.is_none() == draft) {
+                        section.release-group.content-section {
+                            div.section-head { h2 { (heading) } @if !draft && let Some(since) = floor { span.release-period { "Since " (since.format("%d %b %Y")) } } }
+                            ul.clean-list {
+                                @for r in visible.iter().filter(|r| r.published_on.is_none() == draft) {
+                                    li { a.release-record href=(format!("/releases/{}",r.id)) {
+                                        span.release-record-icon aria-hidden="true" { (ui::icon(if draft { "edit" } else { "releases" })) }
+                                        span.release-identity {
+                                            span.release-name { (r.name) }
+                                            @if !r.version.is_empty() { span.release-version { (r.version) } }
+                                            @if project.is_none() { small { (r.project_name) } }
+                                        }
+                                        span.release-record-count {
+                                            @if draft { (r.members) " in scope" }
+                                            @else { (r.entries) " shipped · " (r.first_shipments) " first " (if r.first_shipments == 1 { "shipment" } else { "shipments" }) }
+                                        }
+                                        span.release-record-date {
+                                            @if let Some(date) = r.published_on {
+                                                time datetime=(date) { (date.format("%d %b %Y")) }
+                                            } @else if let Some(date) = r.target_on {
+                                                "Target " time datetime=(date) { (date.format("%d %b %Y")) }
+                                            } @else { "No target date" }
+                                        }
+                                        span.release-forward aria-hidden="true" { (ui::icon("arrow")) }
+                                    } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            @if query.page > 0 || rows.len() > page_size as usize { nav class="view-tools" aria-label="Release pages" {
                 @if query.page > 0 { a href=(format!("{base}&page={}", query.page-1)) { "Previous page" } }
                 @if rows.len() > page_size as usize { a href=(format!("{base}&page={}",u64::from(query.page)+1)) { "Next page" } }
-            }
+            } }
         },
+        project,
     ))
 }
 

@@ -7,7 +7,7 @@ on:
       tag:
         description: Published Ratio release tag
         required: true
-        default: v0.1.1
+        default: v0.2.0
         type: string
 permissions:
   contents: read
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [fresh, upgrade]
+        scenario: ${{ fromJSON((github.event.release.tag_name || inputs.tag) == 'v0.1.1' && '["fresh", "working-set-upgrade"]' || '["fresh", "working-set-upgrade", "ratio-upgrade"]') }}
     runs-on: windows-2025
     timeout-minutes: 12
     steps:
@@ -29,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a release tag such as v0.1.1' }
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a release tag such as v0.2.0' }
           $version = $env:RELEASE_TAG.Substring(1)
           $exe = "Ratio-$version-windows-x64-setup.exe"
           $dir = Join-Path $env:RUNNER_TEMP 'published-ratio'
@@ -42,7 +42,7 @@ jobs:
           if ((Get-FileHash (Join-Path $dir $exe)).Hash -ne $expected) { throw 'Release checksum mismatch' }
           "VERIFIED_SETUP=$(Join-Path $dir $exe)" >> $env:GITHUB_ENV
       - name: Fetch the published Working Set upgrade fixture
-        if: matrix.scenario == 'upgrade'
+        if: matrix.scenario == 'working-set-upgrade'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,6 +51,16 @@ jobs:
           gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "LEGACY_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
+      - name: Fetch the published Ratio upgrade fixture
+        if: matrix.scenario == 'ratio-upgrade'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $name = 'Ratio-0.1.1-windows-x64-setup.exe'
+          gh release download v0.1.1 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "PREVIOUS_RATIO_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
       - name: Test the published installer and its default user profile
         shell: powershell
-        run: ./desktop/packaging/windows/smoke.ps1 -Installer $env:VERIFIED_SETUP -LegacyInstaller $env:LEGACY_SETUP
+        run: ./desktop/packaging/windows/smoke.ps1 -Installer $env:VERIFIED_SETUP -LegacyInstaller $env:LEGACY_SETUP -PreviousRatioInstaller $env:PREVIOUS_RATIO_SETUP

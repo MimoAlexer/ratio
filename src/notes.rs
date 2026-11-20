@@ -56,6 +56,7 @@ struct Note {
 #[derive(Deserialize)]
 struct NoteForm {
     csrf: String,
+    back: Option<String>,
     #[serde(default)]
     draft_token: Option<Uuid>,
     project: Uuid,
@@ -223,7 +224,11 @@ async fn write_form(
             let token = f
                 .draft_token
                 .map_or_else(String::new, |id| format!("&draft_token={id}"));
-            Ok(Redirect::to(&format!("/notes/{note}?saved={origin}{token}")).into_response())
+            let destination = views::with_origin(
+                &format!("/notes/{note}?saved={origin}{token}"),
+                f.back.as_deref(),
+            );
+            Ok(Redirect::to(&destination).into_response())
         }
         Err(AppError::Conflict(message)) => {
             views::recover(&s.db, auth, id, f, &message, true).await

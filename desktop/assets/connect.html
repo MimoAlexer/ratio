@@ -7,102 +7,115 @@
   <title>Connect to Ratio</title>
   <style>
     :root {
-      color-scheme: light dark;
-      --canvas: #fafafa;
-      --bar: #f4f4f5;
-      --ink: #1d1d1f;
-      --secondary: #56565b;
-      --line: #dcdcdf;
-      --field: #fff;
-      --control-line: #8b8b90;
-      --focus: #52677b;
-      --button: #252527;
-      --button-text: #fff;
-      font: 15px/1.46 "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color-scheme: dark;
+      --canvas: #171819;
+      --field: #1d1f20;
+      --ink: #eeeeed;
+      --secondary: #bdc0c1;
+      --muted: #999d9e;
+      --line: #3b3d3f;
+      --control-line: #787d80;
+      --focus: #abc0cf;
+      --button: #e4e5e0;
+      --button-hover: #f3f3f0;
+      --button-text: #1b1c1a;
+      --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+      --control: 38px;
+      --radius: 4px;
+      font: 400 100%/1.5 var(--sans);
       -webkit-font-smoothing: antialiased;
     }
-    @media (prefers-color-scheme: dark) {
+    @media (prefers-color-scheme: light) {
       :root {
-        --canvas: #151516;
-        --bar: #111112;
-        --ink: #eeeef0;
-        --secondary: #aaaab0;
-        --line: #303033;
-        --field: #202022;
-        --control-line: #6f6f75;
-        --focus: #a4b6c7;
-        --button: #e7e7e9;
-        --button-text: #19191b;
+        color-scheme: light;
+        --canvas: #fafafa;
+        --field: #fff;
+        --ink: #1b1c1a;
+        --secondary: #4f5254;
+        --muted: #606365;
+        --line: #d6d8d9;
+        --control-line: #818587;
+        --focus: #425966;
+        --button: #252727;
+        --button-hover: #121414;
+        --button-text: #fafafa;
       }
     }
     *, *::before, *::after { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    body { margin: 0; min-height: 100vh; color: var(--ink); background: var(--canvas); }
-    .brand {
-      display: flex; align-items: center; gap: 8px; min-height: 48px;
-      padding: 8px 24px; background: var(--bar); border-bottom: 1px solid var(--line);
-      font-size: 15px; font-weight: 600;
+    body { margin: 0; min-height: 100vh; color: var(--ink); background: var(--canvas); font-size: .875rem; }
+    main {
+      width: min(100%, 29rem); margin-inline: auto;
+      padding: clamp(52px, 18vh, 160px) 24px 32px;
     }
-    .mark, .mark svg { width: 24px; height: 24px; display: block; }
-    main { max-width: 600px; margin-inline: auto; padding: 72px 24px 40px; }
-    h1 { margin: 0; font-weight: 550; font-size: 28px; line-height: 1.2; letter-spacing: -.035em; }
-    .intro { margin: 8px 0 28px; color: var(--secondary); }
+    .brand {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
+      font-size: 1.125rem; line-height: 1; font-weight: 650; letter-spacing: -.045em;
+    }
+    .mark, .mark svg { width: 27px; height: 27px; display: block; }
+    h1 { margin: 0; font-size: 1.5rem; font-weight: 620; line-height: 1.25; letter-spacing: -.035em; }
+    .intro { margin: 8px 0 20px; color: var(--secondary); }
     form { margin: 0; }
-    label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 550; }
-    .controls { display: flex; gap: 8px; }
+    label { display: block; margin-bottom: 6px; font-size: .8125rem; font-weight: 600; }
+    .controls { display: grid; gap: 12px; }
     input, button { font: inherit; }
     input {
-      min-width: 0; flex: 1; min-height: 38px; padding: 7px 10px;
-      border: 1px solid var(--control-line); border-radius: 4px; color: var(--ink); background: var(--field);
-      font: 400 14px/1.45 "IBM Plex Mono", ui-monospace, Consolas, monospace;
+      min-width: 0; width: 100%; min-height: var(--control); padding: 7px 10px;
+      border: 1px solid var(--control-line); border-radius: var(--radius); color: var(--ink); background: var(--field);
+      font: 400 .8125rem/1.5 var(--mono);
     }
-    input::placeholder { color: var(--secondary); opacity: 1; }
-    :where(input, button, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-    button { cursor: pointer; }
+    input::placeholder { color: var(--muted); opacity: 1; }
+    :where(input, button, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+    button, summary { cursor: pointer; }
     .submit {
-      min-height: 38px; padding: 7px 16px; border: 1px solid var(--button); border-radius: 4px;
-      color: var(--button-text); background: var(--button); font-size: 14px; font-weight: 600;
+      min-height: var(--control); padding: 7px 16px; border: 1px solid var(--button); border-radius: var(--radius);
+      color: var(--button-text); background: var(--button); font-size: .8125rem; font-weight: 600;
     }
-    .submit:hover { opacity: .87; }
+    .submit:hover, .submit:active { background: var(--button-hover); border-color: var(--button-hover); }
     .feedback {
-      margin: 12px 0 0; padding-inline-start: 10px; border-inline-start: 2px solid var(--control-line);
-      font-size: 14px; overflow-wrap: anywhere;
+      margin: 0; padding-inline-start: 12px; border-inline-start: 2px solid var(--control-line);
+      color: var(--ink); font-size: .875rem; overflow-wrap: anywhere;
     }
-    .actions { display: flex; flex-wrap: wrap; gap: 0 20px; margin-top: 8px; }
+    /* Keep the live region in the accessibility tree before the first response. */
+    .feedback:empty {
+      position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
+      overflow: hidden; clip-path: inset(50%);
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0 16px; margin-top: 8px; }
     .text-button {
-      padding: 4px 0; border: 0; background: transparent; color: var(--secondary);
-      font-size: 14px; text-decoration: underline; text-underline-offset: 3px;
+      min-height: 32px; padding: 4px 0; border: 0; background: transparent; color: var(--secondary);
+      font-size: .8125rem; text-decoration: underline; text-decoration-color: var(--control-line); text-underline-offset: 3px;
     }
     .text-button:hover, summary:hover { color: var(--ink); }
     .local-demo { margin-top: 8px; }
-    .help { margin-top: 24px; color: var(--secondary); font-size: 14px; }
-    summary { width: fit-content; cursor: pointer; padding-block: 4px; }
-    .help p { max-width: 56ch; margin: 4px 0 0; overflow-wrap: anywhere; }
-    code { font: 400 .95em/1.45 "IBM Plex Mono", ui-monospace, Consolas, monospace; }
-    @media (max-width: 520px) {
-      main { padding: 36px 20px; }
-      .brand { padding-inline: 20px; }
-      h1 { font-size: 25px; }
-      .intro { margin-bottom: 24px; }
-      .controls { flex-direction: column; align-items: stretch; gap: 12px; }
-      .submit { align-self: flex-start; }
-      input, .submit { min-height: 40px; }
+    .help { margin-top: 16px; color: var(--secondary); font-size: .8125rem; }
+    summary { width: fit-content; min-height: 32px; padding-block: 6px; }
+    .help p { margin: 0 0 4px; overflow-wrap: anywhere; }
+    code { color: var(--ink); font: 400 .95em/1.5 var(--mono); }
+    @media (max-width: 600px), (pointer: coarse) {
+      :root { --control: 44px; }
+      .text-button, summary { min-height: 44px; padding-block: 12px; }
+    }
+    @media (max-width: 520px), (max-height: 600px) {
+      main { padding-block-start: clamp(28px, 9vh, 76px); }
     }
   </style>
 </head>
 <body>
-  <header class="brand"><span class="mark" aria-hidden="true">{{MARK}}</span>Ratio</header>
   <main>
+    <header class="brand"><span class="mark" aria-hidden="true">{{MARK}}</span>Ratio</header>
     <h1>Workspace connection</h1>
-    <p class="intro">Enter the address of the Ratio server you use to sign in.</p>
+    <p class="intro">Use the address where you open Ratio in your browser.</p>
     <form id="connection">
       <label for="origin">Workspace URL</label>
       <div class="controls">
         <input id="origin" name="origin" type="url" inputmode="url" autocapitalize="none"
-               autocomplete="off" spellcheck="false" required placeholder="https://workspace.example.com" value="{{ORIGIN}}">
-        <button class="submit" type="submit"><span id="verb">Connect</span></button>
+               autocomplete="off" spellcheck="false" aria-describedby="feedback" aria-errormessage="feedback" required placeholder="https://workspace.example.com" value="{{ORIGIN}}">
+        <p id="feedback" class="feedback" role="status" aria-live="polite">{{MESSAGE}}</p>
+        <button class="submit" type="submit" aria-describedby="feedback"><span id="verb">Connect</span></button>
       </div>
-      <p id="feedback" class="feedback" role="status" aria-live="polite" {{MESSAGE_HIDDEN}}>{{MESSAGE}}</p>
     </form>
     <div class="actions" id="saved" {{SAVED_HIDDEN}}>
       <button type="button" class="text-button" id="change">Use another address</button>
@@ -111,7 +124,7 @@
     <button type="button" class="text-button local-demo" id="demo" data-origin="{{DEMO_ORIGIN}}" {{DEMO_HIDDEN}}>Open local demo</button>
     <details class="help">
       <summary>Where do I find my workspace URL?</summary>
-      <p>Use the HTTPS address where Ratio is deployed. If the server runs on this computer, enter its local address and port, such as <code>http://127.0.0.1:3000</code>.</p>
+      <p>Use your server’s HTTPS address without a page path. For a server on this computer, you can also enter a local address and port, such as <code>http://127.0.0.1:3000</code>.</p>
     </details>
   </main>
   <script>
@@ -126,7 +139,12 @@
     const startingMessage = feedback.textContent;
     function showMessage(text) {
       feedback.textContent = text;
-      feedback.hidden = !text;
+      field.removeAttribute("aria-invalid");
+    }
+    function showInvalidAddress(text) {
+      showMessage(text);
+      field.setAttribute("aria-invalid", "true");
+      field.focus();
     }
     function updateAction() {
       const sameAddress = savedOrigin && field.value.trim() === savedOrigin;
@@ -162,6 +180,8 @@
       if (!demo.hidden && demo.dataset.origin) send({action: "connect", origin: demo.dataset.origin}, "Opening local demo…");
     });
     updateAction();
+    const firstControl = savedOrigin && startingMessage ? form.querySelector("button") : field;
+    firstControl.focus();
   </script>
 </body>
 </html>

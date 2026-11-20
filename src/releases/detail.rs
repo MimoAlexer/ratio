@@ -141,33 +141,39 @@ pub(super) async fn show(
     } else {
         html! {}
     };
-    Ok(ui::page(
+    Ok(ui::page_in_project(
         &auth,
         &release.name,
         "releases",
         html! {
-            nav class="toolbar" aria-label="Release navigation" {
-                a href=(format!("/releases?project={}",project.id)) { "← Releases" }
-                a href=(format!("/roadmap?project={}",project.id)) { "Roadmap" }
-                a href=(format!("/insights?project={}",project.id)) { "Cycle time" }
+            nav class="release-context" aria-label="Release navigation" {
+                a href=(format!("/releases?project={}",project.id)) { "Releases" }
+                span aria-hidden="true" { "/" } span { (project.name) }
             }
-            header {
-                p class="muted" { (project.name) " · " @if is_draft { "Draft" } @else { "Published release" } }
-                h1 { (release.name) }
-                p class="row" {
-                    @if !release.version.is_empty() { span class="status" { (release.version) } }
-                    @if let Some(target) = release.target_on { span { "Target " (target) } }
-                    @if let Some(date) = release.published_on { span { "Published " (date) } }
-                    @if !release.source_url.is_empty() && valid_release_url(&release.source_url) {
-                        a href=(&release.source_url) rel="noreferrer" { "GitHub release ↗" }
+            header.view-head.release-detail-head {
+                div {
+                    h1 { (release.name) }
+                    p.release-metadata {
+                        span.release-stage { @if is_draft { "Draft" } @else { "Published release" } }
+                        @if !release.version.is_empty() { span.release-version { (release.version) } }
+                        @if let Some(target) = release.target_on { span { "Target " time datetime=(target) { (target.format("%d %b %Y")) } } }
+                        @if let Some(date) = release.published_on { span { "Published " time datetime=(date) { (date.format("%d %b %Y")) } } }
+                        @if !release.source_url.is_empty() && valid_release_url(&release.source_url) {
+                            a href=(&release.source_url) rel="noreferrer" { "GitHub release ↗" }
+                        }
                     }
                 }
+                nav.view-actions.release-related aria-label="Related project views" {
+                    a.action-quiet href=(format!("/roadmap?project={}",project.id)) { (ui::icon("roadmap")) "Roadmap" }
+                    a.action-quiet href=(format!("/insights?project={}",project.id)) { (ui::icon("insights")) "Cycle time" }
+                }
             }
-            @if project.archived { p class="notice" { "Archived project · read only" } }
+            @if project.archived { p.status-note { "Archived project · read only" } }
             (content)
             (history)
             (outlook)
         },
+        Some(project.id),
     ))
 }
 
@@ -190,56 +196,86 @@ fn preview(
         .iter()
         .filter(|i| i.status == "canceled" || i.archived)
         .collect();
+    let active_issue = open
+        .iter()
+        .find(|i| i.status == "in_progress" && !i.next_action.is_empty());
     html! {
-        section class="panel" id="manifest" {
-            h2 { "Publication preview" }
-            p { strong { (eligible.len()) } " ready to ship · " (open.len()) " open · " (excluded.len()) " archived or canceled" }
+        section.release-preview.content-section id="manifest" {
+            div.release-snapshot {
+                div {
+                    h2 { "Publication preview" }
+                    @if !members.is_empty() {
+                        p.release-ready { strong { (eligible.len()) } " ready to ship" }
+                        p.release-meta { (open.len()) " open · " (members.len()) " in scope" @if !excluded.is_empty() { " · " (excluded.len()) " archived or canceled" } }
+                    }
+                }
+                @if let Some(i) = active_issue {
+                    div.release-current {
+                        span.release-meta { "In progress" }
+                        a.release-current-issue href=(format!("/issues/{}",i.id)) {
+                            span.release-key { (&project.key) "-" (i.number) } span { (i.title) }
+                        }
+                        p.release-meta { (i.next_action) }
+                    }
+                }
+            }
             @if members.is_empty() {
-                p class="empty" { "Add issues to this draft to build its manifest." }
+                p.muted { "Add issues to this draft to build its manifest." }
             } @else if project.archived {
                 ul class="issue-list" { @for i in members { li { (issue_link(i.id,&project.key,i.number,&i.title)) " · " (status_label(&i.status)) } } }
             } @else {
-                form action=(format!("/releases/{}/publish",release.id)) method="post" class="stack" {
-                    (ui::csrf(auth))
-                    input type="hidden" name="command" value=(Uuid::new_v4());
-                    input type="hidden" name="revision" value=(release.revision);
-                    @if !eligible.is_empty() {
-                        fieldset { legend { "Ship selected Done issues" }
-                            @for i in &eligible {
-                                div class="row" {
-                                    label { input type="checkbox" name="ship" value=(format!("{}:{}",i.id,i.revision)) checked; " " (&project.key) "-" (i.number) " · " (i.title) }
-                                    a href=(format!("/issues/{}#history",i.id)) { "Issue history" }
-                                    @if i.shipped_before { span class="status" { "Previously shipped" } }
-                                }
+                details.release-publish {
+                    summary { (if eligible.is_empty() { "Review draft issues" } else { "Review shipment" }) }
+                    form action=(format!("/releases/{}/publish",release.id)) method="post" class="stack release-shipment" {
+                        (ui::csrf(auth))
+                        input type="hidden" name="command" value=(Uuid::new_v4());
+                        input type="hidden" name="revision" value=(release.revision);
+                        @if !eligible.is_empty() {
+                            fieldset.release-picks {
+                                legend { "Ship selected Done issues" }
+                                @for i in &eligible { (pick_issue(i, &project.key, true)) }
+                            }
+                        } @else { p.muted { "At least one Done issue is required to publish." } }
+                        @if !open.is_empty() {
+                            details.release-carry {
+                                summary { "Carry open issues into a new draft (" (open.len()) ")" }
+                                p.muted { "Select the issues to move when this release is published." }
+                                @for i in &open { (pick_issue(i, &project.key, false)) }
+                                label { "New draft name" input name="carry_to" maxlength="150" placeholder="e.g. Next point release"; }
+                            }
+                        } @else { input type="hidden" name="carry_to" value=""; }
+                        @if !excluded.is_empty() {
+                            details { summary { "Archived or canceled (" (excluded.len()) ")" }
+                                ul { @for i in &excluded { li { (issue_link(i.id,&project.key,i.number,&i.title)) " · "
+                                    @if i.archived { "Archived" } @else { "Canceled" } } } }
                             }
                         }
-                    } @else { p class="muted" { "At least one Done issue is required to publish." } }
-                    @if !open.is_empty() {
-                        details {
-                            summary { "Carry open issues into a new draft (" (open.len()) ")" }
-                            p { "Select the issues to move when this release is published." }
-                            @for i in &open {
-                                div class="row" {
-                                    label { input type="checkbox" name="carry" value=(format!("{}:{}",i.id,i.revision)); " " (&project.key) "-" (i.number) " · " (i.title) }
-                                    (status_label(&i.status)) a href=(format!("/issues/{}#history",i.id)) { "Issue history" }
-                                    @if !i.next_action.is_empty() { span class="muted" { "Next action · " (i.next_action) } }
-                                }
+                        @if !eligible.is_empty() {
+                            div.release-publish-controls {
+                                label { "Shipment date" input type="date" name="published_on" value=(today) max=(today) required; }
+                                button.action-primary type="submit" { "Publish selected issues" }
                             }
-                            label { "New draft name" input name="carry_to" maxlength="150" placeholder="e.g. Next point release"; }
+                            p.release-meta { "Publishing seals the selected titles and revisions. You can record a correction afterward." }
                         }
-                    } @else { input type="hidden" name="carry_to" value=""; }
-                    @if !excluded.is_empty() {
-                        details { summary { "Archived or canceled (" (excluded.len()) ")" }
-                            ul { @for i in &excluded { li { (issue_link(i.id,&project.key,i.number,&i.title)) " · "
-                                @if i.archived { "Archived" } @else { "Canceled" } } } }
-                        }
-                    }
-                    @if !eligible.is_empty() {
-                        label { "Shipment date" input type="date" name="published_on" value=(today) max=(today) required; }
-                        p class="muted" { "Publishing seals the selected titles and revisions. You can record a correction afterward." }
-                        button type="submit" { "Publish selected issues" }
                     }
                 }
+            }
+        }
+    }
+}
+
+fn pick_issue(i: &Member, key: &str, shipping: bool) -> Markup {
+    html! {
+        div.release-pick {
+            label {
+                input type="checkbox" name=(if shipping { "ship" } else { "carry" }) value=(format!("{}:{}",i.id,i.revision)) checked[shipping];
+                span.release-key { (key) "-" (i.number) }
+                span { (i.title) }
+            }
+            a.release-history href=(format!("/issues/{}#history",i.id)) aria-label=(format!("Issue history for {key}-{}",i.number)) { "History" }
+            @if !shipping || i.shipped_before {
+                small { @if !shipping { (status_label(&i.status)) @if !i.next_action.is_empty() { " · " (i.next_action) } }
+                    @else { "Previously shipped" } }
             }
         }
     }
@@ -255,12 +291,12 @@ fn edit_scope(
 ) -> Markup {
     let dest = format!("/releases/{id}/members");
     html! {
-        details class="panel" open[members.is_empty() || !search.is_empty()] id="scope" {
+        details class="release-scope" open[members.is_empty() || !search.is_empty()] id="scope" {
             summary { "Manage release scope" }
             @if !members.is_empty() {
                 h3 { "Current scope" }
-                ul class="issue-list" { @for i in members { li class="row" {
-                    (issue_link(i.id,key,i.number,&i.title)) (status_label(&i.status))
+                ul class="clean-list release-scope-list" { @for i in members { li {
+                    (issue_link(i.id,key,i.number,&i.title)) small { (status_label(&i.status)) }
                     form method="post" action=(&dest) { (ui::csrf(auth))
                         input type="hidden" name="from" value=(id);
                         input type="hidden" name="issue" value=(i.id);
@@ -274,8 +310,8 @@ fn edit_scope(
                 button class="secondary" { "Find issues" }
             }
             @if candidates.is_empty() { p class="muted" { "No matching issues available to add." } }
-            ul class="issue-list" { @for i in candidates.iter().take(20) { li class="row" {
-                (issue_link(i.id,key,i.number,&i.title)) " · " (status_label(&i.status))
+            ul class="clean-list release-scope-list" { @for i in candidates.iter().take(20) { li {
+                (issue_link(i.id,key,i.number,&i.title)) small { (status_label(&i.status)) }
                 form method="post" action=(&dest) { (ui::csrf(auth))
                     input type="hidden" name="from" value=(i.draft_id.map(|v| v.to_string()).unwrap_or_default());
                     input type="hidden" name="issue" value=(i.id);
@@ -318,7 +354,7 @@ async fn manifest(
     ).bind(auth.user_id).bind(id).fetch_all(&state.db).await?;
     let first = shipped.iter().filter(|row| row.first_id == id).count();
     Ok(html! {
-        section class="panel" id="manifest" {
+        section class="content-section release-manifest" id="manifest" {
             h2 { "Shipped manifest" }
             p { strong { (shipped.len()) } " entries · " (first) " first shipments · " (shipped.len()-first) " repeat references" }
             ul class="issue-list" { @for e in &shipped { li {
@@ -366,7 +402,7 @@ async fn manifest(
             }
         }
         @if !project.archived && !shipped.is_empty() {
-            details class="panel" { summary { "Record a manifest correction" }
+            details class="release-scope" { summary { "Record a manifest correction" }
                 form method="post" action=(format!("/releases/{id}/amend")) class="stack" {
                     (ui::csrf(auth))
                     label { "Shipped entry" select name="issue" { @for e in &shipped { option value=(e.issue_id) { (project.key) "-" (e.number) " · " (e.title) } } } }

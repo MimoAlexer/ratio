@@ -7,11 +7,11 @@ use uuid::Uuid;
 use super::calendar::{ReleaseDate, WeekOff};
 use super::{Dependency, Milestone};
 
-const LEFT: f64 = 258.0;
-const RIGHT: f64 = 920.0;
-const WIDTH: usize = 944;
-const AXIS: usize = 58;
-const ROW: usize = 54;
+const LEFT: f64 = 204.0;
+const RIGHT: f64 = 790.0;
+const WIDTH: usize = 810;
+const AXIS: usize = 52;
+const ROW: usize = 47;
 
 struct Calendar {
     first: NaiveDate,
@@ -210,7 +210,7 @@ fn milestone_row(
     );
     let point = m.target_on.or(m.end_on).or(m.start_on);
     html! {
-        a class=(class) href=(detail(project,m.id)) aria-label=(format!("{}, {}, open milestone details",m.title,state)) {
+        a class=(class) href=(detail(project,m.id)) aria-current=[(selected == Some(m.id)).then_some("true")] aria-label=(format!("{}, {}, open milestone details",m.title,state)) {
             title { (m.title) " · " (state) @if let Some(d) = m.target_on { " · Target " (date(d)) } }
             rect class="rm-hit" x="0" y=(AXIS+i*ROW) width=(WIDTH) height=(ROW) {}
             (svg_labels(&m.title,state,y,&m.status))
@@ -322,12 +322,15 @@ impl Schedule<'_> {
                             }
                         }
                     }
-                    text class="rm-axis-title" x="14" y="38" { "Workstream" }
+                    text class="rm-axis-title" x="13" y="40" { "Milestone / release" }
                     line class="rm-rule" x1=(LEFT-10.0) x2=(LEFT-10.0) y1="0" y2=(height) {}
-                    @for d in ticks {
+                    @let last_tick = ticks.len().saturating_sub(1);
+                    @for (index, d) in ticks.into_iter().enumerate() {
                         @let x = calendar.x(d);
                         line class="rm-grid" x1=(x) x2=(x) y1=(AXIS-8) y2=(height) {}
-                        text class="rm-axis" x=(x) y="44" text-anchor=(if x-LEFT < 24.0 { "start" } else if RIGHT-x < 24.0 { "end" } else { "middle" }) { (calendar.tick_label(d)) }
+                        @if last_tick < 7 || index == last_tick || index % 2 == 0 {
+                            text class="rm-axis" x=(x) y="40" text-anchor=(if x-LEFT < 24.0 { "start" } else if RIGHT-x < 24.0 { "end" } else { "middle" }) { (calendar.tick_label(d)) }
+                        }
                     }
                     @for i in 0..=rows {
                         line class="rm-rule" x1="0" x2=(WIDTH) y1=(AXIS+i*ROW) y2=(AXIS+i*ROW) {}
@@ -377,38 +380,59 @@ impl Schedule<'_> {
                 @for m in ordered {
                     article class=(if self.selected==Some(m.id) {"rm-entry rm-entry-selected"} else {"rm-entry"}) {
                         div class="rm-entry-first" {
-                            a href=(detail(self.project,m.id)) { (m.title) }
+                            a href=(detail(self.project,m.id)) aria-current=[(self.selected == Some(m.id)).then_some("true")] { (m.title) }
                             span { (self.state(m)) }
                         }
-                        p class="rm-when" {
-                            (agenda_span(m.start_on,m.end_on))
-                            @if let Some(d) = m.target_on { span { "Target " (date(d)) } }
-                            @if m.start_on.is_none() && m.end_on.is_none() && m.target_on.is_none() { "Unscheduled" }
-                        }
-                        @if let Some(parents) = self.relations.before.get(&m.id) {
-                            ul class="rm-before" aria-label="Prerequisites" {
-                                @for id in parents {
-                                    @if let Some(&i) = self.index.get(id) {
-                                        @let p = &self.milestones[i];
-                                        li { "Depends on " a href=(detail(self.project,p.id)) { (p.title) } " · " (status(p)) }
+                        @let parents = self.relations.before.get(&m.id).map(Vec::as_slice).unwrap_or_default();
+                        @let primary = if let Some(d) = m.target_on { format!("Target {}",date(d)) }
+                            else if let Some(d) = m.start_on { format!("Start {}",date(d)) }
+                            else if let Some(d) = m.end_on { format!("End {}",date(d)) }
+                            else { "Unscheduled".to_owned() };
+                        @if m.start_on.is_some() || m.end_on.is_some() || !parents.is_empty() {
+                            details.rm-agenda-detail {
+                                summary {
+                                    span { (primary) }
+                                    @if !parents.is_empty() {
+                                        span.rm-agenda-count { (parents.len()) " " @if parents.len() == 1 { "prerequisite" } @else { "prerequisites" } }
+                                    }
+                                }
+                                @if m.start_on.is_some() || m.end_on.is_some() {
+                                    p.rm-when { (agenda_span(m.start_on,m.end_on)) }
+                                }
+                                @if !parents.is_empty() {
+                                    ul.rm-before aria-label="Prerequisites" {
+                                        @for id in parents {
+                                            @if let Some(&i) = self.index.get(id) {
+                                                @let p = &self.milestones[i];
+                                                li { a href=(detail(self.project,p.id)) { (p.title) } " · " (status(p)) }
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
+                        } @else { p.rm-when { (primary) } }
                     }
                 }
                 @for r in self.releases {
                     article class="rm-entry" {
                         div class="rm-entry-first" {
                             a href=(format!("/releases/{}",r.id)) { (r.name) }
-                            span { "Release · " (r.version) }
+                            span { "Release" @if !r.version.is_empty() { " · " (r.version) } }
                         }
-                        p class="rm-when" {
-                            (agenda_span(r.start_on,r.end_on))
-                            @if let Some(d) = r.target_on { span { "Target " (date(d)) } }
-                            @if let Some(d) = r.published_on { span { "Shipped " (date(d)) } }
-                            @if r.start_on.is_none() && r.end_on.is_none() && r.target_on.is_none() && r.published_on.is_none() { "Unscheduled" }
-                        }
+                        @let primary = if let Some(d) = r.published_on { format!("Shipped {}",date(d)) }
+                            else if let Some(d) = r.target_on { format!("Target {}",date(d)) }
+                            else if let Some(d) = r.start_on { format!("Start {}",date(d)) }
+                            else if let Some(d) = r.end_on { format!("End {}",date(d)) }
+                            else { "Unscheduled".to_owned() };
+                        @if r.start_on.is_some() || r.end_on.is_some() || (r.published_on.is_some() && r.target_on.is_some()) {
+                            details.rm-agenda-detail {
+                                summary { span { (primary) } }
+                                p.rm-when {
+                                    (agenda_span(r.start_on,r.end_on))
+                                    @if let (Some(_),Some(d)) = (r.published_on,r.target_on) { span { "Target " (date(d)) } }
+                                }
+                            }
+                        } @else { p.rm-when { (primary) } }
                     }
                 }
                 @for w in self.weeks {
@@ -468,18 +492,20 @@ pub(super) fn timeline(
         relations: Relations::new(deps),
     };
     html! {
-        link rel="stylesheet" href="/roadmap/timeline.css";
-        section class="rm-timeline" aria-label="Roadmap calendar" {
+        section class="rm-timeline" id="roadmap-schedule" aria-label="Roadmap calendar" tabindex="-1" {
             @if milestones.is_empty() && releases.is_empty() && weeks.is_empty() {
-                div class="rm-empty" { h2 { "No milestones yet" } p { "Add a milestone to schedule work and connect its prerequisites." } }
+                div class="rm-empty" { h2 { "No milestones yet" } p { "Milestones, releases and unavailable weeks will appear on this schedule." } }
             } @else {
                 div class="rm-views" {
                     input class="rm-toggle" id="rm-toggle-agenda" type="checkbox" aria-controls="rm-plot rm-agenda";
                     div class="rm-toolbar" {
-                        h2 { (calendar.first.format("%d %b")) @if calendar.first.year()!=calendar.last.year() { " " (calendar.first.year()) } " – " (date(calendar.last)) }
+                        div.rm-chart-title {
+                            h2 { "Project schedule" }
+                            p { (calendar.first.format("%d %b")) @if calendar.first.year()!=calendar.last.year() { " " (calendar.first.year()) } " – " (date(calendar.last)) }
+                        }
                         label for="rm-toggle-agenda" class="rm-switch" {
-                            span class="rm-wide-label" { "Agenda view" }
-                            span class="rm-narrow-label" { "Timeline view" }
+                            span.rm-wide-label { "Agenda view" }
+                            span.rm-narrow-label { "Timeline view" }
                         }
                     }
                     div id="rm-plot" { (schedule.graph(&calendar,today)) }

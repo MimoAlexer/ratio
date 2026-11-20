@@ -7,11 +7,11 @@ Ratio opens a dedicated application window on Windows and Linux. Each installati
 Download the appropriate package from the [private releases](https://github.com/MimoAlexer/ratio/releases). The release contains SHA256SUMS for both installers.
 
 - **Windows x64:** run the setup EXE. It installs for the current user and adds Ratio to the Start menu. Microsoft Edge WebView2 Evergreen is required. If it is missing, follow the installer’s instructions or install the [official Microsoft WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The release is unsigned.
-- **Ubuntu / Debian x86-64:** from the directory containing the downloaded package, run `sudo apt install ./ratio_0.1.1_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
+- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.2.0_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
 
 ## Upgrading
 
-Version 0.1.1 keeps existing server connections and sign-in profiles. If the earlier profile directory already exists, Ratio uses it in place. A new installation starts in a private Ratio data directory.
+Close the app and install 0.2.0 over Ratio 0.1.1 or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need the 0.2.0 server to see the redesigned workspace.
 
 ## Connect two computers
 
@@ -32,7 +32,7 @@ The local demo uses `http://127.0.0.1:4178` on the machine running the bundled d
 
 ## The workspace
 
-The issue list opens first. Use Filters and Display to control the records, grouping and sort order, or switch to Board. Click an issue key for its description, next action, properties and history. The theme control in the window toolbar switches between graphite with a muted steel-blue accent and pure monochrome.
+The issue list opens first. Use Filters and Display to control the records, grouping and sort order, or switch to Board. The desktop list has an inspector for the selected issue. Open its issue key to read the full record. Home brings together your next actions. The theme control switches between graphite and pure monochrome.
 
 ![Issue detail in Ratio on Linux](../docs/images/ratio-issue-detail.png)
 

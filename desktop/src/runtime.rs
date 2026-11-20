@@ -348,7 +348,7 @@ impl Desktop {
                         let message = serde_json::to_string(&reason).map_err(|e| e.to_string())?;
                         return page
                             .view
-                            .evaluate_script(&format!("showMessage({message}); field.focus()"))
+                            .evaluate_script(&format!("showInvalidAddress({message})"))
                             .map_err(|e| e.to_string());
                     }
                 };

@@ -1,0 +1,177 @@
+.release-review {
+  container: release-review / inline-size;
+  scroll-margin-top: var(--s4, 16px);
+}
+.release-review .review-head,
+.review-instrument-head,
+.review-week,
+.review-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2, 8px) var(--s4, 16px);
+}
+.release-review .review-head,
+.review-instrument-head { justify-content: space-between; }
+.release-review .review-head { margin-block-end: var(--s4, 16px); }
+.review-head p,
+.review-footnote,
+.review-readout,
+.review-instrument-head > span,
+.review-legend {
+  color: var(--fg-3, var(--faint));
+  font-size: 12px;
+}
+.review-head p { margin: var(--s1, 4px) 0 0; }
+.release-review .review-week { position: relative; gap: var(--s3, 12px); }
+.review-week > a, .review-week-picker > summary { font-size: 13px; }
+.review-week-picker {
+  padding: 0;
+  border: 0;
+}
+.review-week-picker > summary { padding-block: var(--s2, 8px); }
+.review-week-picker[open] { width: 100%; }
+.review-week-picker form { align-items: end; margin: 0; }
+.review-footnote { margin: 0 0 var(--s3, 12px); }
+.review-instruments {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s6, 24px);
+}
+.review-instrument {
+  min-width: 0;
+  padding-top: var(--s3, 12px);
+  border-top: 1px solid var(--line);
+}
+.review-readout { margin: var(--s1, 4px) 0 var(--s2, 8px); }
+.review-readout a {
+  display: inline-block;
+  padding-block: 2px;
+  color: var(--fg-2, var(--muted));
+}
+.review-instrument-head { align-items: baseline; }
+.review-instrument-head > span { font-family: var(--mono); font-size: 11px; }
+.review-burnup { margin: var(--s2, 8px) 0 0; }
+.review-burnup svg { width: 100%; height: 160px; display: block; overflow: visible; }
+.review-axis {
+  fill: var(--fg-2, var(--muted));
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.review-axis-unobserved { fill: var(--fg-3, var(--faint)); }
+.review-grid { stroke: var(--line); }
+.review-scope-line, .review-done-line { stroke-width: 1.6px; }
+.review-scope-line { stroke: var(--fg-2, var(--muted)); }
+.review-done-line { stroke: var(--accent); stroke-dasharray: 4 4; }
+.review-scope-mark { stroke: var(--fg-2, var(--muted)); stroke-width: 1.5px; fill: var(--canvas); }
+.review-done-mark, .review-shipped-mark { fill: var(--accent); }
+.review-shipped-mark { transform-box: fill-box; transform-origin: center; transform: translateX(-50%) rotate(45deg); }
+.review-hit { fill: transparent; }
+.review-point:is(:hover,:focus-visible) .review-hit { stroke: var(--fg, var(--text)); stroke-width: 1.5px; }
+.review-legend { gap: var(--s2, 8px) var(--s4, 16px); min-height: 28px; }
+.review-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.review-legend i { position: relative; width: 18px; height: 0; border-top: 2px solid var(--fg-2,var(--muted)); }
+.review-legend .review-key-done { border-top: 2px dashed var(--accent); }
+.review-legend i::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 6px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--fg-2, var(--muted));
+  background: var(--canvas);
+}
+.review-legend .review-key-done::after { border-radius: 50%; background: var(--accent); border-color: var(--accent); }
+.release-review table { margin: 0; }
+.release-review .review-waterfall { display: table; width: 100%; font-variant-numeric: tabular-nums; table-layout: auto; }
+.release-review .review-waterfall :is(td,th) {
+  min-width: 0;
+  padding: 0 var(--s2, 8px);
+  text-align: end;
+  font-size: 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--subtle-line);
+}
+.review-waterfall :is(th,td):first-child { text-align: start; padding-inline-start: 0; }
+.review-waterfall :is(th,td):last-child { padding-inline-end: 0; }
+.review-waterfall thead th { height: 25px; border-top: 0; background: transparent; color: var(--fg-3,var(--faint)); }
+.review-waterfall tbody tr { position: relative; }
+.review-waterfall tbody tr:is(:hover,:focus-within) { background: var(--surface); }
+.review-waterfall tbody th a {
+  display: block;
+  width: max-content;
+  min-height: var(--row, 36px);
+  align-content: center;
+  color: var(--fg, var(--text));
+  text-decoration: none;
+}
+.review-waterfall tbody th a::after { content: ""; position: absolute; inset: 0; }
+.review-waterfall tbody th a:is(:hover,:focus-visible) { text-decoration: underline; }
+.review-waterfall .review-track-head { width: 100%; }
+.review-track { display: block; position: relative; height: 10px; border-inline-start: 1px solid var(--line); }
+.review-track i {
+  position: absolute;
+  inset-block: 1px;
+  inset-inline-start: min(var(--bar-start), calc(100% - 2px));
+  width: max(2px, var(--bar-range));
+  background: var(--accent);
+}
+.review-track .review-total { background: var(--fg-2, var(--muted)); }
+.review-track .review-drop { border: 1px solid var(--fg-2, var(--muted)); background: transparent; }
+.review-evidence { margin-top: var(--s4, 16px); border-top: 1px solid var(--line); }
+.review-evidence details { padding-block: 0; }
+.review-evidence summary {
+  width: 100%;
+  padding-block: var(--s2, 8px);
+  min-height: var(--row, 36px);
+  color: var(--fg-2, var(--muted));
+  font-size: 13px;
+}
+.review-evidence details[open] > summary { color: var(--fg, var(--text)); }
+.review-evidence > details > details { padding-inline-start: var(--s4, 16px); }
+.review-selection, .review-evidence h4 { scroll-margin-block: var(--s4, 16px); }
+.review-selection { padding: var(--s3, 12px) var(--s4, 16px); }
+.review-selection:target, .review-evidence h4:target {
+  border-inline-start: 2px solid var(--accent);
+  padding-inline-start: var(--s3, 12px);
+}
+.review-selection:focus-visible { outline: 0; background: var(--surface); border-inline-start: 2px solid var(--accent); }
+.review-issue-list { margin-block-start: var(--s1, 4px); }
+.review-issue-list > li { padding: 0; }
+.review-issue-link code { color: var(--fg-3, var(--faint)); font-size: 12px; white-space: nowrap; }
+.review-issue-list .review-issue-link {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--s2, 8px);
+  min-height: var(--row, 36px);
+  align-content: center;
+  padding-block: var(--s1, 4px);
+  color: var(--fg, var(--text));
+  text-decoration: none;
+}
+.review-issue-list .review-issue-link:is(:hover,:focus-visible) span { text-decoration: underline; }
+.review-issue-list li > .muted { padding-block-end: var(--s2, 8px); }
+.review-events { max-width: 100%; overflow-x: auto; }
+.review-events td, .review-events th { overflow-wrap: anywhere; }
+@container release-review (max-width: 20rem) {
+  .review-axis-minor { visibility: hidden; }
+}
+@container release-review (min-width: 50rem) {
+  .review-instruments {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, .85fr);
+    gap: var(--s8, 32px);
+  }
+}
+@media (pointer: coarse) {
+  .review-evidence summary, .review-waterfall tbody th a, .review-week-picker > summary { min-height: 44px; }
+  .review-week > a { display: inline-flex; align-items: center; min-height: 44px; }
+}
+@media (max-width: 540px) {
+  .review-axis { font-size: 11px; }
+  .release-review .review-head { align-items: start; }
+  .review-head > .review-week { width: 100%; }
+  .review-waterfall .review-track-cell { padding-inline: 4px; }
+  .review-events tbody td { padding: 5px; font-size: 12px; }
+}

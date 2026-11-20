@@ -1,0 +1,90 @@
+/* Project health reads in order of action, schedule and evidence. */
+.health-project {
+  --health-gap: var(--s6, 24px);
+  --health-columns: minmax(0, 1fr) minmax(7rem, .4fr) minmax(8rem, .43fr);
+  min-width: 0;
+}
+.health-project + .health-project { border-top: 1px solid var(--line); padding-top: var(--health-gap); }
+.health-project-name { margin-bottom: var(--s3, 12px); }
+.health-switch { display: flex; align-items: center; gap: var(--s2, 8px); }
+.health-switch select { max-width: min(13rem, 54vw); }
+.health-caption, .health-item-state, .health-record-name small, .health-date, .health-scope {
+  color: var(--fg-3, var(--faint));
+  font-size: .875em;
+}
+.health-caption time, .health-date time { font-family: var(--mono); font-size: .95em; }
+.health-attention { padding: var(--s4, 16px) 0 var(--s5, 20px); border-top: 1px solid var(--line); }
+.health-assessment { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: var(--s1, 4px) var(--s3, 12px); }
+.health-assessment h2, .health-assessment h3 { margin: 0; font-size: 1rem; }
+.health-assessment > span { color: var(--fg-3, var(--faint)); font-size: 12px; }
+.health-attention-required { padding-inline-start: var(--s3, 12px); border-inline-start: 2px solid var(--risk); }
+.health-assessment > p, .health-subject { grid-column: 1 / -1; margin: 0; max-width: 66ch; }
+.health-assessment > p { color: var(--fg-2, var(--muted)); font-size: 13px; }
+.health-subject { padding-top: var(--s1, 4px); font-size: 16px; font-weight: 560; }
+.health-project a { text-underline-offset: .2em; }
+.health-project a code { color: var(--fg-3, var(--faint)); font-size: .83em; margin-inline-end: .2em; white-space: nowrap; }
+.health-workbench { display: grid; grid-template-columns: minmax(0, 2.45fr) minmax(190px, .85fr); gap: var(--health-gap); align-items: start; }
+.health-portfolio .health-workbench { display: block; }
+.health-portfolio .health-context { display: flex; flex-wrap: wrap; align-items: start; gap: var(--health-gap); }
+.health-portfolio .health-context-section { flex: 1 1 230px; }
+.health-register, .health-context-section, .health-blockers { border-top: 1px solid var(--line); padding-top: var(--s4, 16px); }
+.health-register > .section-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s2, 8px); margin: 0 0 var(--s3, 12px); }
+.health-register h2, .health-context h3, .health-blockers h2 { margin: 0; font-size: 15px; }
+.health-source-link { display: inline-flex; min-height: 28px; align-items: center; gap: var(--s1, 4px); font-size: 13px; font-weight: 500; text-decoration: none; }
+.health-source-link:hover { text-decoration: underline; }
+.health-source-link svg { width: 13px; height: 13px; }
+.health-register-head, .health-record > summary {
+  display: grid;
+  grid-template-columns: var(--health-columns);
+  column-gap: var(--s3, 12px);
+  align-items: center;
+  padding-inline: var(--s5, 20px) var(--s2, 8px);
+}
+.health-register-head { padding-block: var(--s2, 8px); color: var(--fg-3, var(--faint)); font-size: 12px; border-bottom: 1px solid var(--line); }
+.health-record { padding: 0; border: 0; border-bottom: 1px solid var(--subtle-line); }
+.health-record > summary { position: relative; width: 100%; min-height: var(--row, 36px); padding-block: var(--s2, 8px); margin: 0; border-radius: var(--radius, 4px); font-weight: 400; list-style: none; }
+.health-record > summary::-webkit-details-marker { display: none; }
+.health-record > summary::before {
+  content: ""; position: absolute; left: 3px; top: 50%; width: 6px; height: 6px;
+  border-right: 1.5px solid var(--fg-3, var(--faint)); border-bottom: 1.5px solid var(--fg-3, var(--faint)); transform: translateY(-50%) rotate(-45deg);
+}
+.health-record[open] > summary::before { transform: translateY(-65%) rotate(45deg); }
+.health-record > summary:hover, .health-record > summary:focus-visible { background: var(--raised); }
+.health-record-name { display: grid; gap: 2px; }
+.health-record-name strong { font-size: 14px; font-weight: 560; }
+.health-record-body { padding: var(--s1, 4px) 0 var(--s3, 12px) var(--s5, 20px); }
+.health-record-body > .muted, .health-item-state { margin-inline-start: var(--s2, 8px); }
+.health-record-body > .health-record { margin-inline-start: var(--s1, 4px); }
+.health-record-body > .health-record:first-of-type { border-top: 1px solid var(--subtle-line); }
+.health-members { list-style: none; padding: 0; margin: var(--s2, 8px) 0 0; }
+.health-members li { padding-block: var(--s2, 8px); border-top: 1px solid var(--subtle-line); }
+.health-context-section { margin-bottom: var(--s4, 16px); }
+.health-context-section h3, .health-blockers h2 { margin-bottom: var(--s2, 8px); }
+.health-context-section p { margin-bottom: var(--s1, 4px); }
+.health-context-section p.muted, .health-context-section p:has(a), .health-record-body > .muted { font-size: 13px; }
+.health-blockers { margin-top: var(--health-gap); }
+.health-blocker-note { margin: var(--s3, 12px) 0 0; }
+@media (max-width: 1140px) {
+  .health-workbench { grid-template-columns: minmax(0, 1fr); }
+  .health-context { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: var(--health-gap); }
+}
+@media (max-width: 630px) {
+  .health-project { --health-gap: var(--s4, 16px); }
+  .health-assessment > span { font-size: 12px; }
+  .health-register-head { display: none; }
+  .health-record:first-of-type { border-top: 1px solid var(--subtle-line); }
+  .health-record > summary { grid-template-columns: minmax(0, 1fr) auto; gap: var(--s1, 4px) var(--s3, 12px); min-height: 44px; }
+  .health-record-name { grid-row: span 2; align-self: start; }
+  .health-date, .health-scope { text-align: end; font-size: 12px; }
+  .health-scope { grid-column: 2; }
+  .health-source-link { min-height: 44px; }
+  .health-subject a, .health-context-section p > a {
+    display: inline-block; min-height: 44px; padding-block: var(--s2, 8px);
+  }
+  .health-context { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
+@media (max-width: 345px) {
+  .health-record > summary { grid-template-columns: 1fr; }
+  .health-record-name { grid-row: auto; }
+  .health-date, .health-scope { grid-column: 1; text-align: start; }
+}

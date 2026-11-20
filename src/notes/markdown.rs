@@ -23,7 +23,9 @@ pub(super) struct Paragraph {
 }
 
 use percent_encoding::{NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd, html as markdown_html};
+use pulldown_cmark::{
+    Event, HeadingLevel, LinkType, Options, Parser, Tag, TagEnd, html as markdown_html,
+};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -207,6 +209,7 @@ struct Analysis {
     doc: Document,
     anchors: HashMap<usize, String>,
     ordinals: HashMap<usize, usize>,
+    has_h1: bool,
 }
 
 fn analyze(body: &str) -> Analysis {
@@ -237,6 +240,7 @@ fn analyze(body: &str) -> Analysis {
     let mut by_offset = HashMap::new();
     let mut ordinals = HashMap::new();
     let mut heading: Option<(usize, String)> = None;
+    let mut has_h1 = false;
     let mut reference: Option<usize> = None;
     let mut image_depth = 0;
     for (event, range) in parser(body) {
@@ -245,7 +249,10 @@ fn analyze(body: &str) -> Analysis {
             Event::End(TagEnd::Image) => image_depth -= 1,
             _ if image_depth > 0 => {}
             Event::Start(Tag::Paragraph) => paragraph_ranges.push(range),
-            Event::Start(Tag::Heading { .. }) => heading = Some((range.start, String::new())),
+            Event::Start(Tag::Heading { level, .. }) => {
+                has_h1 |= level == HeadingLevel::H1;
+                heading = Some((range.start, String::new()));
+            }
             Event::End(TagEnd::Heading(_)) => {
                 if let Some((start, label)) = heading.take() {
                     by_offset.insert(start, anchors.allocate(fragment_id(&label)));
@@ -297,6 +304,7 @@ fn analyze(body: &str) -> Analysis {
         doc,
         anchors: by_offset,
         ordinals,
+        has_h1,
     }
 }
 
@@ -351,6 +359,11 @@ pub(super) fn render(
     source_path: &str,
 ) -> Markup {
     let analysis = analyze(body);
+    // The note title is the page heading. Keep the source's heading hierarchy below it.
+    let embedded_level = |level: HeadingLevel| {
+        HeadingLevel::try_from(level as usize + usize::from(analysis.has_h1))
+            .unwrap_or(HeadingLevel::H6)
+    };
     let mut events = Vec::new();
     let mut image_depth = 0usize;
     let mut span_link = false;
@@ -409,11 +422,14 @@ pub(super) fn render(
                 Event::Html(format!("<p id=\"{id}\">").into())
             }
             Event::Start(Tag::Heading { level, .. }) => Event::Start(Tag::Heading {
-                level,
+                level: embedded_level(level),
                 id: Some(analysis.anchors[&range.start].clone().into()),
                 classes: vec![],
                 attrs: vec![],
             }),
+            Event::End(TagEnd::Heading(level)) => {
+                Event::End(TagEnd::Heading(embedded_level(level)))
+            }
             Event::Start(Tag::Link {
                 link_type,
                 dest_url,
@@ -790,6 +806,7 @@ mod tests {
     #[test]
     fn emits_named_sections_and_distinct_duplicate_anchors() {
         let html = check_render("# One *decision*\n\n# One decision", &[]).into_string();
+        assert!(html.starts_with("<h2 ") && html.trim_end().ends_with("</h2>"));
         assert!(html.contains(&format!("id=\"{}\"", fragment_id("One decision"))));
         assert!(html.contains(&format!("id=\"{}-2\"", fragment_id("One decision"))));
     }

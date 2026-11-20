@@ -14,6 +14,7 @@ use crate::{AppError, AppResult, AppState, auth::Auth, store};
 
 type Tx<'a> = Transaction<'a, Postgres>;
 type Time = DateTime<Utc>;
+pub(super) const TITLE_ERROR: &str = "Enter an issue title between 1 and 240 characters.";
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct NewIssue {
@@ -89,6 +90,16 @@ fn parse_labels(raw: &str) -> AppResult<Vec<String>> {
 }
 
 impl WriteForm {
+    fn submitted_finding_closed(&self, saved: bool) -> AppResult<bool> {
+        match self.finding_closed.as_deref() {
+            Some("true" | "on") => Ok(true),
+            Some("false" | "off") => Ok(false),
+            None if self.severity.is_some() => Ok(false), // Full form with an unchecked checkbox.
+            None => Ok(saved),
+            _ => Err(bad("Choose whether the manual finding is closed.")),
+        }
+    }
+
     fn draft(&self, project: Uuid) -> AppResult<NewIssue> {
         Ok(NewIssue {
             project,
@@ -148,13 +159,7 @@ impl Content {
         let field =
             |incoming: &Option<String>, old: &String| incoming.as_ref().unwrap_or(old).clone();
         let severity = field(&form.severity, &self.manual_severity);
-        let closed = match form.finding_closed.as_deref() {
-            Some("true" | "on") => true,
-            Some("false" | "off") => false,
-            None if form.severity.is_some() => false, // An unchecked checkbox in the full form.
-            None => self.finding_closed,
-            _ => return Err(bad("Choose whether the manual finding is closed.")),
-        };
+        let closed = form.submitted_finding_closed(self.finding_closed)?;
         let next = Self {
             title: form
                 .title
@@ -187,7 +192,7 @@ impl Content {
 
     fn validate(&self) -> AppResult<()> {
         if self.title.trim().is_empty() || self.title.chars().count() > 240 {
-            return Err(bad("Enter an issue title between 1 and 240 characters."));
+            return Err(bad(TITLE_ERROR));
         }
         if self.body.len() > 2 * 1024 * 1024 {
             return Err(bad("An issue description can contain up to 2 MiB."));
@@ -435,21 +440,38 @@ pub(super) async fn create(
     State(state): State<AppState>,
     auth: Auth,
     Form(form): Form<WriteForm>,
-) -> AppResult<Redirect> {
+) -> AppResult<Response> {
     auth.check_csrf(&form.csrf)?;
     let project = form.project.ok_or_else(|| bad("Choose a project."))?;
     let draft = form.draft(project)?;
     let mut tx = state.db.begin().await?;
-    let issue = insert_issue(
+    let result = insert_issue(
         &mut tx,
         auth.user_id,
         form.command_id,
         draft,
         CreateSource::IssueForm,
     )
-    .await?;
+    .await;
+    let issue = match result {
+        Ok(issue) => issue,
+        Err(AppError::BadRequest(message)) => {
+            tx.rollback().await?;
+            let projects = store::projects(&state.db, auth.user_id).await?;
+            let draft = form.draft(project)?;
+            let page = super::pages::issue_draft_error(
+                &auth,
+                &projects,
+                &draft,
+                form.command_id,
+                &message,
+            );
+            return Ok((StatusCode::BAD_REQUEST, page).into_response());
+        }
+        Err(error) => return Err(error),
+    };
     tx.commit().await?;
-    Ok(Redirect::to(&format!("/issues/{issue}")))
+    Ok(Redirect::to(&format!("/issues/{issue}")).into_response())
 }
 
 async fn set_blocker(
@@ -516,23 +538,40 @@ pub(super) async fn update(
             tx.commit().await?;
             Ok(Redirect::to(&format!("/issues/{issue}")).into_response())
         }
+        Err(AppError::BadRequest(reason)) if action == "edit" => {
+            let Some(revision) = form.revision else {
+                return Err(AppError::BadRequest(reason));
+            };
+            tx.rollback().await?;
+            let saved = saved_issue(&state.db, auth.user_id, issue)
+                .await?
+                .ok_or(AppError::NotFound)?;
+            let project = saved.issue.project_id;
+            let body = if saved.issue.archived || saved.project_archived {
+                conflict_review(&auth, issue, &action, &reason, &form, Some(&saved))
+            } else {
+                edit_retry(&auth, saved, form, revision, &reason)
+            };
+            let page =
+                crate::ui::page_in_project(&auth, "Edit issue", "issues", body, Some(project));
+            Ok((StatusCode::BAD_REQUEST, page).into_response())
+        }
         Err(AppError::Conflict(reason)) if action == "edit" || action == "checkpoint" => {
             tx.rollback().await?;
-            let current: Option<SavedIssue> = sqlx::query_as(
-                "SELECT i.*, p.key AS project_key, p.archived AS project_archived
-                 FROM issues i JOIN projects p ON (p.owner_id,p.id)=(i.owner_id,i.project_id)
-                 WHERE i.owner_id=$1 AND i.id=$2",
-            )
-            .bind(auth.user_id)
-            .bind(issue)
-            .fetch_optional(&state.db)
-            .await
-            .unwrap_or_else(|_| {
-                tracing::warn!("Could not load saved issue for conflict review");
-                None
-            });
+            let current = saved_issue(&state.db, auth.user_id, issue)
+                .await
+                .unwrap_or_else(|_| {
+                    tracing::warn!("Could not load saved issue for conflict review");
+                    None
+                });
             let body = conflict_review(&auth, issue, &action, &reason, &form, current.as_ref());
-            let page = crate::ui::page(&auth, "Review submitted changes", "issues", body);
+            let page = crate::ui::page_in_project(
+                &auth,
+                "Review submitted changes",
+                "issues",
+                body,
+                current.map(|saved| saved.issue.project_id),
+            );
             Ok((StatusCode::CONFLICT, page).into_response())
         }
         Err(err) => Err(err),
@@ -545,6 +584,56 @@ struct SavedIssue {
     issue: super::Issue,
     project_key: String,
     project_archived: bool,
+}
+
+async fn saved_issue(db: &sqlx::PgPool, owner: Uuid, id: Uuid) -> sqlx::Result<Option<SavedIssue>> {
+    sqlx::query_as(
+        "SELECT i.*, p.key AS project_key, p.archived AS project_archived
+         FROM issues i JOIN projects p ON (p.owner_id,p.id)=(i.owner_id,i.project_id)
+         WHERE i.owner_id=$1 AND i.id=$2",
+    )
+    .bind(owner)
+    .bind(id)
+    .fetch_optional(db)
+    .await
+}
+
+fn edit_retry(
+    auth: &Auth,
+    saved: SavedIssue,
+    input: WriteForm,
+    revision: i64,
+    reason: &str,
+) -> maud::Markup {
+    use maud::html;
+    let current = saved.issue;
+    let heading = html! { header.view-head {
+        div {
+            a href=(format!("/issues/{}",current.id)) { (saved.project_key) "-" (current.number) " · " (&current.title) }
+            h1 { "Edit issue" }
+        }
+    } };
+    let finding_closed = input
+        .submitted_finding_closed(current.finding_closed)
+        .unwrap_or(current.finding_closed);
+    let labels = input.labels.unwrap_or_else(|| current.labels.join(", "));
+    let draft = super::Issue {
+        title: input.title.unwrap_or(current.title),
+        body: input.body.unwrap_or(current.body),
+        next_action: input.next_action.unwrap_or(current.next_action),
+        status: input.status.unwrap_or(current.status),
+        priority: input.priority.unwrap_or(current.priority),
+        kind: input.kind.unwrap_or(current.kind),
+        manual_severity: input.severity.unwrap_or(current.manual_severity),
+        finding_closed,
+        // An edit arriving after validation must still trigger the ordinary conflict review.
+        revision,
+        ..current
+    };
+    html! { article.reading {
+        (heading)
+        (super::pages::edit_form(auth, &draft, &labels, Some(reason)))
+    } }
 }
 
 fn conflict_review(
@@ -873,6 +962,77 @@ mod tests {
             next_action: String::new(),
             severity: "none".to_owned(),
         }
+    }
+
+    #[sqlx::test]
+    async fn invalid_issue_title_retains_the_draft_and_can_be_corrected(
+        db: sqlx::PgPool,
+    ) -> anyhow::Result<()> {
+        let owner: Uuid = sqlx::query_scalar(
+            "INSERT INTO users(email) VALUES('compose@example.invalid') RETURNING id",
+        )
+        .fetch_one(&db)
+        .await?;
+        let project: Uuid = sqlx::query_scalar(
+            "INSERT INTO projects(owner_id,key,name) VALUES($1,'CMP','Compose') RETURNING id",
+        )
+        .bind(owner)
+        .fetch_one(&db)
+        .await?;
+        let state = AppState::for_test(db.clone());
+        let auth = Auth {
+            user_id: owner,
+            email: "compose@example.invalid".into(),
+            csrf: "a".repeat(64),
+        };
+        let command = Uuid::new_v4();
+        let submit = |title: &str| {
+            let form = serde_json::from_value::<WriteForm>(serde_json::json!({
+                "csrf": auth.csrf, "project": project, "command_id": command,
+                "title": title, "body": "\n<keep>", "next_action": "Verify the fix",
+                "kind": "bug", "priority": "urgent", "labels": "one, two",
+            }))
+            .unwrap();
+            create(State(state.clone()), auth.clone(), Form(form))
+        };
+        let failure = submit("   ").await?;
+        assert_eq!(failure.status(), StatusCode::BAD_REQUEST);
+        let html = String::from_utf8(
+            axum::body::to_bytes(failure.into_body(), 200_000)
+                .await?
+                .to_vec(),
+        )?;
+        for content in [
+            "id=\"new-issue\"",
+            "aria-invalid=\"true\"",
+            "aria-describedby=\"compose-title-error\" autofocus",
+            "\n\n&lt;keep&gt;",
+            "value=\"urgent\" selected",
+            "value=\"bug\" selected",
+            "one, two",
+            "Verify the fix",
+        ] {
+            assert!(html.contains(content), "{content}");
+        }
+        assert!(html.contains(&format!("name=\"command_id\" value=\"{command}\"")));
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM issues WHERE owner_id=$1")
+            .bind(owner)
+            .fetch_one(&db)
+            .await?;
+        assert_eq!(count, 0);
+        let corrected = submit("Rebuild the index").await?;
+        assert_eq!(corrected.status(), StatusCode::SEE_OTHER);
+        let replay = submit("Rebuild the index").await?;
+        assert_eq!(
+            replay.headers().get("location"),
+            corrected.headers().get("location")
+        );
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM issues WHERE owner_id=$1")
+            .bind(owner)
+            .fetch_one(&db)
+            .await?;
+        assert_eq!(count, 1);
+        Ok(())
     }
 
     #[test]

@@ -18,6 +18,7 @@ async fn workspace(db: &PgPool) -> (Uuid, Uuid) {
 
 fn draft(project: Uuid, title: &str, path: &str, body: &str) -> NoteForm {
     NoteForm {
+        back: None,
         draft_token: None,
         project,
         title: title.into(),

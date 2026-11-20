@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod billing;
+pub mod commands;
 pub mod github;
 pub mod issues;
 pub mod notes;
@@ -175,43 +176,47 @@ async fn sidebar_projects(
     Ok(axum::Json(projects))
 }
 
-async fn ui_asset(axum::extract::Path(path): axum::extract::Path<String>) -> Response {
-    let (kind, bytes): (&str, &'static [u8]) = match path.as_str() {
-        "type.css" => (
-            "text/css; charset=utf-8",
-            include_bytes!("../assets/type.css"),
-        ),
-        "fonts/instrument-sans.woff2" => (
-            "font/woff2",
-            include_bytes!("../assets/fonts/instrument-sans.woff2"),
-        ),
-        "fonts/ibm-plex-mono.woff2" => (
-            "font/woff2",
-            include_bytes!("../assets/fonts/ibm-plex-mono.woff2"),
-        ),
-        "issue-detail.css" => (
-            "text/css; charset=utf-8",
-            include_bytes!("../assets/issue-detail.css"),
-        ),
-        "projects.css" => (
-            "text/css; charset=utf-8",
-            include_bytes!("../assets/projects.css"),
-        ),
-        "issues.css" => (
-            "text/css; charset=utf-8",
-            include_bytes!("../assets/issues.css"),
-        ),
-        _ => return StatusCode::NOT_FOUND.into_response(),
+include!(concat!(env!("OUT_DIR"), "/bundled_assets.rs"));
+
+async fn ui_asset(
+    axum::extract::Path(path): axum::extract::Path<String>,
+    request: axum::http::HeaderMap,
+) -> Response {
+    let Some((kind, bytes, etag)) = bundled_asset(&path) else {
+        return StatusCode::NOT_FOUND.into_response();
     };
-    ([(header::CONTENT_TYPE, kind)], bytes).into_response()
+    let cached = request
+        .get(header::IF_NONE_MATCH)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(|h| {
+            h.split(',')
+                .any(|value| matches!(value.trim(), "*") || value.trim() == etag)
+        });
+    let mut response = if cached {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        ([(header::CONTENT_TYPE, kind)], bytes).into_response()
+    };
+    response
+        .headers_mut()
+        .insert(header::ETAG, HeaderValue::from_static(etag));
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=0, must-revalidate"),
+    );
+    response
 }
-async fn landing() -> Html<String> {
+
+async fn landing(State(s): State<AppState>) -> Html<String> {
     ui::public_page(
-        "Your development workspace",
+        "Connect to this workspace",
         html! {
-            h1 {"Your development workspace"}
-            p {"Keep issues, Markdown decisions, release progress and critical repository alerts together in a private workspace."}
-            p class="actions" {a class="button" href="/login"{"Open workspace"} " " a href="/pricing"{"See plans"}}
+            div.public-workflow {
+                header.view-head { h1 {"Connect to this workspace"} }
+                p.reading {"Enter this server address in Ratio on each computer, then approve each device from the same account."}
+                dl.endpoint-facts { dt {"Server address"} dd { code {(&s.config.base_url)} } }
+                div.view-actions {a.action-primary href="/login"{"Sign in in this browser"} a.action-quiet href="/pricing"{"View plans"}}
+            }
         },
     )
 }
@@ -219,37 +224,36 @@ async fn pricing() -> Html<String> {
     ui::public_page(
         "Plans",
         html! {
-            h1{"Plans"}p{"Monthly prices in USD for one private workspace."}
-            table{thead{tr{th{"Plan"}th{"Monthly"}th{"Projects / repositories"}th{"Release history"}}}tbody{
-                tr{td{"Free"}td{"$0"}td{"1 / 1"}td{"30 days"}}
-                tr{td{"Plus"}td{"$5"}td{"10 / 10"}td{"12 months"}}
-                tr{td{"Max"}td{"$15"}td{"50 / 50"}td{"All recorded history"}}
-            }} p{"Every plan includes issues, linked notes, project planning, and native exports."}
-            a class="button" href="/login"{"Start with Free"}
+            div.public-workflow {
+                header.view-head { h1{"Plans"} }
+                p.reading{"Monthly prices in USD for one private workspace. Each plan includes issues, linked notes, a release roadmap and native exports."}
+                div.plan-table {table { thead {tr{th scope="col" {"Plan"}th scope="col" {"Monthly"}th scope="col" {"Active projects / repositories"}th scope="col" {"Review window"}}}tbody {
+                    @for (name,price,limit,history) in [("Free","$0","1 / 1","30 days"),("Plus","$5","10 / 10","12 months"),("Max","$15","50 / 50","All recorded history")] {
+                        tr {th scope="row" {(name)} td {(price)} td {(limit)} td {(history)}}
+                    }
+                }} }
+                div.view-actions {a.action-primary href="/login"{"Start with Free"}}
+            }
         },
     )
 }
-async fn asset_css() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
-        include_str!("../assets/app.css"),
-    )
-}
-async fn asset_shortcuts() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
-        include_str!("../assets/workspace.js"),
-    )
-}
-async fn asset_mark() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "image/svg+xml")],
-        include_str!("../assets/mark.svg"),
-    )
-}
+
 async fn protect(State(app): State<AppState>, req: Request, next: Next) -> Response {
     let path = req.uri().path().to_owned();
     let assets = path.starts_with("/assets/");
+    let html_navigation = *req.method() == Method::GET
+        && !assets
+        && !path.starts_with("/api/")
+        && !path.starts_with("/ops/")
+        && req
+            .headers()
+            .get(header::ACCEPT)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|h| {
+                h.split(',')
+                    .any(|s| s.trim().split(';').next() == Some("text/html"))
+            });
+
     let unsafe_method = !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
     let provider_hook = matches!(
         path.as_str(),
@@ -266,6 +270,29 @@ async fn protect(State(app): State<AppState>, req: Request, next: Next) -> Respo
     } else {
         next.run(req).await
     };
+    if html_navigation
+        && response.status() == StatusCode::BAD_REQUEST
+        && response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|h| h.starts_with("text/plain"))
+    {
+        let section = match path.split('/').nth(1) {
+            Some("issues") => ("/issues", "Open issues"),
+            Some("notes") => ("/notes", "Open notes"),
+            Some("projects") => ("/projects", "Open projects"),
+            Some("roadmap") => ("/roadmap", "Open roadmap"),
+            Some("releases") => ("/releases", "Open releases"),
+            _ => ("/", "Open Home"),
+        };
+        response=(StatusCode::BAD_REQUEST,ui::public_page("Invalid link",html!{
+            h1{"This link could not be opened"} p{"An identifier or filter in the address is invalid."}
+            a.action-primary href=(section.0){(section.1)}
+        })).into_response();
+    }
+    let unavailable_asset =
+        response.status().is_client_error() || response.status().is_server_error();
     let headers = response.headers_mut();
     headers.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -277,17 +304,20 @@ async fn protect(State(app): State<AppState>, req: Request, next: Next) -> Respo
     );
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     headers.insert(header::CONTENT_SECURITY_POLICY,HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://checkout.stripe.com https://billing.stripe.com https://github.com"));
-    headers.entry(header::CACHE_CONTROL).or_insert(if assets {
-        HeaderValue::from_static("public, max-age=300")
-    } else {
-        HeaderValue::from_static("private, no-store")
-    });
+    headers
+        .entry(header::CACHE_CONTROL)
+        .or_insert(if assets && !unavailable_asset {
+            HeaderValue::from_static("public, max-age=300")
+        } else {
+            HeaderValue::from_static("private, no-store")
+        });
     response
 }
 pub fn app(state: AppState) -> Router {
     Router::new()
         .merge(auth::routes())
         .merge(sync::routes())
+        .merge(commands::routes())
         .merge(issues::routes())
         .merge(notes::routes())
         .merge(projects::routes())
@@ -303,10 +333,7 @@ pub fn app(state: AppState) -> Router {
         .route("/readyz", get(ready))
         .route("/healthz", get(|| async { "ok" }))
         .route("/pricing", get(pricing))
-        .route("/assets/workspace.js", get(asset_shortcuts))
         .route("/welcome", get(landing))
-        .route("/assets/app.css", get(asset_css))
-        .route("/assets/mark.svg", get(asset_mark))
         .fallback(|| async { AppError::NotFound })
         .layer(middleware::from_fn(sync::desktop_page_context))
         .layer(CompressionLayer::new().compress_when(
@@ -367,5 +394,84 @@ mod sidebar_tests {
                 "Project 5"
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::extract::Path;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn bundled_assets_revalidate_and_unlisted_files_stay_private() {
+        assert!(bundled_asset("fonts/LICENSE.txt").is_none());
+        assert!(bundled_asset("../Cargo.toml").is_none());
+        for name in [
+            "commands.js",
+            "commands.css",
+            "app.css",
+            "issues.css",
+            "fonts/instrument-sans.woff2",
+        ] {
+            let (_, bytes, tag) = bundled_asset(name).unwrap();
+            assert!(!bytes.is_empty());
+            let mut h = axum::http::HeaderMap::new();
+            h.insert(header::IF_NONE_MATCH, HeaderValue::from_str(tag).unwrap());
+            let r = ui_asset(Path(name.to_string()), h).await;
+            assert_eq!(r.status(), StatusCode::NOT_MODIFIED);
+            assert_eq!(r.headers()[header::ETAG], tag);
+            assert!(r.into_body().collect().await.unwrap().to_bytes().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_html_navigation_has_a_way_back_without_rewriting_json_errors() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://user@localhost/test")
+            .unwrap();
+        let state = AppState::for_test(pool);
+        let router = Router::new()
+            .route(
+                "/issues/{id}",
+                get(|Path(_): Path<uuid::Uuid>| async { "ok" }),
+            )
+            .layer(middleware::from_fn_with_state(state, protect));
+        for (accept, html_expected) in [
+            ("text/html,application/xhtml+xml", true),
+            ("application/json", false),
+        ] {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/issues/not-a-uuid")
+                        .header(header::ACCEPT, accept)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = String::from_utf8(
+                response
+                    .into_body()
+                    .collect()
+                    .await
+                    .unwrap()
+                    .to_bytes()
+                    .to_vec(),
+            )
+            .unwrap();
+            assert_eq!(
+                body.contains("This link could not be opened"),
+                html_expected
+            );
+            if html_expected {
+                assert!(body.contains("href=\"/issues\""));
+            }
+        }
     }
 }

@@ -1,9 +1,11 @@
 # Run on a disposable Windows CI worker with an interactive desktop.
 param(
     [Parameter(Mandatory)][string]$Installer,
-    [string]$LegacyInstaller
+    [string]$LegacyInstaller,
+    [string]$PreviousRatioInstaller
 )
 $ErrorActionPreference = 'Stop'
+if ($LegacyInstaller -and $PreviousRatioInstaller) { throw 'Choose one previous installer.' }
 $setup = (Resolve-Path $Installer).Path
 if ((Split-Path $setup -Leaf) -notmatch '^Ratio-([0-9]+\.[0-9]+\.[0-9]+)-windows-x64-setup\.exe$') {
     throw 'Expected the versioned Ratio installer.'
@@ -76,7 +78,7 @@ function Assert-ConnectionWindow {
 foreach ($path in @($installDir, $legacyDir, $ratioProfile, $legacyProfile, $key, $legacyKey, $shortcut, $legacyShortcut)) {
     if (Test-Path -LiteralPath $path) { throw "Installer smoke needs a clean worker. Found $path." }
 }
-$scenario = if ($LegacyInstaller) { 'upgrade' } else { 'fresh' }
+$scenario = if ($LegacyInstaller) { 'working-set-upgrade' } elseif ($PreviousRatioInstaller) { 'ratio-upgrade' } else { 'fresh' }
 Write-Host "Testing Ratio $version ($scenario)"
 $expectedProfileDir = $ratioProfile
 if ($LegacyInstaller) {
@@ -93,6 +95,19 @@ if ($LegacyInstaller) {
     $legacyUserFile = Join-Path $legacyDir 'user-owned.txt'
     Set-Content -LiteralPath $legacyUserFile -Value 'keep this file'
     $expectedProfileDir = $legacyProfile
+}
+if ($PreviousRatioInstaller) {
+    $previous = (Resolve-Path $PreviousRatioInstaller).Path
+    if ((Get-FileHash $previous).Hash -ne 'ddc157fe6e6787f21a2e93735a933a6441ec169061fc61b29a5ab12a02026057') {
+        throw 'Published Ratio 0.1.1 installer checksum mismatch.'
+    }
+    Install-Application $previous
+    if ((Get-ItemProperty -LiteralPath $key).DisplayVersion -ne '0.1.1' -or !(Test-Path $appExe)) {
+        throw 'The previous installer did not establish the Ratio 0.1.1 upgrade fixture.'
+    }
+    Assert-ConnectionWindow
+}
+if ($scenario -ne 'fresh') {
     New-Item -ItemType Directory -Path $expectedProfileDir -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $expectedProfileDir 'installer-ci-sentinel') -Value 'retained'
 }
@@ -103,9 +118,11 @@ if (!(Test-Path $appExe) -or !(Test-Path $shortcut) -or $entry.DisplayName -ne '
 }
 $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
 if ($link.TargetPath -ne $appExe) { throw 'The Start Menu shortcut points to the wrong executable.' }
-if ((Get-Item $appExe).VersionInfo.ProductName -ne 'Ratio') { throw 'Unexpected executable product name.' }
+$appInfo = (Get-Item $appExe).VersionInfo
+$appVersion = "$($appInfo.FileMajorPart).$($appInfo.FileMinorPart).$($appInfo.FileBuildPart)"
+if ($appInfo.ProductName -ne 'Ratio' -or $appVersion -ne $version) { throw 'Unexpected executable product name or version.' }
 if ((Test-Path $legacyKey) -or (Test-Path $legacyShortcut)) { throw 'The legacy registration or shortcut remains.' }
-if ($scenario -eq 'upgrade') {
+if ($LegacyInstaller) {
     foreach ($old in $legacyFiles) {
         if (Test-Path -LiteralPath $old.FullName) { throw "Legacy application file remains: $($old.Name)" }
     }

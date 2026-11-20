@@ -30,29 +30,37 @@ jobs:
         run: |
           cargo test --locked
           cargo build --release --locked
-      - name: Fetch the published Working Set upgrade fixture
+      - name: Fetch the published upgrade fixtures
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           legacy=working-set_0.1.0_amd64.deb
           gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern "$legacy" --dir "$RUNNER_TEMP"
           (cd "$RUNNER_TEMP" && echo "31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1  $legacy" | sha256sum --check)
+          previous=ratio_0.1.1_amd64.deb
+          gh release download v0.1.1 --repo "$GITHUB_REPOSITORY" --pattern "$previous" --dir "$RUNNER_TEMP"
+          (cd "$RUNNER_TEMP" && echo "c0bdb765e1f88570d7fce3283874278ae86dfb81e86af194e695d768ff07b761  $previous" | sha256sum --check)
       - name: Test fresh install and upgrade on Ubuntu
         run: |
           packaging/linux/build.sh target/release/ratio dist
-          for scenario in fresh upgrade; do
+          for scenario in fresh working-set-upgrade ratio-upgrade; do
             export XDG_DATA_HOME="$RUNNER_TEMP/ratio-$scenario"
             profile="$XDG_DATA_HOME/Ratio"
-            if [[ "$scenario" == upgrade ]]; then
+            if [[ "$scenario" == working-set-upgrade ]]; then
               sudo apt-get install -y "$RUNNER_TEMP/working-set_0.1.0_amd64.deb"
               test -x /usr/bin/working-set
               test -f /usr/share/applications/working-set.desktop
               profile="$XDG_DATA_HOME/Working Set"
+            elif [[ "$scenario" == ratio-upgrade ]]; then
+              sudo apt-get install -y "$RUNNER_TEMP/ratio_0.1.1_amd64.deb"
+              test "$(ratio --version)" = 'Ratio 0.1.1'
+            fi
+            if [[ "$scenario" != fresh ]]; then
               mkdir -p "$profile"
               echo retained > "$profile/installer-ci-sentinel"
             fi
             sudo apt-get install -y ./dist/ratio_*_amd64.deb
-            ratio --version
+            test "$(ratio --version)" = "Ratio $(dpkg-deb -f ./dist/ratio_*_amd64.deb Version)"
             desktop-file-validate /usr/share/applications/ratio.desktop
             test -f /usr/share/icons/hicolor/256x256/apps/ratio.png
             test ! -e /usr/bin/working-set
@@ -141,6 +149,10 @@ jobs:
 
   windows-upgrade:
     needs: windows
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [working-set, ratio]
     runs-on: windows-2025
     timeout-minutes: 12
     steps:
@@ -152,13 +164,27 @@ jobs:
           name: Ratio-windows-x64
           path: desktop/dist
       - name: Fetch the published Working Set upgrade fixture
+        if: matrix.fixture == 'working-set'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern Working-Set-0.1.0-windows-x64-setup.exe --dir $env:RUNNER_TEMP
+        run: |
+          $name = 'Working-Set-0.1.0-windows-x64-setup.exe'
+          gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "LEGACY_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
+      - name: Fetch the published Ratio upgrade fixture
+        if: matrix.fixture == 'ratio'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $name = 'Ratio-0.1.1-windows-x64-setup.exe'
+          gh release download v0.1.1 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "PREVIOUS_RATIO_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
       - name: Test the upgrade on a clean Windows worker
         shell: powershell
         run: |
           $installer = Get-Item desktop/dist/Ratio-*-windows-x64-setup.exe
-          $legacy = Join-Path $env:RUNNER_TEMP 'Working-Set-0.1.0-windows-x64-setup.exe'
-          ./desktop/packaging/windows/smoke.ps1 -Installer $installer.FullName -LegacyInstaller $legacy
+          ./desktop/packaging/windows/smoke.ps1 -Installer $installer.FullName -LegacyInstaller $env:LEGACY_SETUP -PreviousRatioInstaller $env:PREVIOUS_RATIO_SETUP

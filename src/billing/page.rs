@@ -61,94 +61,94 @@ pub(super) async fn show(State(state): State<AppState>, auth: Auth) -> AppResult
     let limits = store::limits(&account.plan);
 
     let body = html! {
-        header.page-header {
-            h1 { "Billing" }
-        }
-        section aria-labelledby="current-plan" {
-            h2 id="current-plan" { (plan_name(&account.plan)) " plan" }
-            (account_status(&account))
-            @if let Some(provider) = &provider {
-                @if !provider.live_mode() {
-                    p.notice { "Stripe test mode is enabled. Checkout uses test payments." }
-                }
-                @if account.customer {
-                    form method="post" action="/billing/portal" {
-                        (ui::csrf(&auth))
-                        button type="submit" { "Manage billing in Stripe" }
-                    }
-                    p.muted { "View receipts, update your payment method or review the prorated charge and renewal date for a plan change. "
-                        "Stripe keeps a separate receipt email. Review it in the portal after changing your sign-in email." }
-                }
-            } @else {
-                p.notice { "Payments are unavailable for this workspace. Your current plan still applies." }
-            }
-        }
-        section aria-labelledby="workspace-usage" {
-            h2 id="workspace-usage" { "Workspace usage" }
-            dl.grid {
-                div { dt { "Active projects" } dd { (active_projects) " / " (limits.projects) } }
-                div { dt { "Connected repositories" } dd { (active_repos) " / " (limits.repos) } }
-                div { dt { "Stored content" } dd { (bytes(usage)) " / " (bytes(limits.storage_bytes)) } }
-            }
-            p { (storage_remaining(usage, limits.storage_bytes)) ". Archived content counts toward storage." }
-            @let archived = projects.len() - active_projects;
-            @let paused = repositories.len() - active_repos;
-            @if archived > 0 {
-                p {
-                    a href="/projects" { (archived) @if archived == 1 { " archived project" } @else { " archived projects" } }
-                    " · Read-only and included in exports. You can reactivate a project when your plan has room."
-                }
-            }
-            @if paused > 0 {
-                p {
-                    a href="/integrations" { (paused) @if paused == 1 { " paused repository" } @else { " paused repositories" } }
-                    " · Manage repository sync in Integrations as your plan allows."
-                }
-            }
-            a href="/transfer" { "Export workspace data" }
-        }
-        section aria-labelledby="compare-plans" {
-            h2 id="compare-plans" { "Compare plans" }
-            p.muted { "Monthly prices in USD for one workspace. Every plan includes native history exports." }
-            div.grid {
-                @for (tier, price) in [("free", 0), ("plus", 5), ("max", 15)] {
-                    (plan_card(&auth, &account, tier, price, provider.is_some()))
-                }
-            }
-            @if provider.is_some() && !account.subscription {
-                @if let Some(renewal) = Utc::now().date_naive().checked_add_months(Months::new(1)) {
-                    p.muted {
-                        "Starting today puts your next monthly renewal on " (renewal.format("%b %-d, %Y"))
-                        ". Review the total, including any applicable tax, before confirming in Stripe."
+        header.view-head { h1 { "Billing" } }
+        div.billing-sheet {
+            div.billing-overview {
+                section.billing-account aria-labelledby="current-plan" {
+                    h2 #current-plan { (plan_name(&account.plan)) " plan" }
+                    (account_status(&account))
+                    @if let Some(provider) = &provider {
+                        @if !provider.live_mode() {
+                            p.status-note { "Stripe test mode is enabled. Checkout uses test payments." }
+                        }
+                        @if account.customer {
+                            form method="post" action="/billing/portal" {
+                                (ui::csrf(&auth))
+                                button class=(if account.subscription { "action-primary" } else { "action-secondary" }) type="submit" { "Manage billing in Stripe" }
+                            }
+                            details.billing-explainer {
+                                summary { "Receipts and plan changes" }
+                                p { "Use the portal to update your payment method and review prorated charges and renewal dates. Stripe keeps a separate receipt email. Check it after changing your sign-in email." }
+                            }
+                        }
+                    } @else {
+                        p.billing-availability { "Payments are unavailable for this workspace. Your current plan still applies." }
                     }
                 }
-            }
-        }
-        @if active_projects > 1 || repositories.iter().filter(|r| !r.inactive && !r.project_archived).count() > 1 {
-            section aria-labelledby="downgrade-preferences" {
-                h2 id="downgrade-preferences" { "Downgrade preferences" }
-                p {
-                    "Choose which projects and repositories to keep active when a smaller plan takes effect. "
-                    "Extra projects become read-only and extra repository syncs pause."
-                }
-                form method="post" action="/billing/selection" {
-                    (ui::csrf(&auth))
-                    (resource_choices("Projects", "project", &projects))
-                    (resource_choices("Repositories", "repo", &repositories))
-                    details {
-                        summary { "How selections are applied" }
-                        p {
-                            "Selected projects come first, followed by projects with a selected repository. "
-                            "Project ties go to the oldest project, and repository ties go to the lowest GitHub repository ID. "
-                            "Only repositories in an active project can sync."
+                section.billing-usage aria-labelledby="workspace-usage" {
+                    h2 #workspace-usage { "Workspace usage" }
+                    dl.billing-usage-values {
+                        div { dt { "Active projects" } dd { (active_projects) span { " / " (limits.projects) } } }
+                        div { dt { "Connected repositories" } dd { (active_repos) span { " / " (limits.repos) } } }
+                        div { dt { "Stored content" } dd { (ui::format_bytes(usage)) span { " / " (ui::format_bytes(limits.storage_bytes)) } } }
+                    }
+                    p.billing-footnote { (storage_remaining(usage, limits.storage_bytes)) ". Archived content counts toward storage." }
+                    @let archived = projects.len() - active_projects;
+                    @let paused = repositories.len() - active_repos;
+                    @if archived > 0 {
+                        p.billing-footnote {
+                            a href="/projects" { (archived) @if archived == 1 { " archived project" } @else { " archived projects" } }
+                            ". Archived projects remain available to read and export. Reactivate a project when your plan has room."
                         }
                     }
-                    button type="submit" { "Save preferences" }
+                    @if paused > 0 {
+                        p.billing-footnote {
+                            a href="/integrations" { (paused) @if paused == 1 { " paused repository" } @else { " paused repositories" } }
+                            ". Resume sync in Integrations when your plan has room."
+                        }
+                    }
+                    a.billing-export href="/transfer" { "Export workspace data" }
+                }
+            }
+            section.billing-comparison aria-labelledby="compare-plans" {
+                header.billing-section-head {
+                    h2 #compare-plans { "Compare plans" }
+                    p { "Monthly prices in USD per workspace. Every plan includes native history exports." }
+                }
+                (plan_comparison(&account.plan))
+                @if provider.is_some() && !account.subscription {
+                    (checkout_form(&auth, &account))
+                    @if let Some(renewal) = Utc::now().date_naive().checked_add_months(Months::new(1)) {
+                        p.billing-footnote {
+                            "Starting today puts your next monthly renewal on " (renewal.format("%b %-d, %Y"))
+                            ". Review the total, including any applicable tax, before confirming in Stripe."
+                        }
+                    }
+                }
+            }
+            @if active_projects > 1 || repositories.iter().filter(|r| !r.inactive && !r.project_archived).count() > 1 {
+                section.billing-preferences aria-labelledby="downgrade-preferences" {
+                    h2 #downgrade-preferences { "Downgrade preferences" }
+                    p { "Choose which projects and repositories stay active on a smaller plan. Extra projects become read-only and extra repository syncs pause." }
+                    form.form-stack method="post" action="/billing/selection" {
+                        (ui::csrf(&auth))
+                        (resource_choices("Projects", "project", &projects))
+                        (resource_choices("Repositories", "repo", &repositories))
+                        details.billing-explainer {
+                            summary { "How selections are applied" }
+                            p {
+                                "Selected projects come first, followed by projects with a selected repository. "
+                                "Project ties go to the oldest project, and repository ties go to the lowest GitHub repository ID. "
+                                "Only repositories in an active project can sync."
+                            }
+                        }
+                        button.action-secondary type="submit" { "Save preferences" }
+                    }
                 }
             }
         }
     };
-    Ok(ui::page(&auth, "Billing", "billing", body))
+    Ok(ui::section_page(&auth, "Billing", "billing", body, None))
 }
 
 async fn load_repositories(
@@ -249,47 +249,63 @@ fn plan_action(account: &Account, tier: &str, available: bool) -> PlanAction {
     }
 }
 
-fn plan_card(auth: &Auth, account: &Account, tier: &str, price: u8, available: bool) -> Markup {
-    let limits = store::limits(tier);
-    let action = plan_action(account, tier, available);
+const TIERS: [(&str, u8); 3] = [("free", 0), ("plus", 5), ("max", 15)];
+
+fn plan_comparison(current: &str) -> Markup {
+    let limits = TIERS.map(|(tier, _)| store::limits(tier));
     html! {
-        article.panel {
-            h3 { (plan_name(tier)) }
-            p.price { strong { "$" (price) } " / month" }
-            ul {
-                li { (limits.projects) @if limits.projects == 1 { " active project" } @else { " active projects" }
-                     ", " (limits.repos) @if limits.repos == 1 { " repository" } @else { " repositories" } }
-                li { (bytes(limits.storage_bytes)) " storage · " (bytes(limits.image_bytes)) " per image" }
-                @match tier {
-                    "max" => {
-                        li { "All recorded release history" }
-                        li { "Cross-project saved views and personal templates" }
-                        li { "Scheduled private portfolio digest" }
-                    }
-                    "plus" => {
-                        li { "365 days of release history" }
-                        li { "Personal saved views and templates" }
-                    }
-                    _ => {
-                        li { "30 days of release history" }
-                        li { "Built-in views" }
+        table.billing-plan-table aria-labelledby="compare-plans" {
+            colgroup { col.billing-feature; @for _ in TIERS { col; } }
+            thead { tr {
+                th scope="col" { "Plan" }
+                @for (tier, _) in TIERS {
+                    th scope="col" class=[(tier == current).then_some("billing-current")] {
+                        (plan_name(tier))
+                        @if tier == current { span.billing-current-label { "Current" span.sr-only { " plan" } } }
                     }
                 }
+            } }
+            tbody {
+                tr.billing-price { th scope="row" { "Monthly price" } @for (_, price) in TIERS { td { "$" (price) } } }
+                tr { th scope="row" { "Active projects" } @for l in limits { td { (l.projects) } } }
+                tr { th scope="row" { "Repositories" } @for l in limits { td { (l.repos) } } }
+                tr { th scope="row" { "Storage" } @for l in limits { td { (ui::format_bytes(l.storage_bytes)) } } }
+                tr { th scope="row" { "Per image" } @for l in limits { td { (ui::format_bytes(l.image_bytes)) } } }
+                tr { th scope="row" { "Release history" } @for l in limits {
+                    td { @if let Some(days) = l.history_days { (days) " days" } @else { "All recorded" } }
+                } }
+                tr { th scope="row" { "Saved views" } td { "Built-in only" } td { "Per project" } td { "Cross-project" } }
+                tr { th scope="row" { "Issue templates" } td { "None" } td { "Personal" } td { "Personal" } }
+                tr { th scope="row" { "Private digest" } td { "None" } td { "None" } td { "Weekly" } }
             }
-            @match action {
-                PlanAction::Current => p { strong { "Current plan" } },
-                PlanAction::Start | PlanAction::Resume => {
-                    form method="post" action="/billing/checkout" {
-                        (ui::csrf(auth))
-                        input type="hidden" name="plan" value=(tier);
-                        button type="submit" {
-                            @if action == PlanAction::Resume { "Resume checkout for " } @else { "Choose " } (plan_name(tier))
+        }
+    }
+}
+
+fn checkout_form(auth: &Auth, account: &Account) -> Markup {
+    let offered: Vec<_> = TIERS
+        .into_iter()
+        .filter(|(tier, _)| plan_action(account, tier, true) == PlanAction::Start)
+        .collect();
+    html! {
+        @if let Some(tier) = account.pending_plan.as_deref().filter(|tier| matches!(*tier, "plus" | "max") && plan_action(account, tier, true) == PlanAction::Resume) {
+            form.billing-checkout method="post" action="/billing/checkout" {
+                (ui::csrf(auth))
+                input type="hidden" name="plan" value=(tier);
+                button.action-primary type="submit" { "Resume checkout for " (plan_name(tier)) }
+            }
+        } @else if !offered.is_empty() {
+            form.billing-checkout method="post" action="/billing/checkout" {
+                (ui::csrf(auth))
+                label { "Change plan"
+                    select name="plan" required {
+                        option value="" selected disabled { "Select a plan" }
+                        @for (tier, price) in offered {
+                            option value=(tier) { (plan_name(tier)) " · $" (price) "/month" }
                         }
                     }
                 }
-                PlanAction::Manage => p.muted { "Manage changes in the billing portal." },
-                PlanAction::PendingOther => p.muted { "Another plan has a pending checkout." },
-                PlanAction::Unavailable => {}
+                button.action-primary type="submit" { "Continue to checkout" }
             }
         }
     }
@@ -310,21 +326,11 @@ fn resource_choices(title: &str, kind: &str, resources: &[Resource]) -> Markup {
     }
 }
 
-fn bytes(size: i64) -> String {
-    for (unit, name) in [(1_000_000_000, "GB"), (1_000_000, "MB"), (1_000, "kB")] {
-        if size >= unit {
-            let formatted = format!("{:.1}", size as f64 / unit as f64);
-            return format!("{} {name}", formatted.trim_end_matches(".0"));
-        }
-    }
-    format!("{size} B")
-}
-
 fn storage_remaining(used: i64, limit: i64) -> String {
     match used.cmp(&limit) {
-        std::cmp::Ordering::Less => format!("{} available", bytes(limit - used)),
+        std::cmp::Ordering::Less => format!("{} available", ui::format_bytes(limit - used)),
         std::cmp::Ordering::Equal => "At the storage limit".into(),
-        std::cmp::Ordering::Greater => format!("{} over the limit", bytes(used - limit)),
+        std::cmp::Ordering::Greater => format!("{} over the limit", ui::format_bytes(used - limit)),
     }
 }
 
@@ -409,6 +415,30 @@ mod tests {
         account.subscription = true;
         account.customer = true;
         assert_eq!(plan_action(&account, "max", true), PlanAction::Manage);
+    }
+
+    #[test]
+    fn checkout_form_offers_only_eligible_tiers_and_preserves_pending_choice() {
+        let auth = Auth {
+            user_id: Uuid::nil(),
+            email: "user@example.invalid".into(),
+            csrf: "form-token".into(),
+        };
+        let mut account = free();
+        let form = checkout_form(&auth, &account).into_string();
+        assert!(form.contains(r#"select name="plan" required"#));
+        assert!(form.contains(r#"option value="plus""#) && form.contains(r#"option value="max""#));
+        assert!(!form.contains(r#"option value="free""#));
+        assert!(form.contains(r#"action="/billing/checkout""#) && form.contains("form-token"));
+
+        account.pending_plan = Some("max".into());
+        let form = checkout_form(&auth, &account).into_string();
+        assert!(
+            form.contains(r#"name="plan" value="max""#) && form.contains("Resume checkout for Max")
+        );
+        assert!(!form.contains("<select"));
+        account.subscription = true;
+        assert!(checkout_form(&auth, &account).into_string().is_empty());
     }
 
     #[test]

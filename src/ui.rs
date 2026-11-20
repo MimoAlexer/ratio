@@ -1,6 +1,7 @@
 use crate::auth::Auth;
 use axum::response::Html;
 use maud::{DOCTYPE, Markup, html};
+use uuid::Uuid;
 
 type NavItem = (&'static str, &'static str, &'static str);
 type NavGroup = (&'static str, &'static [NavItem]);
@@ -11,7 +12,7 @@ const GROUPS: &[NavGroup] = &[
         &[
             ("home", "/", "Home"),
             ("inbox", "/issues?status=backlog", "Inbox"),
-            ("issues", "/issues", "My issues"),
+            ("issues", "/issues", "Issues"),
             ("notes", "/notes", "Notes"),
             ("projects", "/projects", "Projects"),
         ],
@@ -28,7 +29,7 @@ const GROUPS: &[NavGroup] = &[
     (
         "Manage",
         &[
-            ("integrations", "/integrations", "GitHub"),
+            ("integrations", "/integrations", "GitHub integration"),
             ("transfer", "/transfer", "Import & export"),
             ("workflows", "/workflows", "Workflows"),
             ("billing", "/billing", "Plans & billing"),
@@ -36,6 +37,16 @@ const GROUPS: &[NavGroup] = &[
         ],
     ),
 ];
+
+pub(crate) fn format_bytes(size: i64) -> String {
+    for (unit, name) in [(1_000_000_000, "GB"), (1_000_000, "MB"), (1_000, "kB")] {
+        if size >= unit {
+            let formatted = format!("{:.1}", size as f64 / unit as f64);
+            return format!("{} {name}", formatted.trim_end_matches(".0"));
+        }
+    }
+    format!("{size} B")
+}
 
 pub fn csrf(auth: &Auth) -> Markup {
     html! { input type="hidden" name="csrf" value=(&auth.csrf); }
@@ -68,6 +79,10 @@ pub(crate) fn icon(name: &str) -> Markup {
         "flag" => "M5 21V3m0 1c4-3 9 3 14 0v9c-5 3-10-3-14 0",
         "pause" => "M6 4h3.5v16H6zM14.5 4H18v16h-3.5z",
         "menu" => "M3 6h18M3 12h18M3 18h18",
+        "chevron" => "m8 10 4 4 4-4",
+        "help" => {
+            "M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 1 1 17 0ZM9.5 9.5a2.5 2.5 0 1 1 3.8 2.1c-.9.6-1.3 1-1.3 2.3M12 16.8h.01"
+        }
         "logout" => "M10 4H4v16h6M9 12h11m-5-5 5 5-5 5",
         "user" => "M15.5 8a3.5 3.5 0 1 1-7 0 3.5 3.5 0 1 1 7 0ZM4.5 20a7.5 7.5 0 0 1 15 0",
         "theme" => "M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 1 1 17 0ZM12 3.5v17",
@@ -92,37 +107,68 @@ fn brand(href: &str) -> Markup {
     }
 }
 
+fn nav_items(items: &[NavItem], active: &str) -> Markup {
+    html! {
+        @for &(key, path, label) in items {
+            a.nav-link href=(path) aria-current=[(key == active).then_some("page")] {
+                (icon(key)) span { (label) }
+            }
+            @if key == "projects" {
+                div.project-links data-sidebar-projects hidden {}
+            }
+        }
+    }
+}
+
 fn navigation(auth: &Auth, active: &str) -> Markup {
+    let email = auth.email.as_str();
+    let (name, domain) = email.split_once('@').unwrap_or((email, ""));
+    let initial = name
+        .chars()
+        .next()
+        .unwrap_or('R')
+        .to_uppercase()
+        .to_string();
     html! {
         nav.nav aria-label="Workspace navigation" {
-            @for (group, items) in GROUPS {
-                div.nav-group {
-                    p.nav-heading { (group) }
-                    @for (key, path, name) in *items {
-                        a.nav-link href=(path) aria-current=[(*key == active).then_some("page")] {
-                            (icon(key)) span { (name) }
-                        }
+            @for &(group, items) in GROUPS {
+                @if group == "Manage" {
+                    details.nav-manage open[items.iter().any(|(key, _, _)| *key == active)] {
+                        summary.nav-heading { span { (group) } (icon("chevron")) }
+                        (nav_items(items, active))
                     }
-                }
-                @if *group == "Workspace" {
-                    section.project-region aria-label="Your projects" {
-                        p.nav-heading { "Your projects" }
-                        div.project-links data-sidebar-projects hidden {}
+                } @else {
+                    section.nav-group aria-label=(group) {
+                        p.nav-heading { (group) }
+                        (nav_items(items, active))
                     }
                 }
             }
         }
         div.workspace-account {
-            a.account-link href="/settings" title="Account settings" {
-                span.account-icon { (icon("user")) }
-                span.account-name { (&auth.email) }
-            }
-            form method="post" action="/logout" {
-                (csrf(auth))
-                button.icon-button type="submit" title="Sign out" {
-                    (icon("logout")) span.sr-only { "Sign out" }
+            details.account-menu {
+                summary.account-summary aria-label=(format!("Account options for {email}")) title=(email) {
+                    span.account-icon aria-hidden="true" { (initial) }
+                    span.account-identity {
+                        strong { (name) }
+                        @if !domain.is_empty() { small { (domain) } }
+                    }
+                    (icon("chevron"))
+                }
+                div.account-actions {
+                    p.account-address { (email) }
+                    button.account-action type="button" data-theme-toggle hidden
+                        title="Monochrome theme" aria-pressed="false" {
+                        (icon("theme")) "Monochrome theme"
+                    }
+                    form method="post" action="/logout" {
+                        (csrf(auth))
+                        button.account-action type="submit" { (icon("logout")) "Sign out" }
+                    }
                 }
             }
+            button.icon-button.shortcut-help type="button" data-shortcuts-help hidden
+                title="Keyboard shortcuts" aria-label="Keyboard shortcuts" { (icon("help")) }
         }
     }
 }
@@ -137,49 +183,130 @@ fn head(title: &str) -> Markup {
     }
 }
 
+fn view_styles(active: &str) -> &'static [&'static str] {
+    match active {
+        "home" => &["home.css"],
+        "issues" | "inbox" => &["issues.css", "issue-detail.css", "relationships.css"],
+        "projects" => &["projects.css", "relationships.css"],
+        "notes" => &["notes.css", "relationships.css"],
+        "roadmap" | "insights" => &["planning.css"],
+        "releases" => &["planning.css", "release-view.css", "release-history.css"],
+        "health" => &["planning.css", "health-view.css"],
+        _ => &["support.css"],
+    }
+}
+
+/// Render a section's index. A child page uses `page_in_project` for a link back to its section.
+pub fn section_page(
+    auth: &Auth,
+    title: &str,
+    active: &str,
+    body: Markup,
+    project: Option<Uuid>,
+) -> Html<String> {
+    workspace_page(auth, title, active, body, project, true)
+}
+
 pub fn page(auth: &Auth, title: &str, active: &str, body: Markup) -> Html<String> {
-    let (group, section) = GROUPS
-        .iter()
-        .find_map(|(group, items)| {
-            items
-                .iter()
-                .find(|(key, _, _)| *key == active)
-                .map(|(_, _, label)| (*group, *label))
-        })
-        .unwrap_or(("Workspace", title));
+    page_in_project(auth, title, active, body, None)
+}
+
+pub fn page_in_project(
+    auth: &Auth,
+    title: &str,
+    active: &str,
+    body: Markup,
+    project: Option<Uuid>,
+) -> Html<String> {
+    workspace_page(auth, title, active, body, project, false)
+}
+
+fn location(
+    group: &str,
+    section: &str,
+    path: &str,
+    at_index: bool,
+    project: Option<Uuid>,
+) -> Markup {
+    let group_label = html! { (icon("shell")) span { (group) } };
+    if at_index {
+        return html! { div.location { (group_label) } };
+    }
+    let parent = match (path, project) {
+        (
+            "/issues" | "/notes" | "/releases" | "/roadmap" | "/health" | "/insights" | "/transfer",
+            Some(id),
+        ) => {
+            format!("{path}?project={id}")
+        }
+        _ => path.to_owned(),
+    };
+    html! {
+        nav.location aria-label="Workspace location" {
+            (group_label)
+            span.location-divider aria-hidden="true" { "/" }
+            a.location-current href=(parent) { (section) }
+        }
+    }
+}
+
+fn workspace_page(
+    auth: &Auth,
+    title: &str,
+    active: &str,
+    body: Markup,
+    project: Option<Uuid>,
+    at_index: bool,
+) -> Html<String> {
+    let search = project.map_or_else(
+        || "/issues#search".to_owned(),
+        |id| format!("/issues?project={id}#search"),
+    );
+    let route = GROUPS.iter().find_map(|(group, items)| {
+        items
+            .iter()
+            .find(|(key, _, _)| *key == active)
+            .map(|(_, path, label)| (*group, *path, *label))
+    });
+    let (group, path, section) = route.unwrap_or(("Workspace", "/", title));
+    let sample = auth.user_id == crate::sample::DEMO_OWNER;
     Html(html! {
         (DOCTYPE)
         html lang="en" {
-            head { (head(title)) (crate::sync::head(auth)) script defer src="/assets/workspace.js" {} }
+            head {
+                (head(title))
+                @for file in view_styles(active) {
+                    link rel="stylesheet" href=(format!("/assets/{file}"));
+                }
+                link rel="stylesheet" href="/assets/commands.css";
+                (crate::sync::head(auth))
+                script defer src="/assets/workspace.js" {}
+                script defer src="/assets/commands.js" {}
+                @if matches!(active, "issues" | "inbox") { script defer src="/assets/issue-workbench.js" {} }
+            }
             body {
                 a.skip-link href="#main" { "Skip to content" }
                 div.app-shell {
                     aside.sidebar {
-                        div.brandbar { (brand("/")) }
+                        div.brandbar {
+                            (brand("/"))
+                            @if sample { span.demo-label title="Workspace with sample data" { "Sample" } }
+                        }
                         (navigation(auth, active))
                     }
                     div.workspace-window {
                         header.window-bar {
-                            div.mobile-brand { (brand("/")) }
-                            div.location {
-                                (icon("shell"))
-                                span { (group) }
-                                span.location-divider aria-hidden="true" { "/" }
-                                strong { (section) }
+                            (location(group, section, path, at_index, project))
+                            div.mobile-brand {
+                                (brand("/"))
+                                @if sample { span.demo-label title="Workspace with sample data" { "Sample" } }
                             }
                             div.window-tools {
-                                @if auth.user_id == crate::sample::DEMO_OWNER {
-                                    span.demo-label { "Demo workspace" span { " · Sample data" } }
+                                a.search-command data-command-trigger href=(&search) aria-label="Search issues" {
+                                    (icon("search"))
+                                    span.command-label data-command-label { "Search issues" }
+                                    kbd data-command-key hidden { "Ctrl K" }
                                 }
-                                @if !matches!((active, title), ("issues", "Issues") | ("inbox", "Inbox")) {
-                                    a.search-command href="/issues#search" title="Search issues" {
-                                        (icon("search")) span.command-label { "Search issues" } kbd { "/" }
-                                    }
-                                }
-                                button.icon-button.theme-toggle type="button" data-theme-toggle hidden
-                                    title="Monochrome theme" aria-label="Monochrome theme" aria-pressed="false" { (icon("theme")) }
-                                button.icon-button.shortcut-help type="button" data-shortcuts-help hidden
-                                    title="Keyboard shortcuts" aria-label="Keyboard shortcuts" { "?" }
                                 details.mobile-menu {
                                     summary.icon-button aria-label="Workspace navigation" { (icon("menu")) }
                                     div.mobile-sheet { (navigation(auth, active)) }
@@ -187,7 +314,7 @@ pub fn page(auth: &Auth, title: &str, active: &str, body: Markup) -> Html<String
                             }
                         }
                         main.main id="main" tabindex="-1" {
-                            div.page-content data-view=(if active == "inbox" { "issues" } else { active }) { (body) }
+                            div.page-content data-command-project=[project] data-view=(if active == "inbox" { "issues" } else { active }) { (body) }
                         }
                     }
                 }
@@ -201,7 +328,7 @@ pub fn public_page(title: &str, body: Markup) -> Html<String> {
         html! {
             (DOCTYPE)
             html lang="en" {
-                head { (head(title)) script defer src="/assets/workspace.js" {} }
+                head { (head(title)) link rel="stylesheet" href="/assets/support.css"; script defer src="/assets/workspace.js" {} }
                 body.public-page {
                     header.public-brandbar { (brand("/welcome")) }
                     main.page-content { (body) }

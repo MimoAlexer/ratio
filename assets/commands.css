@@ -1,0 +1,208 @@
+dialog.command-dialog {
+    position: fixed;
+    inset: min(15vh, 138px) 0 auto;
+    margin: 0 auto;
+    width: min(35rem, calc(100vw - 2rem));
+    max-width: none;
+    padding: 0;
+    max-height: min(36rem, 76vh);
+    max-height: min(36rem, 76dvh);
+    border: 1px solid var(--control-line);
+    border-radius: var(--radius-panel, 6px);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 12px 38px rgb(0 0 0 / 36%);
+    overflow: hidden;
+}
+dialog.command-dialog[open] { display: flex; flex-direction: column; }
+.command-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.command-dialog .command-searchline {
+    display: flex;
+    align-items: center;
+    gap: var(--s3, 12px);
+    flex: none;
+    min-height: 56px;
+    padding: var(--s2, 8px) var(--s4, 16px);
+    border-bottom: 1px solid var(--line);
+}
+.command-searchline > svg {
+    flex: none;
+    width: 19px;
+    height: 19px;
+    color: var(--faint);
+}
+.command-dialog #command-input {
+    flex: 1;
+    width: 0;
+    min-width: 0;
+    padding: 4px 0;
+    border: 0;
+    border-radius: 0;
+    outline: none;
+    color: var(--text);
+    background: transparent;
+    box-shadow: none;
+    font: 500 16px/1.5 var(--sans);
+}
+.command-dialog .command-searchline:has(#command-input:focus-visible) { border-bottom-color: var(--control-line); }
+.command-searchline:focus-within > svg { color: var(--accent); }
+.command-dialog #command-input:focus-visible { outline: none; }
+.command-dialog #command-input::placeholder { color: var(--faint); }
+.command-dialog .command-close, .command-dialog .command-scope button {
+    min-height: 28px;
+    border: 0;
+    padding: 3px 7px;
+    background: transparent;
+    color: var(--muted);
+    box-shadow: none;
+    font: 500 12px/1.4 var(--sans);
+}
+.command-dialog .command-close span, .command-dialog .command-hints kbd {
+    display: inline-block;
+    min-width: 17px;
+    padding: 0 3px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: transparent;
+    box-shadow: none;
+    text-align: center;
+    color: var(--muted);
+    font: 400 11px/17px var(--mono);
+}
+.command-dialog .command-close .command-dismiss { display: none; width: 18px; height: 18px; }
+.command-dialog .command-close:hover span { border-color: var(--control-line); color: var(--text); }
+.command-dialog .command-scope {
+    display: flex;
+    gap: var(--s1, 4px);
+    align-items: center;
+    padding: var(--s2, 8px) var(--s3, 12px) 0;
+}
+.command-dialog .command-scope button {
+    overflow: hidden;
+    max-width: 68%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-radius: var(--radius, 4px);
+}
+.command-dialog .command-scope button[aria-pressed="true"] {
+    color: var(--text);
+    background: var(--raised);
+    box-shadow: inset 0 -2px var(--faint);
+}
+.command-dialog .command-scope button:hover { color: var(--text); background: var(--raised); }
+.command-tray { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s2, 8px); }
+.command-group-title {
+    padding: 6px var(--s2, 8px) 4px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 500;
+}
+#command-options > [role="group"] + [role="group"] { margin-top: var(--s2, 8px); }
+.command-dialog .command-option {
+    position: relative;
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--s3, 12px);
+    min-height: var(--row, 36px);
+    padding: 5px var(--s3, 12px);
+    border-radius: var(--radius, 4px);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 14px;
+    line-height: 1.4;
+}
+.command-dialog .command-option[aria-selected="true"] { background: var(--selected); }
+.command-option[aria-selected="true"]::before {
+    position: absolute;
+    inset: 9px auto 9px 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+    content: "";
+}
+.command-option > svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    color: var(--muted);
+}
+.command-option-title, .command-detail { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.command-detail {
+    max-width: 14em;
+    color: var(--muted);
+    font: 400 12px/1.5 var(--mono);
+    text-align: right;
+}
+.command-feedback {
+    margin: var(--s3, 12px) var(--s2, 8px);
+    color: var(--muted);
+    font-size: 14px;
+}
+.command-dialog .command-retry { margin: 0 var(--s2, 8px) var(--s2, 8px); }
+.command-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+.command-foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s3, 12px);
+    padding: var(--s2, 8px) var(--s4, 16px);
+    border-top: 1px solid var(--line);
+    color: var(--faint);
+    font-size: 12px;
+}
+.command-hints { display: inline-flex; align-items: center; gap: var(--s1, 4px); }
+.command-hints kbd:last-child { margin-left: var(--s2, 8px); }
+#command-options[inert] { opacity: .65; }
+.command-dialog .command-full {
+    margin-inline-start: auto;
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    color: var(--muted);
+    text-decoration: none;
+}
+.command-dialog .command-full:hover { text-decoration: underline; color: var(--text); }
+.command-dialog :is(button, a):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 600px), (pointer: coarse) {
+    .command-dialog .command-option, .command-dialog .command-close, .command-dialog .command-scope button,
+    .command-dialog .command-full { min-height: 44px; }
+}
+@media (max-width: 600px) {
+    dialog.command-dialog {
+        inset: max(12px, env(safe-area-inset-top)) 0 auto;
+        width: calc(100vw - 16px);
+        max-height: calc(100vh - 28px);
+        max-height: calc(100dvh - 28px - env(safe-area-inset-top));
+    }
+    .command-dialog .command-searchline { gap: 8px; padding-block: 2px; }
+    .command-option-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; overflow-wrap: anywhere; }
+    .command-dialog .command-close .command-escape { display: none; }
+    .command-dialog .command-close .command-dismiss { display: block; }
+    .command-dialog .command-option { column-gap: 8px; padding-inline: 8px; }
+    .command-detail { max-width: 9em; }
+    .command-dialog .command-close { min-width: 44px; display: grid; place-items: center; padding-inline: 0; }
+    .command-tray { padding-inline: 4px; }
+    .command-hints { display: none; }
+    .command-foot { justify-content: flex-end; padding-block: 0; }
+}
+@media (forced-colors: active) {
+    .command-dialog .command-option[aria-selected="true"], .command-dialog .command-scope button[aria-pressed="true"] {
+        outline: 1px solid Highlight;
+        outline-offset: -2px;
+    }
+}

@@ -229,16 +229,20 @@ fn week_label(week: NaiveDate) -> String {
     }
 }
 
-fn digest_cards(rows: &[Digest]) -> Markup {
+fn digest_rows(rows: &[Digest], nested: bool) -> Markup {
     html! {
         @for row in rows {
-            article id=(format!("digest-{}", row.week_start)) {
-                h3 { (week_label(row.week_start)) " · " (row.timezone) }
-                dl class="grid" {
-                    div { dt { "New issues" } dd class="metric" { (row.new_issues) } }
-                    div { dt { "Issues marked Done" } dd class="metric" { (row.issues_done) } }
-                    div { dt { "Milestone targets" } dd class="metric" { (row.milestone_targets) } }
-                    div { dt { "Published releases" } dd class="metric" { (row.releases_published) } }
+            article.workflow-digest id=(format!("digest-{}", row.week_start)) {
+                header {
+                    @if nested { h3 { (week_label(row.week_start)) } }
+                    @else { h2 { (week_label(row.week_start)) } }
+                    span.workflow-summary { (row.timezone) }
+                }
+                dl.workflow-stats {
+                    div { dt { "New issues" } dd { (row.new_issues) } }
+                    div { dt { "Issues marked Done" } dd { (row.issues_done) } }
+                    div { dt { "Milestone targets" } dd { (row.milestone_targets) } }
+                    div { dt { "Published releases" } dd { (row.releases_published) } }
                 }
             }
         }
@@ -258,46 +262,52 @@ pub(super) async fn section(state: &AppState, auth: &Auth, plan: &str) -> AppRes
     ).bind(auth.user_id).fetch_one(db).await?;
     let (rows, next) = read_history(db, auth.user_id, None, 1).await?;
     Ok(html! {
-        section id="portfolio-digest" class="stack" aria-labelledby="portfolio-digest-heading" {
-            h2 id="portfolio-digest-heading" { "Weekly portfolio digest" }
-            @if plan == "max" {
-                p class="muted" { "Each Monday, receive a private review of the previous week across your projects in " (timezone) "." }
-                @if let Some(week) = active_week {
-                    p { "Next review covers " (week_label(week)) "." }
-                    form method="post" action="/workflows/digest" {
-                        (ui::csrf(auth))
-                        button class="secondary" name="enabled" value="false" { "Pause weekly digests" }
-                    }
-                    @if email_enabled || mail_available {
+        section.workflow-section id="portfolio-digest" aria-labelledby="portfolio-digest-heading" {
+            header.workflow-label {
+                h2 id="portfolio-digest-heading" { "Weekly portfolio digest" }
+                @if plan != "max" { span.workflow-access { "Schedule with Max" } }
+            }
+            div.workflow-body {
+                @if plan != "max" {
+                    p { "Review new and completed issues, milestone targets and published releases across projects each week." }
+                } @else if let Some(week) = active_week {
+                    p { strong { "Scheduled" } " · Next review covers " (week_label(week)) " in " (timezone) "." }
+                    details.workflow-delivery {
+                        summary { "Manage delivery" }
+                        @if email_enabled || mail_available {
+                            form.workflow-form method="post" action="/workflows/digest" {
+                                (ui::csrf(auth))
+                                input type="hidden" name="enabled" value="true";
+                                input type="hidden" name="email_enabled" value=(if email_enabled { "false" } else { "true" });
+                                @if email_enabled {
+                                    p { "Email links are enabled for " (auth.email) "." }
+                                    button.action-secondary { "Turn off email links" }
+                                } @else {
+                                    p { "Send a private digest link to " (auth.email) "." }
+                                    button.action-secondary { "Turn on email links" }
+                                }
+                            }
+                        }
+                        @if !mail_available { p class="muted" { "Email delivery is unavailable on this server. In-app delivery is scheduled." } }
                         form method="post" action="/workflows/digest" {
                             (ui::csrf(auth))
-                            input type="hidden" name="enabled" value="true";
-                            input type="hidden" name="email_enabled" value=(if email_enabled { "false" } else { "true" });
-                            @if email_enabled {
-                                p { "Email links are enabled for " (auth.email) "." }
-                                button class="secondary" { "Turn off email links" }
-                            } @else {
-                                button class="secondary" { "Email me a private digest link" }
-                                p class="muted" { "Deliver to " (auth.email) "." }
-                            }
+                            button.action-secondary name="enabled" value="false" { "Pause weekly digests" }
                         }
                     }
                 } @else {
-                    form method="post" action="/workflows/digest" {
+                    p { "Receive an in-app review each Monday for the previous week in " (timezone) "." }
+                    form.workflow-form method="post" action="/workflows/digest" {
                         (ui::csrf(auth))
                         @if mail_available {
                             label { input type="checkbox" name="email_enabled" value="true"; " Email me a private digest link at " (auth.email) }
                         }
-                        button name="enabled" value="true" { "Schedule weekly digests" }
+                        button.action-secondary name="enabled" value="true" { "Schedule weekly digests" }
                     }
+                    @if !mail_available { small { "Email delivery is unavailable on this server." } }
                 }
-                @if !mail_available { p class="muted" { "Email delivery is unavailable on this server. Your in-app schedule is available." } }
-
-            } @else {
-                p class="muted" { "Schedule a private weekly portfolio review with " a href="/billing" { "Max" } "." }
+                (digest_rows(&rows, true))
+                @if let Some(before) = next { (older_link(before)) }
             }
-            (digest_cards(&rows))
-            @if let Some(before) = next { (older_link(before)) }
         }
     })
 }
@@ -318,17 +328,19 @@ pub(super) async fn history(
         "Portfolio digests",
         "workflows",
         html! {
-            div class="stack" {
-                a href="/workflows#portfolio-digest" { "Back to workflows" }
-                h1 { "Portfolio digests" }
+            div.workflow-workspace {
+                a.workflow-back href="/workflows#portfolio-digest" { "Back to workflows" }
+                header.view-head { h1 { "Portfolio digests" } }
                 @if rows.is_empty() {
-                    p { "No digests in this period." }
+                    p.empty-state { "No digests in this period." }
                 } @else {
-                    (digest_cards(&rows))
+                    (digest_rows(&rows, false))
                 }
-                @if let Some(before) = next { (older_link(before)) }
-                @if query.before.is_some() {
-                    a href="/workflows/digest" { "Latest digests" }
+                @if next.is_some() || query.before.is_some() {
+                    nav.workflow-jumps aria-label="Digest pages" {
+                        @if let Some(before) = next { (older_link(before)) }
+                        @if query.before.is_some() { a href="/workflows/digest" { "Latest digests" } }
+                    }
                 }
             }
         },
@@ -351,9 +363,11 @@ pub(super) async fn show(
         "Weekly portfolio digest",
         "workflows",
         html! {
-            a href="/workflows/digest" { "All portfolio digests" }
-            h1 { "Weekly portfolio digest" }
-            (digest_cards(&[row]))
+            div.workflow-workspace {
+                a.workflow-back href="/workflows/digest" { "All portfolio digests" }
+                header.view-head { h1 { "Weekly portfolio digest" } }
+                (digest_rows(&[row], false))
+            }
         },
     ))
 }
