@@ -7,11 +7,11 @@ Ratio opens a dedicated application window on Windows and Linux. Each installati
 Download the appropriate package from the [private releases](https://github.com/MimoAlexer/ratio/releases). The release contains SHA256SUMS for both installers.
 
 - **Windows x64:** run the setup EXE. It installs for the current user and adds Ratio to the Start menu. Microsoft Edge WebView2 Evergreen is required. If it is missing, follow the installer’s instructions or install the [official Microsoft WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The release is unsigned.
-- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.4.0_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
+- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.4.1_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
 
 ## Upgrading
 
-Close the app and install 0.4.0 over Ratio 0.3.1, 0.3.0, 0.2.1, 0.2.0, 0.1.1, or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need the 0.4.0 server to use planning canvases.
+Close the app and install 0.4.1 over Ratio 0.4.0, 0.3.1, 0.3.0, 0.2.1, 0.2.0, 0.1.1, or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need server version 0.4.0 or later to use planning canvases. Windows desktop 0.4.1 also supports exports when the user’s temporary folder is configured with the Windows extended-length path prefix (`\\?\`).
 
 ## Connect two computers
 

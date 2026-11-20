@@ -6,6 +6,8 @@ The desktop frame sits against a low-contrast fade from near-black to charcoal. 
 
 The queue opens with its groups visible so a developer can scan work before choosing an issue. Project Health brings the next milestone and current risks forward. Release curves and cycle-time plots open their source records. New accounts start empty and can create their own data. The separate Luma seed is clearly labeled.
 
+In Canvas, the small dot grid gives drawings a scale. The creation palette follows the supplied Railway reference. Once you start drawing, the tools move to the edge of the stage. [Railway project canvas](https://docs.railway.com/projects#project-canvas)
+
 ## Design review
 
 Check the rendered interface at desktop window size and narrow widths. Inspect row alignment, active/focused/hover states, disclosure and shortcut behavior, issue filters, the selected project, chart affordances and the sign-in screen. Keep the next action visible. Avoid promotional headings, decorative charts and duplicate success indicators.

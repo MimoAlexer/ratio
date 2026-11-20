@@ -137,6 +137,12 @@ pub struct Downloads {
     origin: ServerOrigin,
 }
 
+#[cfg(target_os = "windows")]
+fn webview2_path_key(path: &Path) -> &Path {
+    // Wry applies this conversion before passing our destination to WebView2.
+    dunce::simplified(path)
+}
+
 pub fn configure<'a>(
     builder: wry::WebViewBuilder<'a>,
     origin: ServerOrigin,
@@ -162,15 +168,17 @@ pub fn configure<'a>(
         };
         let archive = job.archive();
         #[cfg(target_os = "linux")]
-        {
+        let key = {
             use gtk::prelude::FileExt;
             *destination = PathBuf::from(gtk::gio::File::for_path(&archive).uri().as_str());
-        }
+            archive
+        };
         #[cfg(target_os = "windows")]
-        {
-            *destination = archive.clone();
-        }
-        requests.borrow_mut().insert(archive, job);
+        let key = {
+            *destination = archive;
+            webview2_path_key(destination).to_owned()
+        };
+        requests.borrow_mut().insert(key, job);
         true
     });
     (builder, Downloads { pending, origin })
@@ -388,7 +396,8 @@ impl Downloads {
                         let mut result = PWSTR::null();
                         args.ResultFilePath(&mut result)?;
                         let path = PathBuf::from(take_pwstr(result));
-                        let Some(job) = self.pending.borrow_mut().remove(&path) else {
+                        let Some(job) = self.pending.borrow_mut().remove(webview2_path_key(&path))
+                        else {
                             args.SetCancel(true)?;
                             return Ok(());
                         };
@@ -473,6 +482,59 @@ fn windows_error(message: &str) {
 mod tests {
     use super::*;
     use std::sync::{Arc, Barrier};
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn webview2_keys_match_safe_dos_spellings_and_preserve_long_paths() {
+        let dos = Path::new(r"C:\Temp\Ratio User\ratio-export-ab\canvas.svg");
+        let verbatim = Path::new(r"\\?\C:\Temp\Ratio User\ratio-export-ab\canvas.svg");
+        assert_ne!(dos, verbatim);
+        assert_eq!(webview2_path_key(verbatim), dos);
+        assert_eq!(webview2_path_key(dos), dos);
+        let long = verbatim.join("a".repeat(180)).join("b".repeat(100));
+        assert_eq!(webview2_path_key(&long), long);
+        let reserved = Path::new(r"\\?\C:\Temp\aux.svg");
+        assert_eq!(webview2_path_key(reserved), reserved);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn webview2_keys_keep_same_name_exports_in_their_own_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let extended = root.path().canonicalize().unwrap();
+        let mut pending = HashMap::new();
+        let mut results = Vec::new();
+        for payload in ["first", "second"] {
+            let job = Export {
+                directory: tempfile::Builder::new()
+                    .prefix("ratio-export-")
+                    .tempdir_in(&extended)
+                    .unwrap(),
+                file: ExportFile {
+                    format: &SVG,
+                    name: "canvas.svg".into(),
+                },
+            };
+            let raw = job.archive();
+            let wry_path = dunce::simplified(&raw).to_path_buf();
+            fs::write(&wry_path, payload).unwrap();
+            assert!(
+                pending
+                    .insert(webview2_path_key(&raw).to_owned(), job)
+                    .is_none()
+            );
+            results.push((wry_path, raw, payload));
+        }
+        for (reported, raw, payload) in results.into_iter().rev() {
+            let job = pending.remove(webview2_path_key(&reported)).unwrap();
+            assert_eq!(job.archive(), raw);
+            let target = root.path().join(payload);
+            job.save(&target).unwrap();
+            assert_eq!(fs::read_to_string(target).unwrap(), payload);
+            drop(job);
+            assert!(!raw.parent().unwrap().exists());
+        }
+    }
 
     #[test]
     fn export_names_only_come_from_workspace_project_ids() {

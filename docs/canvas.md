@@ -4,6 +4,8 @@ Open **Canvas** in the sidebar, choose a project, and create a board. The blank 
 
 ![Luma's vault indexing diagram](images/ratio-canvas.png)
 
+The sample board traces a vault import from its first safety check through backlink indexing. [Open its exported SVG](images/vault-indexing.svg)
+
 ## Draw and connect
 
 Choose **Shapes** to place a process, decision, service or database. Choose a note for text or the pen for a freehand line. With the select tool, click a shape to edit its label or body and drag it to move it. Choose **Connect**, then select the starting shape and its destination. Select the connector to name it.

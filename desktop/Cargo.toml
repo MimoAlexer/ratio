@@ -1,6 +1,6 @@
 [package]
 name = "ratio"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.90"
 publish = false
@@ -24,6 +24,7 @@ gtk = "0.18"
 webkit2gtk = { version = "2", features = ["v2_40"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+dunce = "1.0"
 webview2-com = "0.39"
 windows-core = "0.62"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }

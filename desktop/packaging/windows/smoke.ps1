@@ -300,11 +300,12 @@ function Write-SvgTimeout($app, $destination, $stageWatcher) {
     }
 }
 
-function Assert-CanvasSvgSave {
+function Assert-CanvasSvgSave([switch]$VerbatimTemp) {
     # Exercise the installed WebView2 download callback and IFileSaveDialog with a
     # same-origin attachment. Keep the release worker's regular profile unchanged.
     $id = [Guid]::NewGuid().ToString('D')
-    $dir = Join-Path ([IO.Path]::GetTempPath()) "ratio-svg-$id"
+    $stagingRoot = [IO.Path]::GetTempPath()
+    $dir = Join-Path $stagingRoot "ratio-svg-$id"
     $null = New-Item -ItemType Directory -Path $dir
     $name = "canvas-$id.svg"
     $downloads = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
@@ -360,7 +361,27 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         if (!(Test-Path -LiteralPath $portFile)) { throw 'Local SVG fixture did not start.' }
         $port = [int](Get-Content -Raw -LiteralPath $portFile)
         $profile = Join-Path $dir 'profile'
-        $app = Start-Process $appExe -ArgumentList '--server',"http://127.0.0.1:$port",'--profile-dir',"`"$profile`"" -PassThru
+        $mode = 'standard TEMP'
+        if ($VerbatimTemp) {
+            $mode = 'verbatim TEMP'
+            $stagingRoot = (New-Item -ItemType Directory -Path (Join-Path $dir 'app-temp')).FullName
+            $verbatim = if ($stagingRoot.StartsWith('\\?\')) { $stagingRoot }
+                elseif ($stagingRoot.StartsWith('\\')) { '\\?\UNC\' + $stagingRoot.Substring(2) }
+                else { '\\?\' + $stagingRoot }
+            # Windows PowerShell 5.1 lacks Start-Process -Environment. Set only the
+            # tested child process's TMP and TEMP and keep the real process handle.
+            $start = New-Object System.Diagnostics.ProcessStartInfo
+            $start.FileName = $appExe
+            $start.UseShellExecute = $false
+            $start.Arguments = "--server http://127.0.0.1:$port --profile-dir `"$profile`""
+            $start.EnvironmentVariables['TMP'] = $verbatim
+            $start.EnvironmentVariables['TEMP'] = $verbatim
+            $app = [Diagnostics.Process]::Start($start)
+            Write-Host "Testing child-only TMP and TEMP='$verbatim' for Ratio PID=$($app.Id)."
+        } else {
+            $app = Start-Process $appExe -ArgumentList '--server',"http://127.0.0.1:$port",'--profile-dir',"`"$profile`"" -PassThru
+        }
+        $null = $app.Handle
         Add-Type -AssemblyName UIAutomationClient
         Add-Type -AssemblyName UIAutomationTypes
         $linkName = [System.Windows.Automation.PropertyCondition]::new(
@@ -379,7 +400,7 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         if (!$link) { throw 'WebView2 did not expose the SVG download link.' }
         $shell = New-Object -ComObject WScript.Shell
         if (!$shell.AppActivate($app.Id)) { throw 'Could not activate the SVG fixture window.' }
-        $stageWatcher = [RatioStageWatch]::new([IO.Path]::GetTempPath())
+        $stageWatcher = [RatioStageWatch]::new($stagingRoot)
         $link.SetFocus()
         $shell.SendKeys('{ENTER}')
         $editCondition = [System.Windows.Automation.PropertyCondition]::new(
@@ -433,7 +454,17 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
             Write-SvgTimeout $app $destination $stageWatcher
             throw 'The native Save dialog did not write the expected SVG bytes to the suggested filename.'
         }
-        Write-Host "Verified native SVG dialog, suggested filename and saved bytes (SHA-256 $expected)."
+        if ($VerbatimTemp) {
+            $stageFile = '[\\/]' + [regex]::Escape($name) + '(?: bytes=\d+)?$'
+            $end = (Get-Date).AddSeconds(3)
+            do {
+                $observed = @($stageWatcher.Observations() -match $stageFile)
+                if (!$observed.Count) { Start-Sleep -Milliseconds 100 }
+            } until ($observed.Count -or (Get-Date) -ge $end)
+            if (!$observed.Count) { throw 'The expected SVG was not staged in the child-only temp directory.' }
+            Write-Host "Verified child-only staging: $($observed[0])"
+        }
+        Write-Host "Verified native SVG dialog, suggested filename and saved bytes with $mode (SHA-256 $expected)."
     } finally {
         if ($stageWatcher) { $stageWatcher.Dispose() }
         if ($app -and !$app.HasExited) {
@@ -479,6 +510,7 @@ if ($PreviousRatioInstaller) {
         'e6d2969993ca3063b53a84a2527526e621003040af29cdf657d0955c0cd2d0c8' = '0.2.1'
         'ac1d225bc8e19d424d90ee335aeb648adc37090ea349c712b070a6f9cfa60280' = '0.3.0'
         '5d7107e216be0b209311053a04b814075cf5cc0f81ce4d66b6290b8e32ecdf2a' = '0.3.1'
+        '91d2eb67759a43978a3666a7124359c451ee9b25971addf00bf79ffe2db1fba5' = '0.4.0'
     }
     $previousVersion = $publishedVersions[(Get-FileHash $previous).Hash]
     if (!$previousVersion) { throw 'Unknown previous Ratio installer checksum.' }
@@ -514,6 +546,9 @@ if ($LegacyInstaller) {
 Assert-ConnectionWindow "$scenario, installed target"
 if ($scenario -eq 'fresh' -and [version]$version -ge [version]'0.4.0') {
     Assert-CanvasSvgSave
+    if ([version]$version -ge [version]'0.4.1') {
+        Assert-CanvasSvgSave -VerbatimTemp
+    }
 }
 if (!(Test-Path -LiteralPath (Join-Path $expectedProfileDir 'launcher'))) { throw 'The app opened the wrong profile.' }
 $sentinel = Join-Path $expectedProfileDir 'installer-ci-sentinel'

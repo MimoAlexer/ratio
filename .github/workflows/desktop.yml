@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [fresh, '0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.3.1']
+        fixture: [fresh, '0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.3.1', '0.4.0']
     env:
       FIXTURE: ${{ matrix.fixture }}
     defaults:
@@ -79,6 +79,7 @@ jobs:
             0.2.1) checksum=a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2 ;;
             0.3.0) checksum=4b534a35e8e8556be54e0ba7d8f0bce897d9912ba2a1ed54473b96d005cd55ed ;;
             0.3.1) checksum=86c8f5b4372f4e208c4c9605f5844f5701349134948d0b963c8274a82f6b3975 ;;
+            0.4.0) checksum=17d94864bf61c05471568379a01474de317607d5a7893fc622f57e33816d1a1a ;;
             *) exit 1 ;;
           esac
           gh release download "v$FIXTURE" --repo "$GITHUB_REPOSITORY" --pattern "$package" --dir "$RUNNER_TEMP"
@@ -180,7 +181,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [working-set, '0.2.0', '0.2.1', '0.3.0', '0.3.1']
+        fixture: [working-set, '0.2.0', '0.2.1', '0.3.0', '0.3.1', '0.4.0']
     runs-on: windows-2025
     timeout-minutes: 12
     steps:
