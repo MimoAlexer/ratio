@@ -346,15 +346,15 @@ async fn pairing_requires_browser_approval_and_confirmation_on_the_originating_d
         duplicate.post(&app, "/desktop/finish", &valid)
     );
     let (mut winner, loser) = if first.status == StatusCode::SEE_OTHER {
-        assert_eq!(first.location, "/issues");
+        assert_eq!(first.location, "/");
         (desktop, second)
     } else {
         assert_eq!(second.status, StatusCode::SEE_OTHER);
-        assert_eq!(second.location, "/issues");
+        assert_eq!(second.location, "/");
         (duplicate, first)
     };
     assert_denied(&loser);
-    assert_eq!(winner.get(&app, "/desktop/start").await.location, "/issues");
+    assert_eq!(winner.get(&app, "/desktop/start").await.location, "/");
     let desktop_session = winner.cookies["workspace_session"].clone();
     assert_ne!(desktop_session, browser_session);
     assert!(winner.get(&app, "/settings").await.html.contains(email));

@@ -281,7 +281,7 @@ pub(super) async fn list(
     };
     let more = items.len() > PAGE_SIZE;
     items.truncate(PAGE_SIZE);
-    let checkpoint = items
+    if let Some(item) = items
         .iter_mut()
         .filter(|i| {
             !i.archived
@@ -290,10 +290,9 @@ pub(super) async fn list(
                 && matches!(i.status.as_str(), "backlog" | "ready" | "in_progress")
         })
         .max_by_key(|i| (i.checkpoint_at, i.updated_at, std::cmp::Reverse(i.id)))
-        .map(|i| {
-            i.checkpoint = true;
-            i.id
-        });
+    {
+        item.checkpoint = true;
+    }
     let requested = Uuid::parse_str(&f.inspect).ok();
     let picked = items.iter().find(|i| Some(i.id) == requested);
     // Board lanes page in a different order. Keep the list's requested ID available
@@ -301,13 +300,7 @@ pub(super) async fn list(
     if !f.board() && requested.is_some() && picked.is_none() {
         f.inspect.clear();
     }
-    let preview = if f.board() || f.inspect == "none" {
-        None
-    } else {
-        picked
-            .or_else(|| items.iter().find(|i| Some(i.id) == checkpoint))
-            .or(items.first())
-    };
+    let preview = picked.filter(|_| !f.board());
     let inspector = if let Some(item) = preview {
         inspector::render(&state.db, auth.user_id, item, &f).await?
     } else {
@@ -335,13 +328,9 @@ pub(super) async fn list(
                             span.issue-total title="Matching issues" { (first.matched) }
                         }
                     }
-                    @if inbox { p.issue-subheading { "Backlog issues awaiting triage." } }
                 }
                 @if !projects.is_empty() || !f.q.is_empty() { (filter_bar(&f, &projects, project)) }
                 div.view-actions {
-                    @if !projects.is_empty() {
-                        a.issue-saved href="/workflows#views" title="Saved views" { (ledger_icon("bookmark")) span { "Saved views" } }
-                    }
                     @if can_create { (new_issue(&auth, &projects, project, if inbox { "backlog" } else { "ready" })) }
                 }
             }
@@ -356,7 +345,7 @@ pub(super) async fn list(
                 @if items.is_empty() {
                     (empty_issues(&f, selected, &projects, can_create, inbox_clear, page))
                 } @else {
-                    div.issue-workbench data-split=[preview.map(|_| "open")] data-explicit=[(preview.is_some() && picked.is_some()).then_some("true")] {
+                    div.issue-workbench data-split=[preview.map(|_| "open")]  {
                         div.issue-register {
                             (issue_results(&auth, &f, &items, preview.map(|i| i.id)))
                             @if more || page > 1 { (pagination(&f, &items, page, more)) }
@@ -543,19 +532,21 @@ fn issue_row(f: &Filters, item: &ListItem, selected: Option<Uuid>) -> Markup {
         f.change_url("inspect", &item.id.to_string(), true)
     );
     let detail = format!("/issues/{}", item.id);
-    let split = selected.is_some();
     let current = (selected == Some(item.id)).then_some("true");
     let finding = html! {
         @if item.manual_severity != "none" {
             @let text = format!("{} finding{}", label(&item.manual_severity), if item.finding_closed { " · closed" } else { "" });
-            span.issue-flag.issue-finding title=(&text) data-severity=[(!item.finding_closed).then_some(&item.manual_severity)] { (text) }
+            span.issue-flag.issue-finding title=(&text) data-severity=[(!item.finding_closed).then_some(&item.manual_severity)] {
+                @if !item.finding_closed && item.manual_severity == "critical" { (ui::icon("flag")) }
+                (text)
+            }
         }
     };
     html! {
         li.issue-record data-id=(item.id) data-selected=[current] {
-            a.issue-ledger-row.issue-preview-trigger[split] id=(format!("record-{}", item.id))
-                href=(if split { &inspect } else { &detail }) aria-current=[current] {
-                @if split { span.sr-only { "Preview issue " } }
+            a.issue-ledger-row.issue-preview-trigger id=(format!("record-{}", item.id))
+                href=(&inspect) aria-current=[current] {
+                span.sr-only { "Preview issue " }
                 span.issue-name-cell {
                     span.issue-item-state title=(label(&item.status)) {
                         (status_mark(&item.status)) span.sr-only { (label(&item.status)) }
@@ -564,33 +555,21 @@ fn issue_row(f: &Filters, item: &ListItem, selected: Option<Uuid>) -> Markup {
                     @if item.archived || item.project_archived { span.issue-flag { "Archived" } }
                     (finding)
                     @if item.checkpoint { span.issue-bookmark title="Latest checkpoint" { (ledger_icon("bookmark")) span.sr-only { "Latest checkpoint" } } }
-                    @if !item.labels.is_empty() {
-                        span.issue-row-labels { @for tag in &item.labels { span { (tag) } } }
-                    }
                 }
                 span.issue-row-meta {
                     span.issue-ref title=(&item.project_name) { (&key) }
-                    span.issue-priority title=(format!("{} priority", label(&item.priority))) {
+                    span.issue-priority data-priority=(&item.priority) title=(format!("{} priority", label(&item.priority))) {
                         (priority_mark(&item.priority)) span { (label(&item.priority)) }
                     }
                     (finding)
                     span.issue-project { (&item.project_name) }
-                    span.issue-kind { (label(&item.kind)) }
                     time.issue-date datetime=(item.updated_at.to_rfc3339()) title=(item.updated_at.format("%Y-%m-%d %H:%M UTC")) {
                         (item.updated_at.format("%b %e"))
                     }
                 }
             }
-            @if split {
-                a.issue-row-tool href=(&detail) aria-label=(format!("Open full issue {key}: {}", item.title))
-                    title=(format!("Open full issue {key}")) { (ledger_icon("open")) }
-            } @else {
-                a.issue-row-tool.issue-preview-trigger href=(&inspect) aria-label=(format!("Preview {key}: {}", item.title))
-                    title=(format!("Preview {key}")) {
-                    span.preview-desktop-mark { (ledger_icon("inspect")) }
-                    span.preview-touch-mark { (ledger_icon("next")) }
-                }
-            }
+            a.issue-row-tool href=(&detail) aria-label=(format!("Open full issue {key}: {}", item.title))
+                title=(format!("Open full issue {key}")) { (ledger_icon("open")) }
         }
     }
 }
@@ -658,14 +637,11 @@ fn issue_results(auth: &Auth, f: &Filters, items: &[ListItem], selected: Option<
                                     (issue_tags(item))
                                     @if !item.archived && !item.project_archived {
                                         details.issue-move {
-                                            summary aria-label=(format!("Move {key} to another status · {}", label(&item.kind))) title="Change status" {
-                                                span { (label(&item.kind)) }
-                                                span.issue-move-label { "Move" (ledger_icon("chevron")) }
+                                            summary aria-label=(format!("Move {key} to another status")) title="Change status" {
+                                                (ledger_icon("chevron"))
                                             }
                                             (status_form(auth,item.id,item.revision,&item.status))
                                         }
-                                    } @else {
-                                        p.issue-board-kind { (label(&item.kind)) }
                                     }
                                 }
                             }
@@ -678,12 +654,21 @@ fn issue_results(auth: &Auth, f: &Filters, items: &[ListItem], selected: Option<
             }
         };
     }
+    let fold_finished = f.group == "status"
+        && f.q.trim().is_empty()
+        && f.status.is_empty()
+        && f.kind.is_empty()
+        && f.priority.is_empty()
+        && f.critical.is_empty()
+        && f.scope == "active"
+        && items
+            .iter()
+            .any(|i| !matches!(i.status.as_str(), "done" | "canceled"));
     html! {
         section.issue-ledger data-group=(&f.group) aria-label="Issue list"
             data-mixed-projects=[items.first().filter(|first| items.iter().any(|i| i.project_id != first.project_id)).map(|_| "true")] {
             div.issue-column-head aria-hidden="true" {
-                span { "ID" } span { "Issue" } span.issue-priority { "Priority" } span.issue-project { "Project" } span.issue-kind { "Type" } span.issue-date { "Updated" }
-                span.issue-preview-col { "Preview" }
+                span { "ID" } span { "Issue" } span.issue-priority { "Priority" } span.issue-project { "Project" } span.issue-date { "Updated" }
             }
             @if f.group == "none" {
                 ul.issue-rows { @for item in items { (issue_row(f, item, selected)) } }
@@ -691,7 +676,9 @@ fn issue_results(auth: &Auth, f: &Filters, items: &[ListItem], selected: Option<
                 @for &group in groups {
                     @let rows: Vec<_> = items.iter().filter(|i| belongs(i, group)).collect();
                     @if !rows.is_empty() {
-                        details.issue-group open data-group=(group) {
+                        @let expand = !fold_finished || !matches!(group, "done" | "canceled")
+                            || rows.iter().any(|i| Some(i.id) == selected || (i.manual_severity == "critical" && !i.finding_closed));
+                        details.issue-group open[expand] data-group=(group) {
                             summary.issue-group-label { (ledger_icon("chevron")) (group_heading(&f.group, group, rows.len())) }
                             ul.issue-rows { @for item in rows { (issue_row(f, item, selected)) } }
                         }
@@ -746,6 +733,7 @@ fn filter_bar(f: &Filters, projects: &[Project], selected: Option<Uuid>) -> Mark
                 summary { (ui::icon("settings")) "Display" }
                 div.issue-menu-panel {
                     h2 { "Display options" }
+                    a.issue-saved href="/workflows#views" { (ledger_icon("bookmark")) "Saved views" }
                     label { "Group by" select name="group" {
                         @for &(key, name) in VIEW_GROUPS {
                             @if key != "none" || !f.board() {
@@ -819,11 +807,10 @@ fn page_button(f: &Filters, page: u32, title: &str) -> Markup {
 }
 
 fn issue_tags(item: &ListItem) -> Markup {
-    html! { @if item.archived || item.project_archived || !item.labels.is_empty() || item.manual_severity != "none" {
+    html! { @if item.archived || item.project_archived || item.manual_severity != "none" {
         div.tags {
             @if item.archived || item.project_archived { span.badge { "Archived" } }
             @if item.manual_severity != "none" { span.badge { (label(&item.manual_severity)) " finding" @if item.finding_closed { " · closed" } } }
-            @for tag in &item.labels { span.tag { (tag) } }
         }
     } }
 }
@@ -1085,6 +1072,12 @@ pub(super) async fn detail(
                         code aria-current="page" { (&key) }
                     }
                     h1 { (&issue.title) }
+                    @if issue.manual_severity != "none" && !issue.finding_closed {
+                        p.issue-security-status {
+                            (ui::icon("flag")) (label(&issue.manual_severity)) " finding"
+                            @if can_write { a href=(format!("/issues/{id}?edit=true#finding-settings")) { "Edit finding" } }
+                        }
+                    }
                     @if can_write { (edit_issue(&auth, &issue, q.edit)) }
                     @if project.archived || issue.archived {
                         p.notice { @if project.archived { "This project is archived." } @else { "This issue is archived." } }
@@ -1213,10 +1206,10 @@ pub(super) async fn detail(
                         }
                     }
                     aside.issue-inspector.issue-context-rail aria-label="Issue planning and actions" {
-                        @if issue.manual_severity != "none" {
-                            section.issue-finding.finding-open[!issue.finding_closed] {
+                        @if issue.manual_severity != "none" && issue.finding_closed {
+                            section.issue-finding {
                                 h2 { "Manual security finding" }
-                                p { (label(&issue.manual_severity)) " · " @if issue.finding_closed { "Closed" } @else { "Open" } }
+                                p { (label(&issue.manual_severity)) " · Closed" }
                                 @if can_write { a href=(format!("/issues/{id}?edit=true#finding-settings")) { "Edit finding" } }
                             }
                         }
@@ -1255,27 +1248,27 @@ pub(super) async fn detail(
                         }
                     }
 
-                    section.issue-activity id="history" aria-labelledby="history-title" {
-                        header.history-head {
-                            h2 id="history-title" { "Activity" }
+                    details.issue-activity.related-disclosure open[q.history_page.is_some()] {
+                        summary { "Activity" }
+                        div.history-content id="history" {
                             @if can_undo { form method="post" action=(format!("/issues/{id}/undo")) {
                                 (command(&auth, Some(issue.revision))) button.action-quiet type="submit" { "Undo latest change" }
                             } }
-                        }
-                        @if history.is_empty() { p.muted { "No recorded events on this page." } }
-                        @else {
-                            (history_list(&history[..history.len().min(3)]))
-                            @if history.len() > 3 {
-                                details.issue-disclosure {
-                                    summary { "Show " (history.len() - 3) " more events" }
-                                    (history_list(&history[3..]))
+                            @if history.is_empty() { p.muted { "No recorded events on this page." } }
+                            @else {
+                                (history_list(&history[..history.len().min(3)]))
+                                @if history.len() > 3 {
+                                    details.issue-disclosure {
+                                        summary { "Show " (history.len() - 3) " more events" }
+                                        (history_list(&history[3..]))
+                                    }
                                 }
                             }
+                            @if older || history_page > 1 { nav.actions aria-label="History pages" {
+                                @if history_page > 1 { a href=(format!("/issues/{id}?history_page={}#history", history_page - 1)) { "Newer events" } }
+                                @if older { a href=(format!("/issues/{id}?history_page={}#history", history_page.saturating_add(1))) { "Older events" } }
+                            } }
                         }
-                        @if older || history_page > 1 { nav.actions aria-label="History pages" {
-                            @if history_page > 1 { a href=(format!("/issues/{id}?history_page={}#history", history_page - 1)) { "Newer events" } }
-                            @if older { a href=(format!("/issues/{id}?history_page={}#history", history_page.saturating_add(1))) { "Older events" } }
-                        } }
                     }
 
                 }

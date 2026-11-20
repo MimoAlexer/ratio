@@ -165,7 +165,7 @@ async fn roadmap(
                 .find(|m| m.id == id)
                 .ok_or(AppError::NotFound)?,
         ),
-        None => preferred_milestone(&milestones),
+        None => None,
     };
 
     let detail = if let Some(milestone) = selected {
@@ -221,18 +221,15 @@ async fn roadmap(
             @if query.new && !project.archived { (inspector::creation(&auth,project.id,true)) }
             div.rm-workbench {
                 div class=(if selected.is_some() { "rm-work rm-has-selection" } else { "rm-work" }) {
-                    @let schedule = html! {
-                        div.rm-schedule-column {
-                            (timeline::timeline(project.id,&milestones,&deps,selected.map(|m|m.id),today,&weeks,&releases))
-                            @if !project.archived && !query.new && milestones.is_empty() { (inspector::creation(&auth,project.id, true)) }
-                            section.rm-settings aria-label="Calendar settings" {
-                                (calendar::release_editor(&auth,project.id,project.archived,&releases))
-                                (calendar::calendar_editor(&auth,project.id,project.archived,&weeks))
-                            }
+                    (detail)
+                    div.rm-schedule-column {
+                        (timeline::timeline(project.id,&milestones,&deps,selected.map(|m|m.id),today,&weeks,&releases))
+                        @if !project.archived && !query.new && milestones.is_empty() { (inspector::creation(&auth,project.id, true)) }
+                        section.rm-settings aria-label="Calendar settings" {
+                            (calendar::release_editor(&auth,project.id,project.archived,&releases))
+                            (calendar::calendar_editor(&auth,project.id,project.archived,&weeks))
                         }
-                    };
-                    @if query.milestone.is_some() { (detail) (schedule) }
-                    @else { (schedule) (detail) }
+                    }
                 }
             }
         },
@@ -246,22 +243,6 @@ async fn workspace_clock(db: &sqlx::PgPool, owner: Uuid) -> AppResult<(NaiveDate
         .fetch_optional(db)
         .await?
         .ok_or(AppError::NotFound)
-}
-
-fn preferred_milestone(milestones: &[Milestone]) -> Option<&Milestone> {
-    milestones
-        .iter()
-        .filter(|m| m.status != "reached")
-        .min_by_key(|m| {
-            (
-                m.status != "in_progress",
-                m.target_on.is_none(),
-                m.target_on,
-                m.title.as_str(),
-                m.id,
-            )
-        })
-        .or_else(|| milestones.last())
 }
 
 async fn picker_data(

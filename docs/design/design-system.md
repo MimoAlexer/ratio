@@ -6,7 +6,7 @@ Ratio uses one shell for two different tasks. A developer scans many records in 
 
 | Token | Use |
 | --- | --- |
-| `--atmosphere`, `--surface-sheen` | Use the black-to-silver fade outside the frame and the small upper-left highlight inside it |
+| `--atmosphere`, `--surface-sheen` | Use a low-contrast near-black to charcoal fade outside the frame and a faint upper-left highlight inside it |
 | `--shell`, `--canvas`, `--raised` | Navigation rail (#101010), working surface (#171717) and selected row or floating control (#252525) |
 | `--rim`, `--edge-light`, `--edge-dark` | One-pixel perimeter, upper lip and opposing dark edge around the working surface |
 | `--surface`, `--hover`, `--selected` | Reading areas share the canvas color. Hover uses a translucent overlay. Selection uses the raised surface |
@@ -39,6 +39,6 @@ Call `ui::section_page` for a section index. Its page heading identifies the vie
 
 Place a field error beside its input, preserve submitted values and connect the error using `aria-describedby`. Use a native form for a write, a link with a real destination for navigation and native details/summary for disclosure. Keep a visible focus outline. Stateful menus support Escape and restore focus to their trigger. New content should remain usable at browser zoom, with long project names and on a phone.
 
-In the desktop issue workbench, the queue uses about a third of the working pane. The selected issue uses the rest. Give each issue group a plain text heading and reserve the filled background for the current row. The inset frame is 6 px inside the shell. The outer margin widens with the window and narrows to 5 px on phones, where the queue and selected issue open in sequence. [Desktop captures and reference gallery](ratio-0.3/README.md)
+On desktop, Issues opens as a full-width list. Selecting a record moves the queue to about a third of the working pane and opens the reader alongside it. Give each issue group a plain text heading and reserve the filled background for the current row. The inset frame is 6 px inside the shell. The outer margin widens with the window and narrows to 5 px on phones, where the queue and selected issue open in sequence. [Desktop captures and reference gallery](ratio-0.3/README.md)
 
 The [foundation stylesheet](../../assets/app.css) imports the local fonts. The [page renderer](../../src/ui.rs) adds route styles after the foundation, followed by the private command stylesheet. Scope feature-specific selectors to their view. Buttons, inputs and layout defaults use low specificity so a local layout can change density without competing with global selectors.

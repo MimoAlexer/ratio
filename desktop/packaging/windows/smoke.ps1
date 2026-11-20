@@ -151,6 +151,7 @@ if ($PreviousRatioInstaller) {
         'ddc157fe6e6787f21a2e93735a933a6441ec169061fc61b29a5ab12a02026057' = '0.1.1'
         '699086b5326a2156b5cd85026bed0f9f5c8f802a5e6823241b35e58de5e3a152' = '0.2.0'
         'e6d2969993ca3063b53a84a2527526e621003040af29cdf657d0955c0cd2d0c8' = '0.2.1'
+        'ac1d225bc8e19d424d90ee335aeb648adc37090ea349c712b070a6f9cfa60280' = '0.3.0'
     }
     $previousVersion = $publishedVersions[(Get-FileHash $previous).Hash]
     if (!$previousVersion) { throw 'Unknown previous Ratio installer checksum.' }

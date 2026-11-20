@@ -356,17 +356,20 @@ impl Schedule<'_> {
                     }
                 }
             }
-            div class="rm-legend" {
-                span { i class="rm-key-span" {} "Scheduled span" }
-                span { i class="rm-key-target" {} "Target" }
-                @if self.releases.iter().any(|r|r.published_on.is_some()) { span { i class="rm-key-shipped" {} "Shipped" } }
-                @if !self.deps.is_empty() { span { b aria-hidden="true" { "→" } "Prerequisite to dependent" } }
-                @if !self.weeks.is_empty() {
-                    span {
-                        svg class="rm-key-off" width="14" height="11" aria-hidden="true" {
-                            rect width="14" height="11" fill="url(#rm-hatch)" {}
+            details.rm-chart-key {
+                summary { "Chart key" }
+                div class="rm-legend" {
+                    span { i class="rm-key-span" {} "Scheduled span" }
+                    span { i class="rm-key-target" {} "Target" }
+                    @if self.releases.iter().any(|r|r.published_on.is_some()) { span { i class="rm-key-shipped" {} "Shipped" } }
+                    @if !self.deps.is_empty() { span { b aria-hidden="true" { "→" } "Prerequisite to dependent" } }
+                    @if !self.weeks.is_empty() {
+                        span {
+                            svg class="rm-key-off" width="14" height="11" aria-hidden="true" {
+                                rect width="14" height="11" fill="url(#rm-hatch)" {}
+                            }
+                            "Unavailable week"
                         }
-                        "Unavailable week"
                     }
                 }
             }
@@ -501,14 +504,24 @@ pub(super) fn timeline(
     html! {
         section class="rm-timeline" id="roadmap-schedule" aria-label="Roadmap calendar" tabindex="-1" {
             @if milestones.is_empty() && releases.is_empty() && weeks.is_empty() {
-                div class="rm-empty" { h2 { "No milestones yet" } p { "Milestones, releases and unavailable weeks will appear on this schedule." } }
+                div class="rm-empty" { h2 { "No milestones yet" } }
             } @else {
                 div class="rm-views" {
                     input class="rm-toggle" id="rm-toggle-agenda" type="checkbox" aria-controls="rm-plot rm-agenda";
                     div class="rm-toolbar" {
                         div.rm-chart-title {
-                            h2 { "Project schedule" }
-                            p { (calendar.first.format("%d %b")) @if calendar.first.year()!=calendar.last.year() { " " (calendar.first.year()) } " – " (date(calendar.last)) }
+                            @if let Some((target, milestone)) = milestones.iter()
+                                .filter(|m| m.status != "reached")
+                                .filter_map(|m| m.target_on.map(|d| (d, m)))
+                                .min_by_key(|(d,m)| (*d, m.id)) {
+                                p.rm-next {
+                                    @if target < today { "Overdue" } @else if target == today { "Due today" } @else { "Next target" }
+                                    " · " time datetime=(target) { (target.format(if target.year() == today.year() { "%-d %b" } else { "%-d %b %Y" })) }
+                                }
+                                h2 { a href=(detail(project,milestone.id)) { (milestone.title) (crate::ui::icon("arrow")) } }
+                            } @else {
+                                h2 { (calendar.first.format("%d %b")) @if calendar.first.year()!=calendar.last.year() { " " (calendar.first.year()) } " – " (date(calendar.last)) }
+                            }
                         }
                         label for="rm-toggle-agenda" class="rm-switch" {
                             span.rm-wide-label { "Agenda view" }

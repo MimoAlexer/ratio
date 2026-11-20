@@ -139,8 +139,8 @@ fn dependency_list(
             }
         }
         @if !after.is_empty() {
-            section.rm-relations {
-                h3 { "Downstream milestones" }
+            details.rm-relations {
+                summary { "Dependent milestones" span.rm-count { (after.len()) } }
                 ul.rm-links {
                     @for m in s.milestones {
                         @if let Some(parent) = after.get(&m.id) {
@@ -164,8 +164,8 @@ fn dependency_list(
 fn linked_issues(s: &Selection<'_>) -> Markup {
     html! {
         @if !s.issues.is_empty() {
-            section.rm-linked {
-                h3 { "Linked issues" span.rm-count { (s.issues.len()) } }
+            details.rm-linked {
+                summary { "Linked issues" span.rm-count { (s.issues.len()) } }
                 ul.rm-links.rm-issue-links {
                     @for issue in s.issues {
                         li {
@@ -321,18 +321,18 @@ pub(super) fn inspector(auth: &Auth, selection: Selection<'_>) -> Markup {
     html! {
         section.rm-inspector id="milestone-detail" aria-labelledby="selected-milestone-title" tabindex="-1" {
             header.rm-inspector-head {
-                div.rm-inspector-context { span { "Selected milestone" } a href="#roadmap-schedule" { "View schedule" } }
+                div.rm-inspector-context { a href=(format!("/roadmap?project={}#roadmap-schedule",s.project.id)) { (crate::ui::icon("arrow")) "Back to schedule" } }
                 h2 id="selected-milestone-title" { (item.title) }
                 @if !item.details.is_empty() { p.reading { (item.details) } }
             }
             dl.rm-facts {
                 div { dt { "Status" } dd { (status_name(&item.status)) } }
                 div { dt { "Target" } dd { @if let Some(target) = item.target_on { (display_date(target)) } @else { "No target" } } }
-                div { dt { "Schedule" } dd {
-                    @if let (Some(start), Some(end)) = (item.start_on, item.end_on) {
+                @if let (Some(start), Some(end)) = (item.start_on, item.end_on) {
+                    div { dt { "Schedule" } dd {
                         time datetime=(start) { (start.format(if start.year() == end.year() { "%d %b" } else { "%d %b %Y" })) } " – " (display_date(end))
-                    } @else { "No scheduled span" }
-                } }
+                    } }
+                }
                 @if let Some(r) = release {
                     div.rm-release-link { dt { "Release" } dd {
                         a href=(format!("/releases/{}", r.id)) { (release_label(r)) }
@@ -341,11 +341,8 @@ pub(super) fn inspector(auth: &Auth, selection: Selection<'_>) -> Markup {
                     } }
                 }
             }
-            (linked_issues(&s))
             (dependency_list(&s, &prerequisites, &after))
-            @if s.issues.is_empty() && prerequisites.is_empty() && after.is_empty() && release.is_none() {
-                p.muted { "No linked issues, milestones or release." }
-            }
+            (linked_issues(&s))
             @if !s.project.archived {
                 details.rm-relationship-editor open[!s.search.is_empty()] {
                     summary { "Manage relationships" }
@@ -361,14 +358,14 @@ pub(super) fn inspector(auth: &Auth, selection: Selection<'_>) -> Markup {
                         (edit_fields(Some(item)))
                         button type="submit" { "Save milestone" }
                     }
-                }
-                details {
-                    summary { "Delete milestone" }
-                    p { "Deleting this milestone permanently removes its schedule and its links to issues, releases and other milestones." }
-                    form method="post" action=(format!("{base}/delete")) {
-                        (csrf(auth))
-                        input type="hidden" name="revision" value=(item.revision);
-                        button.danger type="submit" { "Permanently delete milestone" }
+                    details {
+                        summary { "Delete milestone" }
+                        p { "Deleting this milestone permanently removes its schedule and its links to issues, releases and other milestones." }
+                        form method="post" action=(format!("{base}/delete")) {
+                            (csrf(auth))
+                            input type="hidden" name="revision" value=(item.revision);
+                            button.danger type="submit" { "Permanently delete milestone" }
+                        }
                     }
                 }
             }

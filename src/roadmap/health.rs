@@ -298,7 +298,7 @@ fn milestone_row(
         .filter(|i| i.issue.status != "canceled")
         .count();
     html! {
-        details.health-record open[timing.attention()] {
+        details.health-record {
             summary {
                 span.health-record-name {
                     strong { (&m.title) }
@@ -350,11 +350,8 @@ fn release_row(
         .filter(|m| m.release_id == Some(release.id))
         .collect();
     let reached = children.iter().filter(|m| m.status == "reached").count();
-    let attention = children
-        .iter()
-        .any(|m| Timing::of(m, data.blocked(m.id), today).attention());
     html! {
-        details.health-record open[attention] {
+        details.health-record {
             summary {
                 span.health-record-name {
                     strong { (&release.name) }
@@ -426,6 +423,56 @@ fn github_coverage(project: Uuid, coverage: Coverage) -> Markup {
     }
 }
 
+/// A collapsed schedule shows the distribution of the project's milestones at a glance.
+fn schedule(
+    project: &store::Project,
+    releases: &[&Release],
+    milestones: &[&MilestoneState],
+    data: &HealthData,
+    today: NaiveDate,
+) -> Markup {
+    let reached = milestones.iter().filter(|m| m.status == "reached").count();
+    let active = milestones
+        .iter()
+        .filter(|m| m.status == "in_progress")
+        .count();
+    let planned = milestones.len() - reached - active;
+    let groups = [
+        ("reached", reached, "reached"),
+        ("active", active, "in progress"),
+        ("planned", planned, "planned"),
+    ];
+    if releases.is_empty() && milestones.is_empty() {
+        return html! {};
+    }
+    html! {
+        details.health-fold.health-schedule {
+            summary {
+                span.health-fold-heading { strong { "Milestones and releases" } (ui::icon("chevron")) }
+                @if !milestones.is_empty() {
+                    span.health-strip aria-hidden="true" {
+                        @for (state, count, _) in groups {
+                            @if count > 0 { i class=(state) style=(format!("flex-grow:{count}")) {} }
+                        }
+                    }
+                    span.health-legend {
+                        @for (state, count, name) in groups {
+                            @if count > 0 { span { i class=(state) aria-hidden="true" {} (count) " " (name) } }
+                        }
+                    }
+                } @else {
+                    span.health-meta { (releases.len()) @if releases.len() == 1 { " release" } @else { " releases" } }
+                }
+            }
+            div.health-fold-body {
+                @for r in releases { (release_row(project, r, data, today)) }
+                @for m in milestones.iter().filter(|m| m.release_id.is_none()) { (milestone_row(project, m, data, today)) }
+                a.health-source-link href=(format!("/roadmap?project={}", project.id)) { "Open roadmap" (ui::icon("arrow")) }
+            }
+        }
+    }
+}
+
 fn project_health(
     project: &store::Project,
     data: &HealthData,
@@ -454,145 +501,170 @@ fn project_health(
         .filter(|b| b.project_id == project.id)
         .collect();
     let checkpoint = data.checkpoints.iter().find(|c| c.project_id == project.id);
+    let next = milestones.iter().copied().find(|m| m.status != "reached");
+    let next_release = releases.iter().copied().find(|r| r.published_on.is_none());
     let first_at_risk = milestones.iter().find_map(|m| {
         let timing = Timing::of(m, data.blocked(m.id), today);
         timing.attention().then_some((*m, timing))
     });
-    let overdue_release = releases
-        .iter()
-        .find(|r| r.published_on.is_none() && r.target_on.is_some_and(|date| date < today));
-    let has_target = milestones
-        .iter()
-        .any(|m| m.status != "reached" && m.target_on.is_some())
-        || releases
-            .iter()
-            .any(|r| r.published_on.is_none() && r.target_on.is_some());
+    let overdue_release = next_release.filter(|r| r.target_on.is_some_and(|date| date < today));
+    let flagged = !flags.is_empty() || coverage.critical > 0;
+    let urgent = flagged || first_at_risk.is_some() || overdue_release.is_some();
+    let needs_attention = !project.archived && (urgent || !blockers.is_empty());
     let health_label = if project.archived {
         "Archived"
-    } else if !flags.is_empty()
-        || coverage.critical > 0
-        || first_at_risk.is_some()
-        || overdue_release.is_some()
-    {
+    } else if urgent {
         "Needs attention"
-    } else if has_target {
-        "On track"
+    } else if !blockers.is_empty() {
+        "Work blocked"
+    } else if next.is_some_and(|m| m.target_on.is_some())
+        || next_release.is_some_and(|r| r.target_on.is_some())
+    {
+        "Scheduled"
     } else {
         "Unscheduled"
     };
-    let next_target = milestones
+
+    let attention = html! {
+        @if let Some(f) = flags.first() {
+            span.health-reason { "Critical flag" }
+            (issue_link(&project.key, &f.issue))
+        } @else if coverage.critical > 0 {
+            a href=(format!("/?project={}#github-security", project.id)) {
+                (coverage.critical) @if coverage.critical == 1 { " critical Dependabot alert" } @else { " critical Dependabot alerts" }
+            }
+        } @else if let Some((m,timing)) = first_at_risk {
+            span.health-reason { (timing.label()) }
+            a href=(milestone_url(project.id, m.id)) { (&m.title) }
+        } @else if let Some(r) = overdue_release {
+            span.health-reason { "Overdue release" }
+            a href=(format!("/releases/{}", r.id)) { (&r.name) }
+        } @else if let Some(b) = blockers.first() {
+            span.health-reason { "Waiting on" }
+            (issue_link(&project.key, &b.blocker))
+        }
+    };
+    let has_concern = !attention.0.is_empty();
+    if portfolio {
+        return (
+            html! {
+                section.health-project.health-portfolio {
+                    h2 { a href=(format!("/health?project={}",project.id)) { (&project.name) (ui::icon("arrow")) } }
+                    span.health-portfolio-state { (health_label) }
+                    @if has_concern {
+                        div.health-concern { (attention) }
+                    } @else if let Some(m) = next {
+                        div.health-concern { span.health-reason { "Next milestone" } a href=(milestone_url(project.id,m.id)) { (&m.title) } }
+                    }
+                }
+            },
+            needs_attention,
+        );
+    }
+
+    // Keep a dependency edge only while both its dependent and prerequisite are unfinished.
+    let dependencies: Vec<_> = milestones
         .iter()
         .filter(|m| m.status != "reached")
-        .filter_map(|m| {
-            Some((
-                m.target_on?,
-                m.title.as_str(),
-                milestone_url(project.id, m.id),
-            ))
-        })
-        .chain(
-            releases
+        .flat_map(|m| {
+            data.predecessors
                 .iter()
-                .filter(|r| r.published_on.is_none())
-                .filter_map(|r| {
-                    Some((r.target_on?, r.name.as_str(), format!("/releases/{}", r.id)))
-                }),
-        )
-        .filter(|(date, _, _)| *date >= today)
-        .min_by_key(|(date, _, _)| *date);
+                .filter(move |p| p.milestone_id == m.id)
+                .map(move |p| (*m, p))
+        })
+        .collect();
+    let dependency_count = dependencies.len() + blockers.len();
     let content = html! {
-        section class=(if portfolio { "health-project health-portfolio" } else { "health-project" }) aria-label=(format!("{} health", project.name)) {
-            @if portfolio { h2.health-project-name { a href=(format!("/health?project={}", project.id)) { (&project.name) } } }
-            section.health-attention aria-label="Health assessment" {
-                div class=(if health_label == "Needs attention" { "health-assessment health-attention-required" } else { "health-assessment" }) {
-                    @if portfolio { h3 { (health_label) } } @else { h2 { (health_label) } }
-                    @if let Some(flag) = flags.first() {
-                        span { "Manual critical flag · " (status_name(&flag.issue.status)) }
-                        div.health-subject { (issue_link(&project.key, &flag.issue)) }
-                        @if !flag.next_action.is_empty() { p { span.muted { "Next action · " } (&flag.next_action) } }
-                    } @else if coverage.critical > 0 {
-                        a.health-source-link href=(format!("/?project={}#github-security", project.id)) {
-                            (coverage.critical) " open critical Dependabot " @if coverage.critical == 1 { "alert" } @else { "alerts" } (ui::icon("arrow"))
+        section.health-project aria-label=(format!("{} health", project.name)) {
+            div.health-overview {
+                div.health-focus {
+                    @if let Some(m) = next {
+                        span.health-eyebrow { (ui::icon("flag")) "Next milestone" }
+                        h2 { a href=(milestone_url(project.id,m.id)) { (&m.title) (ui::icon("arrow")) } }
+                        div.health-facts {
+                            @if let Some(date) = m.target_on { (day(date)) } @else { span { "No target date" } }
+                            @let timing = Timing::of(m,data.blocked(m.id),today);
+                            @if timing.attention() || timing == Timing::Blocked { span { (timing.label()) } }
                         }
-                    } @else if let Some((m, timing)) = first_at_risk {
-                        div.health-subject { a href=(milestone_url(project.id, m.id)) { (&m.title) } }
-                        p { (timing.label()) }
-                    } @else if let Some(r) = overdue_release {
-                        div.health-subject { a href=(format!("/releases/{}", r.id)) { (&r.name) } }
-                        p { "Draft release past its target" @if let Some(date) = r.target_on { " · " (day(date)) } }
-                    } @else if health_label == "On track" && let Some((date, name, link)) = &next_target {
-                        span { "Next target · " (day(*date)) }
-                        div.health-subject { a href=(link) { (name) } }
-                    } @else if !has_target && !project.archived {
-                        p.muted { "No upcoming milestone or release target." }
+                    } @else if let Some(r) = next_release {
+                        span.health-eyebrow { (ui::icon("releases")) "Next release" }
+                        h2 { a href=(format!("/releases/{}",r.id)) { (&r.name) (ui::icon("arrow")) } }
+                        div.health-facts {
+                            @if let Some(date) = r.target_on { (day(date)) } @else { span { "No target date" } }
+                        }
+                    } @else {
+                        span.health-eyebrow { (ui::icon("flag")) "Milestones" }
+                        h2 { @if milestones.is_empty() { "No milestones yet" } @else { "All milestones reached" } }
+                        a.health-source-link href=(format!("/roadmap?project={}", project.id)) {
+                            @if milestones.is_empty() && !project.archived { "Plan a milestone" } @else { "Open roadmap" } (ui::icon("arrow"))
+                        }
+                    }
+                }
+                div.health-condition {
+                    h2 { (ui::icon("health")) (health_label) }
+                    @if has_concern { div.health-concern { (attention) } }
+                    @if coverage.unavailable > 0 {
+                        a.health-source-link href="/integrations" { "Repository coverage incomplete" (ui::icon("arrow")) }
                     }
                 }
             }
-            div.health-workbench {
-                @if !portfolio {
-                    div.health-main {
-                        section.health-register {
-                            div.section-head {
-                                h2 { "Releases and milestones" }
-                                a.health-source-link href=(format!("/roadmap?project={}", project.id)) { "Roadmap" (ui::icon("arrow")) }
-                            }
-                            @if releases.is_empty() && milestones.is_empty() {
-                                p.muted { "No releases or milestones yet." }
-                            } @else {
-                                div.health-register-head aria-hidden="true" { span { "Name" } span { "Target / published" } span { "Progress" } }
-                                @for r in releases { (release_row(project, r, data, today)) }
-                                @for m in milestones.iter().filter(|m| m.release_id.is_none()) { (milestone_row(project, m, data, today)) }
-                            }
+            (schedule(project, &releases, &milestones, data, today))
+            @if dependency_count > 0 {
+                details.health-fold {
+                    summary { span.health-fold-heading { strong { "Blocking dependencies" } (ui::icon("chevron")) }
+                        span.health-fold-count { (dependency_count) }
+                    }
+                    ul.health-members {
+                        @for b in &blockers {
+                            li { (issue_link(&project.key,&b.blocker)) small { "Blocks "
+                                a href=(format!("/issues/{}",b.issue_id)) { code { (&project.key) "-" (b.waiting_number) } " " (&b.waiting_title) }
+                            } }
                         }
-                        @if !blockers.is_empty() {
-                            section.health-blockers {
-                                h2 { "Open issue blockers" }
-                                ul.health-members {
-                                    @for b in &blockers {
-                                        li {
-                                            a href=(format!("/issues/{}", b.issue_id)) { code { (&project.key) "-" (b.waiting_number) } " " (&b.waiting_title) }
-                                            div { span.muted { "Blocked by " } (issue_link(&project.key, &b.blocker)) span.health-item-state { (status_name(&b.blocker.status)) } }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        @if blockers.is_empty() {
-                            p.health-caption.health-blocker-note { "No open issue blockers." }
-                        }
-                        @if flags.len() > 1 {
-                            section.health-blockers {
-                                h2 { "Other manual critical flags" }
-                                ul.health-members {
-                                    @for f in flags.iter().skip(1) { li {
-                                        (issue_link(&project.key, &f.issue)) span.health-item-state { (status_name(&f.issue.status)) }
-                                        @if !f.next_action.is_empty() { p { span.muted { "Next action · " } (&f.next_action) } }
-                                    } }
-                                }
+                        @for (m,p) in dependencies {
+                            li { a href=(milestone_url(project.id,p.prerequisite_id)) { (&p.title) }
+                                small { "Blocks " a href=(milestone_url(project.id,m.id)) { (&m.title) } }
                             }
                         }
                     }
                 }
-                aside.health-context aria-label="Project evidence" {
-                    @if let Some(cp) = checkpoint {
-                        @let age = (today - cp.checkpoint_on).num_days();
-                        section.health-context-section {
-                            h3 { "Latest checkpoint" }
-                            p { (issue_link(&project.key, &cp.issue)) }
-                            p.health-caption {
-                                (day(cp.checkpoint_on))
-                                @if age == 0 { " · Today" } @else if age == 1 { " · Yesterday" }
-                                @else if age > 1 { " · " (age) " days ago" }
-                            }
+            }
+            @if flagged {
+                details.health-fold {
+                    summary { span.health-fold-heading { strong { "Critical findings" } (ui::icon("chevron")) }
+                        span.health-fold-count {
+                            @if !flags.is_empty() { (flags.len()) @if flags.len()==1 { " flag" } @else { " flags" } }
+                            @if !flags.is_empty() && coverage.critical>0 { " · " }
+                            @if coverage.critical>0 { (coverage.critical) @if coverage.critical==1 { " alert" } @else { " alerts" } }
                         }
                     }
-                    (github_coverage(project.id, coverage))
-                    @if portfolio { a.health-source-link href=(format!("/health?project={}", project.id)) { "View project health" (ui::icon("arrow")) } }
+                    ul.health-members {
+                        @for f in flags {
+                            li { (issue_link(&project.key,&f.issue)) span.health-item-state { (status_name(&f.issue.status)) }
+                                @if !f.next_action.is_empty() { small { "Next action · " (&f.next_action) } }
+                            }
+                        }
+                        @if coverage.critical>0 {
+                            li { a href=(format!("/?project={}#github-security",project.id)) { "Review Dependabot alerts" (ui::icon("arrow")) } }
+                        }
+                    }
+                }
+            }
+            details.health-fold {
+                summary { span.health-fold-heading { strong { "Project activity and coverage" } (ui::icon("chevron")) } }
+                div.health-evidence {
+                    @if let Some(cp) = checkpoint {
+                        section.health-context-section {
+                            h3 { "Latest checkpoint" }
+                            p { (issue_link(&project.key,&cp.issue)) }
+                            span.health-meta { (day(cp.checkpoint_on)) }
+                        }
+                    }
+                    (github_coverage(project.id,coverage))
                 }
             }
         }
     };
-    (content, health_label == "Needs attention")
+    (content, needs_attention)
 }
 
 pub(super) async fn health(
@@ -644,7 +716,7 @@ pub(super) async fn health(
                 h1 { @if portfolio { "Portfolio health" } @else { "Project health" } }
                 p.health-caption {
                     @if !portfolio && let Some(p) = selected { (&p.name) " · " }
-                    "As of " (day(today)) " · " (timezone)
+                    span title=(format!("As of {today} · {timezone}")) { (day(today)) }
                 }
             }
             @if !projects.is_empty() {
@@ -783,6 +855,20 @@ mod tests {
                 view: view.map(str::to_owned),
             })
         };
+        let mut new_project = store::project(&state.db, owner, project).await.unwrap();
+        new_project.id = Uuid::new_v4();
+        let empty = project_health(
+            &new_project,
+            &data,
+            Coverage::default(),
+            chrono::Utc::now().date_naive(),
+            false,
+        )
+        .0
+        .into_string();
+        assert!(empty.contains("No milestones yet"));
+        assert!(!empty.contains("class=\"health-strip\""));
+        assert!(!empty.contains("0 open critical"));
         let body = health(actor(), State(state.clone()), q(Some(project), None))
             .await
             .unwrap()
@@ -799,6 +885,10 @@ mod tests {
         ] {
             assert!(body.contains(label), "{label}");
         }
+        assert!(body.contains("Next milestone"));
+        assert!(body.contains("class=\"health-strip\""));
+        assert!(body.contains("Blocking dependencies"));
+        assert!(!body.contains("class=\"health-record\" open"));
         assert!(!body.contains("Other workspace project"));
         assert!(matches!(
             health(actor(), State(state.clone()), q(Some(foreign), None)).await,

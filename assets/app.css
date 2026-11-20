@@ -27,11 +27,11 @@
   --risk: var(--fg);
   --button-bg: #e8e8e8;
   --button-text: #191919;
-  /* The strongest transition belongs to the backdrop, outside the text-bearing window. */
+  /* Keep the outer fade within a narrow charcoal range so it recedes behind the document. */
   --atmosphere:
-    linear-gradient(90deg, rgb(0 0 0 / .24) 0, transparent min(13vw,210px), transparent max(87vw,calc(100% - 210px)), rgb(0 0 0 / .24) 100%),
-    linear-gradient(180deg, #0b0b0b 0%, #0c0c0c 15%, #171717 35%, #393939 58%, #4d4d4d 76%, #484848 100%);
-  --surface-sheen: radial-gradient(ellipse 440px 250px at 0 0, rgb(255 255 255 / .063), transparent 83%);
+    linear-gradient(90deg, rgb(0 0 0 / .10), transparent 13%, transparent 87%, rgb(0 0 0 / .10)),
+    linear-gradient(180deg, #101010 14%, #171717 51%, #252525 87%, #242424);
+  --surface-sheen: radial-gradient(ellipse 440px 250px at 0 0, rgb(255 255 255 / .035), transparent 83%);
   --stage-x: clamp(10px, max(calc(12vw - 95px), calc(50vw - 660px)), 156px);
   --stage-top: clamp(7px, 1.3vh, 16px);
   --stage-foot: clamp(10px, 2.1vh, 22px);

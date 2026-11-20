@@ -60,8 +60,6 @@
 .project-archive-state { color: var(--fg-3); font-size: var(--fs-meta); }
 .project-detail-head > div { min-width: 0; }
 .project-detail-head h1 { overflow-wrap: anywhere; }
-.project-back { display: inline-flex; align-items: center; gap: 5px; min-height: var(--control); color: var(--fg-3); font-size: .8rem; text-decoration: none; }
-.project-back::before { content: ''; width: 5px; height: 5px; border-inline-start: 1px solid; border-bottom: 1px solid; transform: rotate(45deg); }
 .project-id, .project-issue-line { display: flex; align-items: baseline; gap: var(--s3); color: var(--fg-3); font-size: var(--fs-meta); }
 .project-id { margin-block-start: 3px; }
 .project-tabs { display: flex; flex-wrap: wrap; gap: 0 var(--s5); border-block-end: 1px solid var(--line); margin-block: var(--s3) var(--s6); }
@@ -69,12 +67,12 @@
 .project-tabs a span { font: 400 .7rem/1 var(--mono); }
 .project-tabs a[aria-current="page"] { color: var(--fg); font-weight: 575; }
 .project-tabs a[aria-current="page"]::after { content: ''; position: absolute; inset: auto 0 -1px; height: 2px; background: currentColor; }
-.project-tabs a:hover, .project-back:hover { color: var(--fg); }
+.project-tabs a:hover { color: var(--fg); }
 .project-overview { display: grid; grid-template-areas: "focus brief" "queue brief"; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 2fr) minmax(13rem, .82fr); gap: var(--s2) clamp(1.5rem, 3.5cqi, 3.5rem); align-items: start; }
 .project-work, .project-brief, .project-other-work { min-width: 0; }
 .project-work { grid-area: focus; }
-.project-other-work { grid-area: queue; }
-.project-other-work > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.project-other-work { grid-area: queue; padding-block: 0; border: 0; }
+.project-other-work > summary { min-height: var(--control); align-content: center; color: var(--fg-2); font-size: var(--fs-control); }
 .project-brief { grid-area: brief; }
 .project-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: var(--control); margin-bottom: var(--s3); }
 .project-text-link, .project-brief dt a { display: inline-flex; align-items: center; gap: 4px; min-height: var(--control); color: var(--fg-2); text-decoration: none; font-size: var(--fs-control); }
@@ -95,6 +93,7 @@
 .project-brief { border-inline-start: 1px solid var(--line); padding-inline-start: var(--s6); }
 .project-brief-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 var(--s2); min-height: var(--control); }
 .project-brief dl { margin: 0; }
+.project-brief > .project-progress { margin-block: var(--s2) var(--s3); }
 .project-brief dl > div { padding-block: var(--s3); }
 .project-brief dt { color: var(--fg-3); font-size: var(--fs-meta); font-weight: 500; }
 .project-brief dt a { min-height: auto; color: var(--fg-2); }
@@ -104,15 +103,13 @@
 .project-settings { margin-block-start: var(--s7); padding-block: var(--s2); border: 0; border-block-start: 1px solid var(--line); }
 .project-settings-content { padding-block: var(--s2) var(--s4); }
 .project-settings-content .project-form { margin-block: var(--s3); }
-.project-back:hover, .project-current-issue:hover h3, .project-name:hover strong, .project-milestone:hover > span, .project-current-link:hover > span, .project-text-link:hover, .project-brief dt a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.project-current-issue:hover h3, .project-name:hover strong, .project-milestone:hover > span, .project-current-link:hover > span, .project-text-link:hover, .project-brief dt a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 @container project-page (max-width: 43rem) {
   .project-overview { grid-template-areas: "focus" "brief" "queue"; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; gap: var(--s5); }
-  .project-other-work > h2 { position: static; width: auto; height: auto; overflow: visible; clip-path: none; margin: 0; font-size: var(--fs-section); }
   .project-brief { border: 0; padding: 0; }
   .project-brief dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--s3); }
-  .project-brief dl > div:last-child { grid-column: 1/-1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: baseline; gap: var(--s3); }
-  .project-brief dl > div:last-child dd { margin: 0; }
+  .project-brief dt { display: flex; align-items: center; min-height: var(--control); }
   .project-brief :is(dt a, .project-milestone) { min-height: var(--control); }
 }
 @container project-page (max-width: 32rem) {
@@ -145,6 +142,5 @@
 .project-flag > svg { width: 13px; height: 13px; }
 .project-signal-list .project-flag:hover { text-decoration: underline; }
 @media (min-width: 761px) {
-  .project-detail-head .project-back { display: none; }
   .project-detail-head { align-items: center; }
 }

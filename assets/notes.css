@@ -3,10 +3,10 @@
 .note-library .note-index-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: start; gap: var(--s3); padding-block: 0 var(--s4); }
 .note-search, .note-pages, .note-switch, .note-savebar, .note-draft-actions, .note-resolve { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; min-width: 0; }
 .note-search { max-width: 100%; flex-wrap: nowrap; }
-.note-search :is(button,.note-clear) { flex: none; }
-.note-search .note-search-input { display: block; position: relative; flex: 1; min-width: 8rem; }
-.note-search .note-search-input input { width: min(66vw, 22rem); padding-inline-start: 2rem; font: inherit; }
-.note-search-input .ui-icon { position: absolute; inset-inline-start: .65rem; top: 50%; transform: translateY(-50%); width: 15px; color: var(--faint); }
+.note-search-field { display: flex; align-items: center; width: min(66vw, 22rem); min-width: 0; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface); }
+.note-search-field input { flex: 1; min-width: 0; border: 0; background: transparent; }
+.note-search-field :focus-visible { outline-offset: -2px; }
+.note-search .note-clear { flex: none; }
 .note-search button, .note-switch button, .note-resolve button { margin: 0; }
 .note-empty { max-width: 38rem; }
 .note-empty a { margin-top: var(--s3); }
@@ -22,6 +22,7 @@
 .note-scope nav a[aria-current] { color: var(--text); font-weight: var(--weight-heading); }
 .note-scope nav a[aria-current]::after { content: "✓"; margin-inline-start: var(--s2); }
 .note-ledger-head, .note-ledger .note-record { display: grid; grid-template-columns: minmax(0,2.5fr) minmax(7rem,1fr) minmax(7rem,.65fr); column-gap: var(--s4); align-items: center; padding-inline: var(--s3); }
+.note-library[data-single-scope] :is(.note-ledger-head,.note-record) { grid-template-columns: minmax(0,1fr) auto; }
 .note-ledger-head { min-height: var(--row); border-block: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .note-ledger-head > :last-child { display: flex; align-items: center; justify-content: end; gap: var(--s1); }
 .note-ledger-head .ui-icon { width: 12px; }
@@ -120,12 +121,12 @@
 }
 @media (max-width: 650px) {
   .note-search { width: 100%; }
-  .note-search .note-search-input { min-width: 0; }
-  .note-search .note-search-input input { width: 100%; }
+  .note-search-field { flex: 1; width: auto; }
   .note-ledger-head { display: none; }
   .note-ledger { border-top: 1px solid var(--line); }
   .note-ledger .note-record { grid-template-columns: minmax(0,1fr) auto; gap: var(--s1) var(--s2); padding-inline: var(--s1); padding-block: var(--s3); }
   .note-file { grid-column: 1/-1; gap: var(--s2); }
+  .note-library[data-single-scope] .note-file { grid-column: auto; }
   .note-project { padding-inline-start: 24px; }
   .note-scope nav { inset-inline-start: 0; max-width: calc(100vw - 3rem); }
   .note-file-fields { grid-template-columns: minmax(0,1fr); }

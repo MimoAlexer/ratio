@@ -772,17 +772,16 @@ async fn workbench_inspects_only_the_current_result_page_and_preserves_its_query
     .await?;
     let query = format!("project={}&q=Audit&group=none&sort=title", owner.project);
     let first = app.read(&owner, &format!("/issues?{query}")).await?;
-    assert!(
-        issue_preview(&first)
-            .context("preview on first result page")?
-            .contains("Verify result 49")
-    );
+    assert!(issue_preview(&first).is_none());
     let second = app.read(&owner, &format!("/issues?{query}&p=2")).await?;
-    assert!(
-        issue_preview(&second)
-            .context("preview on second result page")?
-            .contains("Verify result 52")
-    );
+    assert!(issue_preview(&second).is_none());
+    // The queue indicates the latest open checkpoint on each page without opening it.
+    for (page, title) in [(&first, "Audit 49"), (&second, "Audit 52")] {
+        let marked_row = page
+            .split("<li ")
+            .find(|row| row.contains("title=\"Latest checkpoint\""));
+        assert!(marked_row.is_some_and(|row| row.contains(title)));
+    }
 
     let id: Uuid = sqlx::query_scalar("SELECT id FROM issues WHERE owner_id=$1 AND number=51")
         .bind(owner.owner)
@@ -870,8 +869,9 @@ async fn workbench_scopes_the_preview_and_keeps_native_board_commands(db: PgPool
     .await?;
     let scoped = format!("/issues?project={}", owner.project);
     let first = app.read(&owner, &scoped).await?;
-    let preview =
-        issue_preview(&first).context("fallback to the first issue without a checkpoint")?;
+    assert!(issue_preview(&first).is_none());
+    let chosen = app.read(&owner, &format!("{scoped}&inspect={own}")).await?;
+    let preview = issue_preview(&chosen).context("explicit preview of a visible issue")?;
     assert!(preview.contains("Visible release fix"));
     assert!(preview.contains("Issue created"));
     assert!(preview.contains(&format!("href=\"/notes/{source}#block-signing\"")));
@@ -922,6 +922,26 @@ async fn workbench_scopes_the_preview_and_keeps_native_board_commands(db: PgPool
         .read(&owner, &format!("{scoped}&view=board&status=done"))
         .await?;
     assert!(done.contains("Visible release fix"));
+    app.create(&owner, "Prepare the next release").await?;
+    let done_group_open = |html: &str| {
+        html.split("<details ")
+            .filter_map(|s| s.split_once('>'))
+            .find(|(attrs, _)| attrs.contains("data-group=\"done\""))
+            .map(|(attrs, _)| attrs.split_ascii_whitespace().any(|attr| attr == "open"))
+    };
+    assert_eq!(
+        done_group_open(&app.read(&owner, &scoped).await?),
+        Some(false)
+    );
+    for query in ["q=Visible".to_owned(), format!("inspect={own}")] {
+        let focused = app.read(&owner, &format!("{scoped}&{query}")).await?;
+        assert_eq!(done_group_open(&focused), Some(true));
+    }
+    sqlx::query("UPDATE issues SET manual_severity='critical', security_critical=true WHERE owner_id=$1 AND id=$2")
+        .bind(owner.owner).bind(own).execute(&app.db).await?;
+    let unresolved = app.read(&owner, &scoped).await?;
+    assert_eq!(done_group_open(&unresolved), Some(true));
+    assert!(unresolved.contains("Critical finding"));
     Ok(())
 }
 
@@ -998,9 +1018,9 @@ async fn default_list_pages_have_stable_ties_and_count_only_visible_issues(
         .chain(1..=50)
         .map(|n| format!("Visible {n}"))
         .collect();
-    for (path, titles, selected) in [
-        ("/issues", &expected[..50], "Visible 20"),
-        ("/issues?p=2", &expected[50..], "Visible 49"),
+    for (path, titles) in [
+        ("/issues", &expected[..50]),
+        ("/issues?p=2", &expected[50..]),
     ] {
         let page = app.read(&owner, path).await?;
         assert!(
@@ -1013,11 +1033,7 @@ async fn default_list_pages_have_stable_ties_and_count_only_visible_issues(
             .filter_map(|s| s.split_once("</span>").map(|(title, _)| title))
             .collect();
         assert_eq!(rows, titles, "{path}");
-        assert!(
-            issue_preview(&page)
-                .context("selected visible issue")?
-                .contains(selected)
-        );
+        assert!(issue_preview(&page).is_none(), "{path}");
         for excluded in [
             "Unshipped decoder adjustment",
             "Retired renderer cleanup",

@@ -15,6 +15,9 @@
 .issue-detail h3 { margin: 0 0 var(--s1); font-size: 13px; font-weight: 550; }
 .issue-detail .prose { max-width: 66ch; margin: 0; color: var(--fg-2); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
 .issue-detail .notice { margin-top: var(--s3); }
+.issue-security-status { display: flex; align-items: center; gap: var(--s2); margin: var(--s2) 0 0; color: var(--fg); font-size: 13px; }
+.issue-security-status .ui-icon { width: 14px; height: 14px; }
+.issue-security-status a { margin-inline-start: var(--s1); color: var(--muted); }
 .issue-detail-grid {
   --lane-gap: clamp(var(--s6), 4.5vw, 72px);
   display: grid; grid-template-columns: minmax(0,1fr) clamp(210px,23%,250px);
@@ -123,9 +126,8 @@
 .blocker-picker .actions { align-items: end; }
 .blocker-picker form + form { margin-top: var(--s3); }
 .blocker-picker label { min-width: 0; max-width: 100%; }
-.issue-activity { grid-row: 4; padding-block: var(--s6); }
-.history-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
-.history-head h2 { margin: 0; font-size: 15px; }
+.issue-detail .issue-activity { grid-row: 4; padding-block: var(--s2); }
+.history-content { margin-inline-start: var(--s5); padding-bottom: var(--s3); }
 .issue-activity .timeline { list-style: none; margin: 0; padding: 0; }
 .issue-activity .timeline li { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--s3); padding: var(--s1) 0; color: var(--fg-2); font-size: 13px; }
 .issue-activity .timeline strong { font-weight: 480; }
@@ -137,7 +139,7 @@
   .issue-detail-grid { grid-template-columns: minmax(0,1fr); grid-template-rows: none; }
   .issue-reading, .issue-inspector, .issue-connections, .issue-activity { grid-column: 1; grid-row: auto; }
   .issue-inspector { margin-block: 0 var(--s5); padding: var(--s4) 0 0; border: 0; }
-  .issue-activity { padding-top: var(--s4); }
+  .issue-detail .issue-activity { grid-row: auto; }
   .issue-core-properties { margin: var(--s3) 0 0; border-block-start: 1px solid var(--line); padding-block: var(--s3) 0; }
   .issue-connections { margin-top: var(--s3); }
   .issue-context-rail > section:first-child { border: 0; padding: 0; }

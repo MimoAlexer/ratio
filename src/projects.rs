@@ -530,7 +530,9 @@ fn project_list(projects: &[&DirectoryEntry], archived: bool) -> Markup {
     };
     html! {
         section.project-group {
-            h2 { (title) span.project-count { (count) } }
+            @if archived || projects.iter().any(|p| p.archived) {
+                h2 { (title) span.project-count { (count) } }
+            }
             table.project-directory role="table" aria-label=(title) {
                 thead role="rowgroup" { tr role="row" {
                     @for label in ["Project", "In progress", "Issue progress", "Next milestone"] {
@@ -610,7 +612,10 @@ async fn index(
                 @if !at_capacity && !projects.is_empty() {
                     details.project-create {
                         summary.action-primary { (ui::icon("plus")) "New project" }
-                        div id="new-project" { (project_form(&auth, None, "", "", false, None)) }
+                        div id="new-project" {
+                            (project_form(&auth, None, "", "", false, None))
+                            p.project-capacity { (active) " of " (limit) " active project slots used" }
+                        }
                     }
                 }
             }
@@ -638,11 +643,9 @@ async fn index(
                 }
                 @if at_capacity {
                     details.project-capacity {
-                        summary { (active) " of " (limit) " active project slots used" }
-                        p { "Archive a project to free a slot, or " a href="/billing" { "review your plan" } "." }
+                        summary { "Project limit reached" }
+                        p { (active) " of " (limit) " active slots used. Archive a project or " a href="/billing" { "review your plan" } "." }
                     }
-                } @else {
-                    p.project-capacity { (active) " of " (limit) " active project slots used" }
                 }
             }
         },
@@ -707,7 +710,6 @@ async fn overview(
         html! {
             header.view-head.project-detail-head {
                 div {
-                    a.project-back href="/projects" { "Projects" }
                     div.project-title-line { h1 { (&project.name) } span.project-id { code { (&project.key) } } }
                     @if project.archived { p.project-archive-state { "Archived · Read-only" } }
                 }
@@ -754,11 +756,11 @@ async fn overview(
                 }
                 aside.project-brief aria-label="Project summary" {
                     header.project-brief-head {
-                        h2 { "Project summary" }
+                        h2 { "Progress" }
                         a.project-text-link href=(format!("/insights?project={id}")) { "Insights" (ui::icon("arrow")) }
                     }
+                    (issue_progress(totals.open_issues, totals.completed_issues))
                     dl {
-                        div { dt { "Issue progress" } dd { (issue_progress(totals.open_issues, totals.completed_issues)) } }
                         div { dt { "Next milestone" } dd {
                             (milestone_link(id, totals.milestone_id, totals.milestone_title.as_deref(), totals.milestone_target))
                         } }
@@ -768,15 +770,19 @@ async fn overview(
                                     a.project-flag href=(format!("/issues?project={id}&critical=open&scope=all")) {
                                         (totals.flagged) @if totals.flagged == 1 { " open critical flag" } @else { " open critical flags" } (ui::icon("arrow"))
                                     }
-                                } @else { span { "No open critical flags" } }
-                                span { @if totals.blocked == 0 { "No blocked issues" } @else { (totals.blocked) @if totals.blocked == 1 { " blocked issue" } @else { " blocked issues" } } }
+                                }
+                                @if totals.blocked > 0 {
+                                    span { (totals.blocked) @if totals.blocked == 1 { " blocked issue" } @else { " blocked issues" } }
+                                } @else if totals.flagged == 0 {
+                                    span { "No flagged or blocked issues" }
+                                }
                             }
                         }
                     }
                 }
                 @if queue.len() > 1 {
-                    section.project-other-work aria-labelledby="project-other-title" {
-                        h2 id="project-other-title" { "Other open issues" }
+                    details.project-other-work {
+                        summary { "More open issues" }
                         ul.project-queue {
                             @for issue in &queue[1..] {
                                 li { a href=(format!("/issues/{}", issue.id)) {

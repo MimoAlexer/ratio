@@ -239,6 +239,33 @@ async fn roadmap_uses_workspace_calendar_day(db: PgPool) {
 }
 
 #[sqlx::test]
+async fn overview_opens_milestone_details_only_after_selection(db: PgPool) {
+    let f = Fixture::new(db).await;
+    let milestone = f.milestone("Storage migration").await;
+    for selection in [None, Some(milestone)] {
+        let page = roadmap(
+            State(f.state.clone()),
+            actor(f.owner),
+            Query(RoadmapQuery {
+                project: Some(f.project),
+                milestone: selection,
+                ..RoadmapQuery::default()
+            }),
+        )
+        .await
+        .unwrap()
+        .0;
+        assert!(page.contains("Storage migration"));
+        assert!(page.contains(&format!("milestone={milestone}#milestone-detail")));
+        assert_eq!(
+            page.contains("id=\"milestone-detail\""),
+            selection.is_some()
+        );
+        assert_eq!(page.contains("Back to schedule"), selection.is_some());
+    }
+}
+
+#[sqlx::test]
 async fn roadmap_mutations_scope_issue_and_milestone_links_and_preserve_edits(db: PgPool) {
     let f = Fixture::new(db).await;
     let db = &f.state.db;

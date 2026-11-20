@@ -104,7 +104,7 @@ pub(super) async fn show(
     let project = store::project(&state.db, auth.user_id, release.project_id).await?;
     let (plan, today) = plan_today(&state.db, auth.user_id).await?;
     let is_draft = release.published_on.is_none();
-    let content = if is_draft {
+    let (overview, records) = if is_draft {
         let members: Vec<Member> = sqlx::query_as(
             "SELECT i.id,i.number,i.title,i.status,i.revision,i.archived,i.next_action,
                 EXISTS (SELECT 1 FROM release_entries e WHERE e.owner_id=i.owner_id AND e.issue_id=i.id) AS shipped_before
@@ -128,10 +128,13 @@ pub(super) async fn show(
         } else {
             vec![]
         };
-        html! {
-            (preview(&auth,&release,&project,&members,today))
-            @if !project.archived { (edit_scope(&auth,id,&project.key,&members,&candidates,search)) }
-        }
+        (
+            html! {
+                (preview(&auth,&release,&project,&members,today))
+                @if !project.archived { (edit_scope(&auth,id,&project.key,&members,&candidates,search)) }
+            },
+            html! {},
+        )
     } else {
         manifest(&state, &auth, &project, &release).await?
     };
@@ -146,18 +149,22 @@ pub(super) async fn show(
         &release.name,
         "releases",
         html! {
-            nav class="release-context" aria-label="Release navigation" {
-                a href=(format!("/releases?project={}",project.id)) { "Releases" }
-                span aria-hidden="true" { "/" } span { (project.name) }
-            }
             header.view-head.release-detail-head {
                 div {
                     h1 { (release.name) }
                     p.release-metadata {
-                        span.release-stage { @if is_draft { "Draft" } @else { "Published release" } }
+                        span { (project.name) }
+                        @if is_draft { span.release-stage { "Draft" } }
                         @if !release.version.is_empty() { span.release-version { (release.version) } }
-                        @if let Some(target) = release.target_on { span { "Target " time datetime=(target) { (target.format("%d %b %Y")) } } }
-                        @if let Some(date) = release.published_on { span { "Published " time datetime=(date) { (date.format("%d %b %Y")) } } }
+                        @if let Some(target) = release.target_on && release.published_on != Some(target) {
+                            span { "Target " time datetime=(target) { (target.format("%d %b %Y")) } }
+                        }
+                        @if let Some(date) = release.published_on {
+                            span {
+                                (if release.target_on == Some(date) { "Published on target · " } else { "Published " })
+                                time datetime=(date) { (date.format("%d %b %Y")) }
+                            }
+                        }
                         @if !release.source_url.is_empty() && valid_release_url(&release.source_url) {
                             a href=(&release.source_url) rel="noreferrer" { "GitHub release ↗" }
                         }
@@ -169,8 +176,9 @@ pub(super) async fn show(
                 }
             }
             @if project.archived { p.status-note { "Archived project · read only" } }
-            (content)
+            (overview)
             (history)
+            (records)
             (outlook)
         },
         Some(project.id),
@@ -328,7 +336,7 @@ async fn manifest(
     auth: &Auth,
     project: &store::Project,
     release: &Release,
-) -> AppResult<Markup> {
+) -> AppResult<(Markup, Markup)> {
     let id = release.id;
     let shipped: Vec<Shipped> = sqlx::query_as(
         "SELECT e.issue_id,e.number,e.title,e.issue_revision,f.id AS first_id,f.name AS first_name,f.published_on AS first_on
@@ -353,48 +361,75 @@ async fn manifest(
          WHERE a.owner_id=$1 AND a.release_id=$2 ORDER BY a.created_at,a.id"
     ).bind(auth.user_id).bind(id).fetch_all(&state.db).await?;
     let first = shipped.iter().filter(|row| row.first_id == id).count();
-    Ok(html! {
-        section class="content-section release-manifest" id="manifest" {
-            h2 { "Shipped manifest" }
-            p { strong { (shipped.len()) } " entries · " (first) " first shipments · " (shipped.len()-first) " repeat references" }
-            ul class="issue-list" { @for e in &shipped { li {
-                (issue_link(e.issue_id,&project.key,e.number,&e.title)) " · revision " (e.issue_revision)
-                @if e.first_id == id { span class="status" { "First shipment" } }
-                @else { " · first shipped " (e.first_on) " in " a href=(format!("/releases/{}#manifest",e.first_id)) { (e.first_name) } }
-            } } }
+    let overview = html! {
+        nav.release-facts aria-label="Shipment summary" {
+            a href="#manifest" { strong { (shipped.len()) } " shipped" }
+            @if !carried.is_empty() {
+                a href="#carryover" { strong { (carried.len()) } " left out" }
+            }
+            @if !amendments.is_empty() {
+                a href="#corrections" { strong { (amendments.len()) } " " (if amendments.len() == 1 { "correction" } else { "corrections" }) }
+            }
         }
-        @if !carried.is_empty() {
-            section class="panel" { h2 { "Left out of this shipment" }
-                ul class="issue-list" { @for c in &carried { li {
-                    (issue_link(c.issue_id,&project.key,c.number,&c.title)) " · " (status_label(&c.status)) " at publication"
-                    @if let (Some(next),Some(name))=(c.next_release_id,&c.next_name) {
-                        " · carried into " a href=(format!("/releases/{next}")) { (name) }
-                    }
-                    @if c.current_release_id != c.next_release_id {
-                        @if let (Some(current),Some(name))=(c.current_release_id,&c.current_name) {
-                            " · currently in " a href=(format!("/releases/{current}")) { (name) }
+    };
+    let records = html! {
+        section.content-section.release-manifest id="manifest" tabindex="-1" aria-labelledby="manifest-heading" {
+            h2 id="manifest-heading" { "Shipped issues" }
+            @if shipped.is_empty() { p.muted { "No issues were recorded in this shipment." } }
+            @else {
+                @let repeats = shipped.len() - first;
+                @if repeats > 0 {
+                    p.release-meta { (first) " first shipped here · " (repeats) " previously shipped" }
+                }
+                ul.clean-list.release-manifest-rows {
+                    @for entry in shipped.iter().take(3) { (manifest_row(entry, project, id)) }
+                }
+                @if shipped.len() > 3 {
+                    details.release-overflow {
+                        summary { "Show " (shipped.len()-3) " more " (if shipped.len() == 4 { "issue" } else { "issues" }) }
+                        ul.clean-list.release-manifest-rows {
+                            @for entry in &shipped[3..] { (manifest_row(entry, project, id)) }
                         }
                     }
-                } } }
-                @if !project.archived && carried.iter().any(|c| c.eligible) {
-                    details { summary { "Move open carryover to a new draft" }
-                        form method="post" action=(format!("/releases/{id}/carryover")) class="stack" {
-                            (ui::csrf(auth))
-                            fieldset { legend { "Open issues without a current draft" }
-                                @for c in carried.iter().filter(|c| c.eligible) {
-                                    div { label { input type="checkbox" name="carry" value=(format!("{}:{}",c.issue_id,c.revision)); " " (project.key) "-" (c.number) " · " (c.current_title) " · " (status_label(&c.current_status)) } }
-                                }
+                }
+            }
+        }
+        @if !carried.is_empty() {
+            details.release-scope {
+                summary { "Left out of this shipment · " (carried.len()) }
+                div id="carryover" tabindex="-1" {
+                    ul class="issue-list" { @for c in &carried { li {
+                        (issue_link(c.issue_id,&project.key,c.number,&c.title)) " · " (status_label(&c.status)) " at publication"
+                        @if let (Some(next),Some(name))=(c.next_release_id,&c.next_name) {
+                            " · carried into " a href=(format!("/releases/{next}")) { (name) }
+                        }
+                        @if c.current_release_id != c.next_release_id {
+                            @if let (Some(current),Some(name))=(c.current_release_id,&c.current_name) {
+                                " · currently in " a href=(format!("/releases/{current}")) { (name) }
                             }
-                            label { "New draft name" input name="carry_to" maxlength="150" required; }
-                            button { "Move selected issues" }
+                        }
+                    } } }
+                    @if !project.archived && carried.iter().any(|c| c.eligible) {
+                        details { summary { "Move open carryover to a new draft" }
+                            form method="post" action=(format!("/releases/{id}/carryover")) class="stack" {
+                                (ui::csrf(auth))
+                                fieldset { legend { "Open issues without a current draft" }
+                                    @for c in carried.iter().filter(|c| c.eligible) {
+                                        div { label { input type="checkbox" name="carry" value=(format!("{}:{}",c.issue_id,c.revision)); " " (project.key) "-" (c.number) " · " (c.current_title) " · " (status_label(&c.current_status)) } }
+                                    }
+                                }
+                                label { "New draft name" input name="carry_to" maxlength="150" required; }
+                                button { "Move selected issues" }
+                            }
                         }
                     }
                 }
             }
         }
         @if !amendments.is_empty() {
-            section class="panel" { h2 { "Recorded corrections" }
-                ol { @for a in &amendments { li {
+            details.release-scope {
+                summary { "Recorded corrections · " (amendments.len()) }
+                ol id="corrections" tabindex="-1" { @for a in &amendments { li {
                     p { (issue_link(a.issue_id,&project.key,a.number,&a.title)) " · " (a.created_at.format("%Y-%m-%d %H:%M UTC")) " · " (a.email) }
                     p { strong { "Correction " } (a.replacement) }
                     p class="muted" { "Reason · " (a.reason) }
@@ -412,7 +447,25 @@ async fn manifest(
                 }
             }
         }
-    })
+    };
+    Ok((overview, records))
+}
+
+fn manifest_row(entry: &Shipped, project: &store::Project, release: Uuid) -> Markup {
+    html! {
+        li {
+            a.release-manifest-issue href=(format!("/issues/{}",entry.issue_id)) {
+                span.release-key { (&project.key) "-" (entry.number) } span { (&entry.title) }
+            }
+            small {
+                "Revision " (entry.issue_revision)
+                @if entry.first_id != release {
+                    " · First shipped " (entry.first_on) " in "
+                    a href=(format!("/releases/{}#manifest",entry.first_id)) { (&entry.first_name) }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -490,7 +543,11 @@ mod tests {
         .unwrap()
         .0;
         assert!(detail.contains("Snapshot title"));
-        assert!(detail.contains("1 repeat references"));
+        assert!(detail.contains("1 previously shipped"));
+        assert!(
+            detail.find("class=\"release-facts\"").unwrap() < detail.find("id=\"review\"").unwrap()
+        );
+        assert!(detail.find("id=\"review\"").unwrap() < detail.find("id=\"manifest\"").unwrap());
         assert!(detail.contains("Original remaining work"));
         assert!(detail.contains("Revised remaining work"));
         assert!(detail.contains(&format!("{carry}:2")));

@@ -37,18 +37,19 @@ jobs:
           legacy=working-set_0.1.0_amd64.deb
           gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern "$legacy" --dir "$RUNNER_TEMP"
           (cd "$RUNNER_TEMP" && echo "31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1  $legacy" | sha256sum --check)
-          for version in 0.2.0 0.2.1; do
+          for version in 0.2.0 0.2.1 0.3.0; do
             gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "ratio_${version}_amd64.deb" --dir "$RUNNER_TEMP"
           done
           (cd "$RUNNER_TEMP" && sha256sum --check <<'SUMS'
           9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b  ratio_0.2.0_amd64.deb
           a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2  ratio_0.2.1_amd64.deb
+          4b534a35e8e8556be54e0ba7d8f0bce897d9912ba2a1ed54473b96d005cd55ed  ratio_0.3.0_amd64.deb
           SUMS
           )
       - name: Test fresh install and upgrade on Ubuntu
         run: |
           packaging/linux/build.sh target/release/ratio dist
-          for scenario in fresh working-set-upgrade 0.2.0 0.2.1; do
+          for scenario in fresh working-set-upgrade 0.2.0 0.2.1 0.3.0; do
             export XDG_DATA_HOME="$RUNNER_TEMP/ratio-$scenario"
             profile="$XDG_DATA_HOME/Ratio"
             if [[ "$scenario" == working-set-upgrade ]]; then
@@ -152,7 +153,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [working-set, '0.2.0', '0.2.1']
+        fixture: [working-set, '0.2.0', '0.2.1', '0.3.0']
     runs-on: windows-2025
     timeout-minutes: 12
     steps:

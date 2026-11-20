@@ -55,9 +55,9 @@
             if (!next || !next.querySelector(".issue-ledger")) throw new Error("List changed");
             if (controller.signal.aborted || location.href !== startUrl) return;
             if (document.activeElement !== startFocus && workbench.contains(document.activeElement)) return;
-            const collapsed = new Set([...workbench.querySelectorAll(".issue-group:not([open])")].map(group => group.dataset.group));
+            const openGroups = new Map([...workbench.querySelectorAll(".issue-group")].map(group => [group.dataset.group, group.open]));
             for (const group of next.querySelectorAll(".issue-group")) {
-                if (collapsed.has(group.dataset.group)) group.open = false;
+                if (openGroups.has(group.dataset.group)) group.open = openGroups.get(group.dataset.group);
             }
             // Preserve pending search/filter edits and the open composer in the surrounding page.
             const controls = document.querySelector(".issue-controls");
@@ -107,11 +107,7 @@
         const preview = event.target.closest?.(".issue-preview");
         if (preview && event.key === "Escape") {
             event.preventDefault();
-            if (current().querySelector(".issue-register").getClientRects().length) {
-                focusRow(preview.dataset.issue);
-            } else {
-                inspect(preview.querySelector(".preview-return"));
-            }
+            inspect(preview.querySelector(".preview-dismiss"));
             return;
         }
         const link = event.target.closest?.(".issue-ledger-row, .issue-row-tool");

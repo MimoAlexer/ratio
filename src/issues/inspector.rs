@@ -63,12 +63,7 @@ pub(super) async fn render(
     let key = format!("{}-{}", item.project_key, item.number);
     let has_action = !p.next_action.trim().is_empty();
     let detail = format!("/issues/{}", item.id);
-    let close = format!(
-        "{}#record-{}",
-        f.change_url("inspect", "none", true),
-        item.id
-    );
-    let return_to_queue = format!("{}#record-{}", f.change_url("inspect", "", true), item.id);
+    let close = format!("{}#record-{}", f.change_url("inspect", "", true), item.id);
     Ok(html! {
         aside.issue-preview id="issue-preview" tabindex="-1" aria-labelledby="preview-title" data-issue=(item.id) {
             div.preview-top {
@@ -79,10 +74,7 @@ pub(super) async fn render(
                 }
                 div.preview-tools {
                     a.preview-open href=(&detail) { "Open issue" (ledger_icon("open")) }
-                    a.preview-dismiss.preview-close href=(close) aria-label="Close preview and show the full issue list" title="Close preview" {
-                        (ledger_icon("close"))
-                    }
-                    a.preview-dismiss.preview-return href=(return_to_queue) aria-label="Return to the issue queue" title="Return to the queue" {
+                    a.preview-dismiss href=(close) aria-label="Close preview and return to the issue list" title="Close preview" {
                         (ledger_icon("close"))
                     }
                 }
@@ -93,8 +85,9 @@ pub(super) async fn render(
                         h2 id="preview-title" tabindex="-1" { (&item.title) }
                         div.preview-fields {
                             span.preview-status { (status_mark(&item.status)) (label(&item.status)) }
-                            span { (priority_mark(&item.priority)) (label(&item.priority)) " priority" }
-                            span { (label(&item.kind)) }
+                            @if item.manual_severity != "none" && !item.finding_closed {
+                                span.preview-finding { (ui::icon("flag")) (label(&item.manual_severity)) " finding" }
+                            }
                             @if item.archived || item.project_archived { span { "Archived" } }
                         }
                     }
@@ -109,21 +102,38 @@ pub(super) async fn render(
                             p { (excerpt(&p.next_action, 350)) }
                         }
                     }
-                    @if !p.description.trim().is_empty() {
+                    @if !has_action && !p.description.trim().is_empty() {
                         section.preview-description { h3 { "Description" } p { (excerpt(&p.description, 300)) } }
                     }
                     @if !has_action && !item.archived && !item.project_archived && matches!(item.status.as_str(), "ready" | "backlog" | "in_progress") {
                         a.preview-add-action href=(format!("{detail}#next-action-title")) { (ui::icon("plus")) "Add a next action" }
                     }
                     @if let (Some(id), Some(title), Some(anchor)) = (p.note_id, p.note_title, p.note_anchor) {
-                        section.preview-source {
-                            h3 { (ui::icon("notes")) "Source note" }
-                            a href=(format!("/notes/{id}#{anchor}")) { (title) (ledger_icon("open")) }
-                            @if let Some(source) = p.note_excerpt.filter(|s| !s.trim().is_empty()) { p { (excerpt(&source, 180)) } }
+                        div.preview-source {
+                            (ui::icon("notes"))
+                            a href=(format!("/notes/{id}#{anchor}")) { span.sr-only { "Source note: " } (title) (ledger_icon("open")) }
+                        }
+                    }
+                    details.preview-details {
+                        summary { "Issue details" (ledger_icon("chevron")) }
+                        dl.preview-properties {
+                            div { dt { "Priority" } dd { (priority_mark(&item.priority)) (label(&item.priority)) } }
+                            div { dt { "Type" } dd { (label(&item.kind)) } }
+                            @if !item.labels.is_empty() { div { dt { "Labels" } dd { (item.labels.join(", ")) } } }
+                            div { dt { "Updated" } dd { (day(item.updated_at)) } }
+                            @if item.finding_closed && item.manual_severity != "none" {
+                                div { dt { "Finding" } dd { (label(&item.manual_severity)) " · closed" } }
+                            }
+                        }
+                        @if has_action && !p.description.trim().is_empty() {
+                            section.preview-description { h3 { "Description" } p { (excerpt(&p.description, 300)) } }
+                        }
+                        @if let Some(source) = p.note_excerpt.filter(|s| !s.trim().is_empty()) {
+                            section.preview-description { h3 { "Source note excerpt" } p { (excerpt(&source, 180)) } }
                         }
                     }
                     @if !p.recent.is_empty() {
-                        details.preview-activity open {
+                        details.preview-activity {
                             summary { "Recent activity" (ledger_icon("chevron")) }
                             ol { @for event in &p.recent.0 {
                                 li { div {

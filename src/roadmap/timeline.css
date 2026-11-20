@@ -23,7 +23,11 @@
 .rm-toolbar, .rm-inspector-context, .rm-entry-first { display: flex; align-items: center; justify-content: space-between; gap: var(--s3, 12px); }
 .rm-toolbar { padding: var(--s4, 16px) 0; border-block: 1px solid var(--rm-rule); }
 .rm-chart-title h2, .rm-inspector-head h2 { margin: 0; font-size: 16px; letter-spacing: -.025em; line-height: 1.3; font-weight: 620; }
-.rm-chart-title p { color: var(--rm-meta); margin: 4px 0 0; font: 12px/1.5 var(--mono); }
+.rm-chart-title { min-width: 0; overflow-wrap: anywhere; }
+.rm-chart-title .rm-next { color: var(--rm-meta); margin: 0 0 3px; font: 12px/1.5 var(--sans); }
+.rm-chart-title h2 a { color: inherit; text-decoration: none; }
+.rm-chart-title h2 a:is(:hover, :focus-visible) { text-decoration: underline; }
+.rm-chart-title h2 .ui-icon { width: 13px; height: 13px; margin-inline-start: 5px; }
 .rm-timeline .rm-toggle {
   position: absolute;
   inline-size: 1px;
@@ -91,6 +95,8 @@
 .rm-svg .rm-tip-chain { fill: var(--rm-text); }
 .rm-svg .rm-week { fill: url(#rm-hatch); }
 .rm-svg .rm-hatch-line { fill: none; stroke: var(--rm-meta); stroke-width: 1; opacity: .7; }
+.rm-chart-key { padding: 0; border: 0; }
+.rm-chart-key > summary { display: list-item; width: fit-content; padding: 8px 0; font: 12px/1.5 var(--sans); color: var(--rm-meta); }
 .rm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: var(--s3, 12px) 0; color: var(--rm-meta); font-size: 12px; }
 .rm-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .rm-key-span { display: inline-block; width: 16px; border-top: 2px solid var(--rm-track); }
@@ -119,7 +125,8 @@
 .rm-empty h2 { margin: 0 0 4px; font-size: 16px; }
 .rm-inspector { border-top: 1px solid var(--rm-rule); padding-top: var(--s4, 16px); overflow-wrap: anywhere; }
 .rm-inspector-context { margin-bottom: var(--s2, 8px); color: var(--rm-meta); font-size: 12px; }
-.rm-inspector-context a { font-size: 12px; }
+.rm-inspector-context a { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; font-size: 12px; }
+.rm-inspector-context .ui-icon { width: 13px; height: 13px; transform: rotate(180deg); }
 .rm-inspector-head p { margin: var(--s2, 8px) 0 0; color: var(--rm-muted); }
 .rm-inspector h3 { font-size: 14px; font-weight: 620; margin: 0 0 4px; }
 .rm-inspector > section { margin-top: var(--s4, 16px); }
@@ -156,7 +163,6 @@
   .rm-work.rm-has-selection { grid-template-columns: minmax(0,1fr) clamp(244px,25%,324px); grid-template-areas: "schedule detail"; align-items: start; }
   .rm-has-selection .rm-schedule-column { grid-area: schedule; }
   .rm-has-selection .rm-inspector { grid-area: detail; border-inline-start: 1px solid var(--rm-rule); padding-inline-start: var(--s5,20px); }
-  .rm-has-selection .rm-inspector-context a { display: none; }
 }
 @container milestone-calendar (min-width: 650px) and (max-width: 800px) {
   .rm-svg :is(.rm-meta,.rm-date,.rm-axis,.rm-today,.rm-axis-title) { font-size: 13px; }

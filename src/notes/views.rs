@@ -132,6 +132,7 @@ pub(super) async fn list(
     } else {
         None
     };
+    let show_project_column = selected.is_none() && projects.len() > 1;
     let deleted = if let (Some(project), Some(id)) = (q.project, q.deleted) {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM notes WHERE owner_id=$1 AND project_id=$2 AND id=$3)",
@@ -178,17 +179,16 @@ pub(super) async fn list(
                 p.status-note role="status" data-note-deleted="" data-user=(auth.user_id) data-project=(project) data-note=(id) {"Note permanently deleted."}
                 script src="/assets/note-editor.js" defer {}
             }
-            div.note-library {
+            div.note-library data-single-scope[!show_project_column] {
                 @if !projects.is_empty() {
                     div.view-tools.note-index-tools {
                         form.note-search method="get" action="/notes" role="search" aria-label="Notes" {
                             @if let Some(id)=q.project {input type="hidden" name="project" value=(id);}
-                            label.note-search-input {
-                                span.sr-only {"Search notes by title, path, or text"}
-                                (icon("search"))
-                                input type="search" name="q" maxlength="160" value=(term) placeholder="Search notes by title, path, or text";
+                            div.note-search-field {
+                                label.sr-only for="note-search" {"Search notes by title, path, or text"}
+                                input id="note-search" type="search" name="q" maxlength="160" value=(term) placeholder="Search notes";
+                                button.icon-button type="submit" aria-label="Search notes" title="Search notes" { (icon("search")) }
                             }
-                            button.action-secondary type="submit" {"Search"}
                             @if !term.is_empty() {a.action-quiet.note-clear href=(&clear) aria-label="Clear note search" {"Clear"}}
                         }
                         @if projects.len()>1 {
@@ -201,7 +201,7 @@ pub(super) async fn list(
                                     }
                                 }
                             }
-                        } @else if let Some(p) = selected {
+                        } @else if let Some(p) = projects.first() {
                             a.note-index-project href=(format!("/projects/{}",p.id)) { (icon("projects")) (p.name) }
                         }
                     }
@@ -224,14 +224,14 @@ pub(super) async fn list(
                     }
                 } @else {
                     div.note-ledger-head aria-hidden="true" {
-                        span {"Note"} span {"Project"} span {"Last edited" (icon("down"))}
+                        span {"Note"} @if show_project_column {span {"Project"}} span {"Last edited" (icon("down"))}
                     }
                     ul.record-list.note-ledger role="list" aria-label="Notes, most recently edited first" {
                         @for (id,title,path,updated,project) in &rows {
                             li {
                                 a.record-row.note-record href=(with_origin(&format!("/notes/{id}"), Some(&origin))) {
                                     div.note-file { (icon("notes")) div { strong {(title)} (file_path(path)) } }
-                                    span.note-project {(project)}
+                                    @if show_project_column {span.note-project {(project)}}
                                     time datetime=(updated.to_rfc3339()) title=(updated.format("%b %-d, %Y at %H:%M UTC")) { (updated.format("%b %-d, %Y")) }
                                 }
                             }

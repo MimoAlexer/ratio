@@ -28,13 +28,13 @@ cargo build --release --locked --target x86_64-pc-windows-msvc
 python packaging/windows/build.py target/x86_64-pc-windows-msvc/release/ratio.exe dist
 ```
 
-For a cross-build from Linux, install the Rust `x86_64-pc-windows-gnu` target and the x86-64 MinGW-w64 GCC, C++ compiler, archiver, resource compiler and binutils. The resource compiler embeds the Ratio icon and version in the Windows executable. Ensure the prefixed tools are on PATH.
+For a cross-build from Linux, install the Rust `x86_64-pc-windows-gnu` target and the x86-64 MinGW-w64 GCC, C++ compiler, archiver, resource compiler and binutils. The resource compiler embeds the Ratio icon and version in the Windows executable. Ensure the prefixed tools are on PATH. The release command suppresses the MinGW linker’s wall-clock timestamp so repeated links can produce identical PE files.
 
 ```sh
 rustup target add x86_64-pc-windows-gnu
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
 export RC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-windres
-cargo build --release --locked --target x86_64-pc-windows-gnu
+cargo rustc --release --locked --target x86_64-pc-windows-gnu --bin ratio -- -C link-arg=-Wl,--no-insert-timestamp
 python3 packaging/windows/build.py target/x86_64-pc-windows-gnu/release/ratio.exe dist
 ```
 
@@ -42,4 +42,4 @@ The packager inspects PE imports and includes the x64 WebView2 loader when the e
 
 The installer runs per user. If Evergreen WebView2 is missing, interactive setup offers Microsoft's download page. Unattended setup exits with code 3. The app's Start Menu shortcut and Windows uninstall registration point to the per-user install. Uninstall preserves the user's profile and saved data. [Microsoft WebView2 distribution](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
 
-Ratio 0.3.0 upgrades Ratio 0.2.1, 0.2.0 and 0.1.1 in place. Users of Working Set 0.1.0 can also upgrade directly. APT handles the package name transition. On Windows, close the previous app before installing. For Working Set, the installer uses the previous per-user uninstall registration to identify its application files. These upgrades preserve existing workspace settings and browser profiles.
+Ratio 0.3.1 upgrades Ratio 0.3.0, 0.2.1, 0.2.0 and 0.1.1 in place. Users of Working Set 0.1.0 can also upgrade directly. APT handles the package name transition. On Windows, close the previous app before installing. For Working Set, the installer uses the previous per-user uninstall registration to identify its application files. These upgrades preserve existing workspace settings and browser profiles.

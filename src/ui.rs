@@ -142,7 +142,7 @@ fn navigation(auth: &Auth, active: &str) -> Markup {
                     }
                 } @else {
                     section.nav-group aria-label=(group) {
-                        p.nav-heading { (group) }
+                        @if group != "Workspace" { p.nav-heading { (group) } }
                         (nav_items(items, active))
                     }
                 }

@@ -35,11 +35,12 @@
 
 /* Titles and references share the lane canvas. Only saved records carry a bookmark. */
 .issue-board .issue-board-item {
-  display: flex; flex-direction: column; align-items: stretch; min-width: 0;
+  position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 0;
   margin: 0; padding: 0 2px;
 }
 .issue-board-item + .issue-board-item { margin-top: 24px; }
 .issue-board-item h3 { order: -1; margin: 0 0 4px; font: 560 15px/1.4 var(--sans); letter-spacing: -.017em; overflow-wrap: anywhere; }
+.issue-board-item:has(.issue-move) h3 { padding-inline-end: 30px; }
 .issue-board-item h3 a { color: var(--text); text-decoration: none; }
 .issue-board-item h3 a:hover, .issue-board-item h3 a:focus-visible { text-decoration: underline; text-underline-offset: .18em; }
 .issue-board-item :is(.issue-board-meta,.issue-priority,.board-state) {
@@ -53,27 +54,24 @@
 }
 .issue-board-item :is(.issue-state-mark,.issue-priority-mark) { width: 12px; height: 12px; }
 .issue-board-item .tags { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-block: 4px 0; }
-.issue-board-item :is(.tag,.badge) {
+.issue-board-item .badge {
   max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--muted);
   font: 12px/1.4 var(--sans); overflow-wrap: anywhere;
 }
-.issue-board-item .tag::before { content: "#"; }
 .issue-board-item[data-open-finding="critical"] .badge { color: var(--risk); }
 .issue-board-item .issue-move { border: 0; margin: 0; padding: 0; }
-.issue-move > summary, .issue-board-kind { min-height: 28px; color: var(--faint); font: 12px/1.4 var(--sans); }
 .issue-move > summary {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  width: 100%; margin: 0; padding: 0; list-style: none;
+  position: absolute; inset: -4px 0 auto auto;
+  display: grid; place-items: center; width: 28px; min-height: 28px; margin: 0; padding: 0;
+  list-style: none; border-radius: var(--radius); color: var(--muted);
 }
 .issue-move > summary::-webkit-details-marker { display: none; }
-.issue-move-label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
-.issue-move-label svg { width: 12px; height: 12px; }
-.issue-move > summary:is(:hover,:focus-visible) .issue-move-label { text-decoration: underline; color: var(--text); }
-.issue-move[open] .issue-move-label svg { transform: rotate(180deg); }
+.issue-move > summary svg { width: 14px; height: 14px; }
+.issue-move > summary:is(:hover,:focus-visible) { color: var(--text); background: var(--hover); }
+.issue-move[open] > summary svg { transform: rotate(180deg); }
 .issue-move .actions { display: grid; gap: 8px; align-items: end; padding-block: 4px 8px; margin: 0; }
 .issue-move .actions label { margin: 0; }
 .issue-move .actions button { justify-self: start; }
-.issue-board-kind { display: flex; align-items: center; margin: 0; }
 .issue-board .issue-lane-empty { margin: 0 2px; color: var(--faint); font-size: 12px; }
 
 /* The lane links complement horizontal scrolling when the complete board does not fit. */
@@ -90,5 +88,6 @@
 }
 @media (any-pointer: coarse) {
   .lane-jumps a, .issue-move > summary { min-height: 44px; }
-  .lane-jumps a { min-width: 44px; }
+  .lane-jumps a, .issue-move > summary { min-width: 44px; }
+  .issue-board-item:has(.issue-move) h3 { padding-inline-end: 45px; }
 }

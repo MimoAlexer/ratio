@@ -421,23 +421,24 @@ fn render(
                 div {
                     h2 id="review-heading" { "Release review" }
                     p {
-                        a href=(format!("/releases/{release}")) { (&clock.release_name) } " · "
                         @if window.first != window.last { (window.first.format(first_format)) "–" }
                         (window.last.format("%d %b %Y")) " · " (&clock.timezone)
                     }
                 }
-                nav.review-week aria-label="Review week" {
+                nav.review-week aria-label=(format!("Review week for {}",clock.release_name)) {
                     @if window.week > monday(window.earliest) {
                         a.action-quiet href=(week_url(release, window.week - Days::new(7))) { "← Previous week" }
                     }
                     @if window.week < monday(window.latest) {
                         a.action-quiet href=(week_url(release, window.week + Days::new(7))) { "Next week →" }
                     }
-                    details.review-week-picker {
-                        summary { "Change week" }
-                        form.row method="get" action=(format!("/releases/{release}#review")) {
-                            label { "Week of" input type="date" name="week" value=(window.first) min=(window.earliest) max=(window.latest) required; }
-                            button.secondary type="submit" { "View week" }
+                    @if monday(window.earliest) != monday(window.latest) {
+                        details.review-week-picker {
+                            summary { "Change week" }
+                            form.row method="get" action=(format!("/releases/{release}#review")) {
+                                label { "Week of" input type="date" name="week" value=(window.first) min=(window.earliest) max=(window.latest) required; }
+                                button.secondary type="submit" { "View week" }
+                            }
                         }
                     }
                 }
@@ -460,7 +461,7 @@ fn render(
                 div.review-instruments {
                     section.review-instrument aria-labelledby="burnup-heading" {
                         header.review-instrument-head {
-                            h3 id="burnup-heading" { "Observed burnup" }
+                            h3 id="burnup-heading" { "Scope and completions" }
                             span { "Issues" }
                         }
                         @if let Some(day) = r.days.last() {
@@ -483,7 +484,7 @@ fn render(
                     }
                     section.review-instrument aria-labelledby="waterfall-heading" {
                         header.review-instrument-head {
-                            h3 id="waterfall-heading" { "Open work waterfall" }
+                            h3 id="waterfall-heading" { "Open work" }
                             span { "Issues" }
                         }
                         p.review-readout {

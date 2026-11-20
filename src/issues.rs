@@ -87,7 +87,6 @@ struct HomeIssue {
     project_archived: bool,
     open_finding: bool,
     revision: i64,
-    priority: String,
     project_name: String,
     project_key: String,
     number: i64,
@@ -100,16 +99,6 @@ struct HomeIssue {
 impl HomeIssue {
     fn url(&self) -> String {
         format!("/issues/{}", self.id)
-    }
-
-    fn queue_row(&self) -> Markup {
-        html! { li {
-            a.focus-row href=(self.url()) {
-                span.focus-key { (pages::status_mark(&self.status)) (self.project_key) "-" (self.number) }
-                span.focus-row-title { (&self.title) }
-                span.focus-priority { (pages::priority_mark(&self.priority)) (label(&self.priority)) }
-            }
-        } }
     }
 
     fn close_finding(&self, auth: &Auth) -> Markup {
@@ -125,17 +114,40 @@ impl HomeIssue {
             }
         }
     }
+}
 
-    fn identity(&self) -> Markup {
-        html! {
-            span.mono { (self.project_key) "-" (self.number) }
-            span { (self.project_name) }
+fn checkpoint_text(action: &str) -> Markup {
+    let text = action.trim();
+    let first_line = text.lines().next().unwrap_or_default();
+    let excerpt = match first_line.char_indices().nth(160) {
+        Some((end, _)) => {
+            let prefix = &first_line[..end];
+            prefix
+                .rsplit_once(char::is_whitespace)
+                .filter(|(words, _)| !words.is_empty())
+                .map_or(prefix, |(words, _)| words)
+        }
+        None => first_line,
+    };
+    html! {
+        @if !text.is_empty() {
+            @if excerpt == text {
+                p.focus-action { (text) }
+            } @else {
+                details.focus-next-step {
+                    summary {
+                        span.focus-action { (excerpt) "…" }
+                        span.step-toggle { "Full next action" }
+                    }
+                    p.focus-action { (text) }
+                }
+            }
         }
     }
 }
 
 const HOME_SELECT: &str = "
-    SELECT i.id, i.project_id,p.archived AS project_archived,i.revision,i.priority,
+    SELECT i.id, i.project_id,p.archived AS project_archived,i.revision,
            (i.security_critical AND NOT i.finding_closed) AS open_finding,p.name AS project_name, p.key AS project_key,
            i.number, i.title, i.status, i.next_action, i.checkpoint_at
       FROM issues i JOIN projects p ON (i.owner_id,i.project_id)=(p.owner_id,p.id)
@@ -154,9 +166,71 @@ fn issues_url(project: Option<Uuid>, filter: &str) -> String {
 }
 
 #[derive(Default, FromRow)]
+struct HomeTotals {
+    backlog: i64,
+    ready: i64,
+    active: i64,
+    done: i64,
+    critical: i64,
+}
+
+impl HomeTotals {
+    fn open(&self) -> i64 {
+        self.active + self.ready + self.backlog
+    }
+
+    fn overview(&self, project: Option<Uuid>, milestone: Markup) -> Markup {
+        let open = self.open();
+        html! {
+            aside.focus-overview aria-labelledby="overview-title" {
+                h2 id="overview-title" { "Open issues" }
+                strong.queue-total { (open) }
+                @if open > 0 {
+                    ul.queue-stages {
+                        @for (status, count) in [("in_progress", self.active), ("ready", self.ready), ("backlog", self.backlog)] {
+                            li {
+                                a href=(issues_url(project, &format!("status={status}"))) {
+                                    span.queue-label { (pages::status_mark(status)) (label(status)) }
+                                    meter min="0" max=(open) value=(count) aria-hidden="true" {}
+                                    span.queue-value { (count) }
+                                }
+                            }
+                        }
+                    }
+                }
+                @if self.done > 0 {
+                    a.queue-done href=(issues_url(project, "status=done")) {
+                        (self.done) " completed" (ui::icon("arrow"))
+                    }
+                }
+                (milestone)
+            }
+        }
+    }
+}
+
+async fn home_totals(
+    db: &sqlx::PgPool,
+    owner: Uuid,
+    project: Option<Uuid>,
+) -> Result<HomeTotals, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE NOT p.archived AND i.status='backlog') AS backlog,
+                count(*) FILTER (WHERE NOT p.archived AND i.status='ready') AS ready,
+                count(*) FILTER (WHERE NOT p.archived AND i.status='in_progress') AS active,
+                count(*) FILTER (WHERE NOT p.archived AND i.status='done') AS done,
+                count(*) FILTER (WHERE i.security_critical AND NOT i.finding_closed) AS critical
+           FROM issues i JOIN projects p ON (i.owner_id,i.project_id)=(p.owner_id,p.id)
+          WHERE i.owner_id=$1 AND ($2::uuid IS NULL OR i.project_id=$2) AND NOT i.archived",
+    )
+    .bind(owner)
+    .bind(project)
+    .fetch_one(db)
+    .await
+}
+
+#[derive(Default, FromRow)]
 struct HomeContext {
-    completed: i64,
-    tracked: i64,
     source_note: Option<(Uuid, String, String)>,
     milestone: Option<(Uuid, String, Option<chrono::NaiveDate>)>,
 }
@@ -164,22 +238,17 @@ struct HomeContext {
 async fn home_context(
     db: &sqlx::PgPool,
     owner: Uuid,
-    project: Option<Uuid>,
-    issue: Option<Uuid>,
+    project: Uuid,
+    issue: Uuid,
 ) -> AppResult<HomeContext> {
-    let Some(project) = project else {
-        return Ok(HomeContext::default());
-    };
     Ok(sqlx::query_as(
-        "SELECT count(*) FILTER (WHERE status='done') AS completed, count(*) AS tracked,
-                (SELECT ROW(n.id,n.title,src.source_anchor) FROM note_issue_sources src
+        "SELECT (SELECT ROW(n.id,n.title,src.source_anchor) FROM note_issue_sources src
                    JOIN notes n ON (n.owner_id,n.project_id,n.id)=(src.owner_id,src.project_id,src.note_id)
                   WHERE src.owner_id=$1 AND src.project_id=$2 AND src.issue_id=$3) AS source_note,
                 (SELECT ROW(m.id,m.title,m.target_on) FROM milestone_issues mi JOIN milestones m
                      ON (m.owner_id,m.project_id,m.id)=(mi.owner_id,mi.project_id,mi.milestone_id)
                   WHERE mi.owner_id=$1 AND mi.project_id=$2 AND mi.issue_id=$3 AND m.status <> 'reached'
-                  ORDER BY m.target_on NULLS LAST,m.id LIMIT 1) AS milestone
-           FROM issues WHERE owner_id=$1 AND project_id=$2 AND NOT archived AND status <> 'canceled'",
+                  ORDER BY m.target_on NULLS LAST,m.id LIMIT 1) AS milestone",
     )
     .bind(owner)
     .bind(project)
@@ -218,14 +287,9 @@ async fn home(
         AND (i.checkpoint_at IS NOT NULL OR i.status='in_progress')
         ORDER BY i.checkpoint_at DESC NULLS LAST, i.updated_at DESC, i.id LIMIT 1"
     );
-    let active_sql = format!(
-        "{HOME_SELECT}
-        AND NOT p.archived AND i.status='in_progress'
-        ORDER BY i.updated_at DESC, i.id LIMIT 13"
-    );
     let critical_sql = format!(
         "{HOME_SELECT}
-        AND i.security_critical AND NOT i.finding_closed ORDER BY i.updated_at DESC, i.id LIMIT 6"
+        AND i.security_critical AND NOT i.finding_closed ORDER BY i.updated_at DESC, i.id LIMIT 3"
     );
     let ready_sql = format!(
         "{HOME_SELECT}
@@ -237,44 +301,43 @@ async fn home(
                 AND blocker.status NOT IN ('done','canceled')
          )
          ORDER BY CASE i.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
-                  i.updated_at DESC,i.id LIMIT 11"
+                  i.updated_at DESC,i.id LIMIT 1"
     );
-    let (resume, active, critical, critical_count, ready) = if projects.is_empty() {
-        (None, Vec::new(), Vec::new(), 0, Vec::new())
+    let (resume, ready, critical, totals) = if projects.is_empty() {
+        (None, None, Vec::new(), HomeTotals::default())
     } else {
         tokio::try_join!(
-            sqlx::query_as::<_, HomeIssue>(&resume_sql).bind(owner).bind(project).fetch_optional(&state.db),
-            sqlx::query_as::<_, HomeIssue>(&active_sql).bind(owner).bind(project).fetch_all(&state.db),
-            sqlx::query_as::<_, HomeIssue>(&critical_sql).bind(owner).bind(project).fetch_all(&state.db),
-            sqlx::query_scalar::<_,i64>("SELECT count(*) FROM issues WHERE owner_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND NOT archived AND security_critical AND NOT finding_closed")
-                .bind(owner).bind(project).fetch_one(&state.db),
-            sqlx::query_as::<_,HomeIssue>(&ready_sql).bind(owner).bind(project).fetch_all(&state.db)
+            sqlx::query_as::<_, HomeIssue>(&resume_sql)
+                .bind(owner)
+                .bind(project)
+                .fetch_optional(&state.db),
+            sqlx::query_as::<_, HomeIssue>(&ready_sql)
+                .bind(owner)
+                .bind(project)
+                .fetch_optional(&state.db),
+            sqlx::query_as::<_, HomeIssue>(&critical_sql)
+                .bind(owner)
+                .bind(project)
+                .fetch_all(&state.db),
+            home_totals(&state.db, owner, project)
         )?
     };
-    let focus = resume.as_ref().or_else(|| ready.first());
-    let focus_project = focus.map(|i| i.project_id).or(project).or_else(|| {
-        projects
-            .first()
-            .filter(|_| projects.len() == 1)
-            .map(|p| p.id)
-    });
-    let context = projects.iter().find(|p| Some(p.id) == focus_project);
-    let directory = issues_url(project, "");
-    let create_url = format!("{directory}#new-issue");
-    let focused_id = focus.map(|issue| issue.id);
-    let other_finding_count =
-        critical_count - i64::from(focus.is_some_and(|issue| issue.open_finding));
+    let focus = resume.as_ref().or(ready.as_ref());
+    let create_url = format!("{}#new-issue", issues_url(project, ""));
+    let focus_is_critical = focus.is_some_and(|issue| issue.open_finding);
+    let other_finding_count = totals.critical - i64::from(focus_is_critical);
     let other_findings: Vec<_> = critical
         .iter()
-        .filter(|issue| Some(issue.id) != focused_id)
+        .filter(|issue| focus.is_none_or(|item| item.id != issue.id))
+        .take(2)
         .collect();
-    let queued = |issue: &&HomeIssue| {
-        Some(issue.id) != focused_id && !other_findings.iter().any(|f| f.id == issue.id)
-    };
-    let active_others: Vec<_> = active.iter().filter(queued).take(6).collect();
-    let ready_others: Vec<_> = ready.iter().filter(queued).take(4).collect();
     let (work, (coverage, remote_security)) = tokio::join!(
-        home_context(&state.db, owner, context.map(|p| p.id), focused_id),
+        async {
+            match focus {
+                Some(item) => home_context(&state.db, owner, item.project_id, item.id).await,
+                None => Ok(HomeContext::default()),
+            }
+        },
         async {
             if projects.is_empty() {
                 (String::new(), html! {})
@@ -284,14 +347,11 @@ async fn home(
         }
     );
     let HomeContext {
-        completed,
-        tracked,
         source_note,
         milestone,
     } = work?;
-    let progress = context.map(|_| (completed, tracked));
-    let pull_request = if let Some(id) = focused_id {
-        crate::github::resume_pr(&state, &auth, id).await
+    let pull_request = if let Some(item) = focus {
+        crate::github::resume_pr(&state, &auth, item.id).await
     } else {
         html! {}
     };
@@ -323,7 +383,6 @@ async fn home(
             @if projects.is_empty() {
                 section.focus-first id="resume" aria-labelledby="resume-title" {
                     h2 id="resume-title" { "Start your first project" }
-                    p { "Give your project a name. You’ll add its first issue next." }
                     form.form-stack method="post" action="/projects" {
                         (ui::csrf(&auth))
                         input type="hidden" name="next" value="first-issue";
@@ -333,138 +392,102 @@ async fn home(
                 }
             } @else {
                 div.focus-layout {
-                    div.focus-queue {
-                        section.focus-card id="resume" aria-labelledby="resume-title" {
-                            @if let Some(item) = focus {
-                                header.focus-card-head {
-                                    h2 id="resume-title" {
-                                        (ui::icon("resume"))
-                                        @if item.checkpoint_at.is_some() { "Current checkpoint" }
-                                        @else if resume.is_some() { "Current issue" }
-                                        @else { "Next ready issue" }
-                                    }
+                    section.focus-record id="resume" aria-labelledby="resume-title" {
+                        @if let Some(item) = focus {
+                            p.focus-eyebrow {
+                                (ui::icon("resume"))
+                                @if item.checkpoint_at.is_some() { "Last checkpoint" }
+                                @else if resume.is_some() { "In progress" }
+                                @else { "Next ready issue" }
+                                span.mono { (item.project_key) "-" (item.number) }
+                            }
+                            h2 id="resume-title" { (&item.title) }
+                            (checkpoint_text(&item.next_action))
+                            @if focus_is_critical {
+                                p.focus-risk { (ui::icon("flag")) "Open critical finding" }
+                            }
+                            div.focus-actions {
+                                a.action-primary href=(item.url()) {
+                                    @if resume.is_some() { "Resume issue" } @else { "Open issue" } (ui::icon("arrow"))
+                                }
+                            }
+                            details.focus-links {
+                                summary { "Issue context" }
+                                div {
+                                    span { (pages::status_mark(&item.status)) (label(&item.status)) }
+                                    a href=(format!("/projects/{}",item.project_id)) { (ui::icon("projects")) (item.project_name) }
                                     @if let Some(t) = item.checkpoint_at {
-                                        time datetime=(t.to_rfc3339()) title=(t.format("%d %b %Y, %H:%M UTC")) {
-                                            "Saved " (t.format("%d %b"))
-                                        }
+                                        time datetime=(t.to_rfc3339()) { "Saved " (t.format("%d %b %Y")) }
                                     }
-                                }
-                                div.focus-record {
-                                    div.focus-meta {
-                                        span.mono { (item.project_key) "-" (item.number) }
-                                        span { (item.project_name) }
-                                        span { (pages::status_mark(&item.status)) (label(&item.status)) }
-                                        @if item.open_finding { span.focus-risk { (ui::icon("flag")) "Open critical finding" } }
+                                    @if let Some((id, title, anchor)) = &source_note {
+                                        a href=(format!("/notes/{id}#{anchor}")) { (ui::icon("notes")) span.sr-only { "Source note " } (title) }
                                     }
-                                    h3 { (&item.title) }
-                                    @if !item.next_action.is_empty() {
-                                        p.focus-action { (&item.next_action) }
-                                    }
-                                    div.focus-actions {
-                                        a.action-primary href=(item.url()) {
-                                            @if resume.is_some() { "Resume issue" } @else { "Open issue" } (ui::icon("arrow"))
-                                        }
-                                        @if let Some((id, title, anchor)) = &source_note {
-                                            a.focus-source href=(format!("/notes/{id}#{anchor}")) title="Source note" {
-                                                (ui::icon("notes")) span.sr-only { "Source note: " } (title)
-                                            }
-                                        }
-                                        (pull_request)
-                                        (item.close_finding(&auth))
-                                    }
-                                }
-                            } @else {
-                                div.focus-empty {
-                                    h2 id="resume-title" {
-                                        @if writable { "No work in progress" } @else { "Archived work" }
-                                    }
-                                    @if writable {
-                                        p { "Create an issue or choose one from your backlog." }
-                                        div.focus-actions {
-                                            a.action-primary href=(&create_url) { (ui::icon("plus")) "New issue" }
-                                            a href=(issues_url(project,"status=backlog")) { "View backlog" }
-                                        }
-                                    } @else {
-                                        p { "Issues in archived projects are available to read." }
-                                        a.action-secondary href=(issues_url(project,"scope=archived")) { "Browse archived issues" }
-                                    }
+                                    (pull_request)
+                                    (item.close_finding(&auth))
                                 }
                             }
-                        }
-                        @if other_finding_count > 0 {
-                            section.focus-section id="critical-findings" aria-labelledby="findings-title" {
-                                header.focus-section-head {
-                                    h2 id="findings-title" { (ui::icon("flag")) "Critical findings" span.focus-count { (other_finding_count) } }
-                                    @if other_finding_count > other_findings.len() as i64 {
-                                        a href=(issues_url(project,"critical=open&scope=all")) { "View all" }
-                                    }
-                                }
-                                ul.focus-findings {
-                                    @for issue in other_findings {
-                                        li {
-                                            div {
-                                                p.focus-meta { (issue.identity()) }
-                                                a.focus-record-link href=(issue.url()) { (&issue.title) }
-                                                @if !issue.next_action.is_empty() { p.focus-finding-action { (&issue.next_action) } }
-                                            }
-                                            (issue.close_finding(&auth))
-                                        }
-                                    }
-                                }
+                        } @else {
+                            h2 id="resume-title" {
+                                @if writable { "No work in progress" } @else { "Archived work" }
                             }
-                        }
-                        @if !active_others.is_empty() {
-                            section.focus-section id="active-work" aria-labelledby="active-title" {
-                                header.focus-section-head {
-                                    h2 id="active-title" { "Also in progress" }
-                                    a href=(issues_url(project,"status=in_progress")) { "View all" span.sr-only { " in-progress issues" } (ui::icon("arrow")) }
+                            div.focus-actions {
+                                @if writable {
+                                    a.action-primary href=(&create_url) { (ui::icon("plus")) "New issue" }
+                                    @if totals.backlog > 0 {
+                                        a href=(issues_url(project,"status=backlog")) { "View backlog" }
+                                    }
+                                } @else {
+                                    a.action-secondary href=(issues_url(project,"scope=archived")) { "Browse archived issues" }
                                 }
-                                ul.focus-list { @for item in active_others { (item.queue_row()) } }
-                            }
-                        }
-                        @if !ready_others.is_empty() {
-                            section.focus-section aria-labelledby="ready-title" {
-                                header.focus-section-head {
-                                    h2 id="ready-title" { "Ready next" }
-                                    a href=(issues_url(project,"status=ready&sort=priority")) { "View all" span.sr-only { " ready issues" } (ui::icon("arrow")) }
-                                }
-                                ul.focus-list { @for item in ready_others { (item.queue_row()) } }
                             }
                         }
                     }
-                    aside.focus-context aria-label="Work context" {
-                        @if let Some(p) = context {
-                            section {
-                                div.focus-context-head {
-                                    h2 { "Project" }
-                                    @if projects.len() == 1 {
-                                        @if project.is_some() {
-                                            a href="/" { "All projects" }
-                                        } @else {
-                                            a href=(format!("/?project={}",p.id)) aria-label=(format!("Show Home for {}",p.name)) { "Project Home" }
-                                        }
-                                    }
-                                }
-                                a.focus-project-name href=(format!("/projects/{}",p.id)) { (ui::icon("projects")) (p.name) }
-                                @if let Some((done, total)) = progress && total > 0 {
-                                    p.focus-progress-label { (done) " of " (total) " issues completed" }
-                                    progress.focus-progress value=(done) max=(total) aria-label=(format!("{done} of {total} issues completed")) {}
-                                }
-                                @if let Some((id, title, target)) = &milestone {
-                                    div.focus-milestone {
-                                        h3 { "Linked milestone" }
-                                        a href=(format!("/roadmap?project={}&milestone={id}#milestone-detail", p.id)) { (title) (ui::icon("arrow")) }
-                                        @if let Some(date) = target {
-                                            p { "Target " time datetime=(date) { (date.format("%d %b %Y")) } }
+                    section.focus-security id="critical-findings" aria-labelledby="findings-title" {
+                        h2 id="findings-title" {
+                            (ui::icon("flag"))
+                            @if focus_is_critical && other_finding_count > 0 { "Other critical issues" } @else { "Critical issues" }
+                            span.focus-count { @if focus_is_critical && other_finding_count > 0 { (other_finding_count) } @else { (totals.critical) } }
+                        }
+                        @if !other_findings.is_empty() {
+                            ul.focus-findings {
+                                @for issue in &other_findings {
+                                    li {
+                                        a.finding-link href=(issue.url()) { span.mono { (issue.project_key) "-" (issue.number) } span { (&issue.title) } }
+                                        @if !issue.next_action.is_empty() || !issue.project_archived {
+                                            details.finding-options {
+                                                summary aria-label=(format!("Details for {}-{}",issue.project_key,issue.number)) { "Details" }
+                                                div {
+                                                    @if !issue.next_action.is_empty() { p { (&issue.next_action) } }
+                                                    (issue.close_finding(&auth))
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
+                            @if other_finding_count > other_findings.len() as i64 {
+                                a.focus-all href=(issues_url(project,"critical=open&scope=all")) { "View all critical issues" (ui::icon("arrow")) }
+                            }
+                        } @else if focus_is_critical {
+                            a.focus-all href="#resume" { "Current issue" (ui::icon("arrow")) }
                         }
-                        details.focus-security {
+                        details.focus-coverage {
                             summary { "Dependency alerts" span { (coverage) } }
                             (remote_security)
                         }
+                    }
+                    @if writable && (totals.open() > 0 || totals.done > 0) {
+                        (totals.overview(project, html! {
+                            @if let Some((id, title, target)) = &milestone && let Some(item) = focus {
+                                a.focus-milestone href=(format!("/roadmap?project={}&milestone={id}#milestone-detail", item.project_id)) {
+                                    span { (ui::icon("roadmap")) "Linked milestone" }
+                                    strong { (title) }
+                                    @if let Some(date) = target {
+                                        time datetime=(date) { (date.format("%d %b")) }
+                                    }
+                                }
+                            }
+                        }))
                     }
                 }
             }
@@ -477,7 +500,7 @@ async fn home(
 mod tests {
     use super::*;
     #[sqlx::test]
-    async fn home_context_preserves_optional_links_and_scopes_progress(
+    async fn home_context_preserves_links_and_scopes_work_counts(
         db: sqlx::PgPool,
     ) -> AppResult<()> {
         use crate::sample::{DEMO_OWNER, DEMO_PROJECT, seed};
@@ -486,7 +509,7 @@ mod tests {
             .bind(DEMO_PROJECT)
             .fetch_one(&db)
             .await?;
-        let context = home_context(&db, DEMO_OWNER, Some(DEMO_PROJECT), Some(issue)).await?;
+        let context = home_context(&db, DEMO_OWNER, DEMO_PROJECT, issue).await?;
         let (_, title, anchor) = context.source_note.expect("source decision");
         assert_eq!(
             (title.as_str(), anchor.as_str()),
@@ -496,16 +519,53 @@ mod tests {
         assert_eq!(title, "Public beta");
         assert!(date.is_some());
 
-        let no_issue = home_context(&db, DEMO_OWNER, Some(DEMO_PROJECT), None).await?;
-        assert!(no_issue.source_note.is_none() && no_issue.milestone.is_none());
-        assert_eq!(
-            (no_issue.completed, no_issue.tracked),
-            (context.completed, context.tracked)
-        );
-        let unseen = home_context(&db, Uuid::new_v4(), Some(DEMO_PROJECT), Some(issue)).await?;
+        let unseen = home_context(&db, Uuid::new_v4(), DEMO_PROJECT, issue).await?;
         assert!(unseen.source_note.is_none() && unseen.milestone.is_none());
-        assert_eq!((unseen.completed, unseen.tracked), (0, 0));
+        let totals = home_totals(&db, DEMO_OWNER, Some(DEMO_PROJECT)).await?;
+        assert_eq!(
+            (
+                totals.active,
+                totals.ready,
+                totals.backlog,
+                totals.done,
+                totals.critical
+            ),
+            (2, 3, 2, 12, 1)
+        );
+        let outsider = home_totals(&db, Uuid::new_v4(), Some(DEMO_PROJECT)).await?;
+        assert_eq!(
+            (outsider.open(), outsider.done, outsider.critical),
+            (0, 0, 0)
+        );
+        sqlx::query("UPDATE projects SET archived=true WHERE owner_id=$1 AND id=$2")
+            .bind(DEMO_OWNER)
+            .bind(DEMO_PROJECT)
+            .execute(&db)
+            .await?;
+        let archived = home_totals(&db, DEMO_OWNER, None).await?;
+        assert_eq!(
+            (archived.open(), archived.done, archived.critical),
+            (0, 0, 1)
+        );
         Ok(())
+    }
+
+    #[test]
+    fn long_and_multiline_checkpoints_keep_the_full_text_available() {
+        assert_eq!(checkpoint_text(" ").into_string(), "");
+        assert!(
+            !checkpoint_text("Run the release checks")
+                .into_string()
+                .contains("<details")
+        );
+        for action in [
+            "Read the change\nVerify the release".to_owned(),
+            "β".repeat(180),
+        ] {
+            let rendered = checkpoint_text(&action).into_string();
+            assert!(rendered.contains("<details") && rendered.contains(&action));
+            assert!(rendered.contains("Full next action"));
+        }
     }
 
     #[test]

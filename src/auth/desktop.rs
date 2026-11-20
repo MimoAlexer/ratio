@@ -19,7 +19,6 @@ use std::net::SocketAddr;
 use uuid::Uuid;
 
 const CODE_ALPHABET: &[u8; 32] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const ISSUE_WORKSPACE: &str = "/issues";
 
 fn device_cookie(production: bool) -> &'static str {
     if production {
@@ -121,7 +120,7 @@ async fn start(State(state): State<AppState>, headers: HeaderMap) -> AppResult<R
     if let Some(raw) = session_cookie_raw(&headers, production)
         && credentials::session(&state.db, raw).await?.is_some()
     {
-        return Ok(Redirect::to(ISSUE_WORKSPACE).into_response());
+        return Ok(Redirect::to("/").into_response());
     }
     if let Some(secret) = cookie(&headers, device_cookie(production))
         && approval(&state, secret).await?.is_some()
@@ -140,7 +139,7 @@ async fn start(State(state): State<AppState>, headers: HeaderMap) -> AppResult<R
                     button type="submit" { "Pair this desktop" }
                 }
                 @if !production {
-                    p { a href="/login?next=%2Fissues" { "Sign in directly in this app" } }
+                    p { a href="/login" { "Sign in directly in this app" } }
                 }
             }
         },
@@ -410,7 +409,7 @@ async fn finish(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    let mut response = Redirect::to(ISSUE_WORKSPACE).into_response();
+    let mut response = Redirect::to("/").into_response();
     put_session(&mut response, production, &raw);
     set_cookie(&mut response, device_cookie(production), "", 0, production);
     set_cookie(&mut response, nonce_name(production), "", 0, production);
