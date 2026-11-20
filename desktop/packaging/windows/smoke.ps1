@@ -98,7 +98,7 @@ public static class RatioWindowSmoke {
     }
 }
 
-function Write-WindowTimeout($app, $stderrFile) {
+function Write-WindowTimeout($app) {
     $windows = @([RatioWindowSmoke]::DescribeWindows($app.Id))
     if ($windows.Count) { $windows | Write-Host } else { Write-Host 'No top-level windows belong to this process.' }
     $clientKey = 'Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
@@ -113,9 +113,6 @@ function Write-WindowTimeout($app, $stderrFile) {
             $file = Get-Item -LiteralPath $child.ExecutablePath -ErrorAction SilentlyContinue
             Write-Host "Running WebView2 PID=$($child.ProcessId) version='$($file.VersionInfo.ProductVersion)'"
         }
-    }
-    if (Test-Path -LiteralPath $stderrFile) {
-        Get-Content -LiteralPath $stderrFile -Tail 12 -ErrorAction SilentlyContinue | Write-Host
     }
 }
 
@@ -135,8 +132,15 @@ function Assert-DesktopControls($app, $connectButton) {
         throw 'F10 did not open the native controls popup while WebView2 had focus.'
     }
     $shell.SendKeys('q')
-    if (!$app.WaitForExit(10000) -or $app.ExitCode -ne 0) {
-        throw 'Selecting Quit from the native popup did not exit Ratio cleanly.'
+    if (!$app.WaitForExit(10000)) {
+        throw "Selecting Quit left Ratio running after 10 seconds (PID $($app.Id))."
+    }
+    $exitCode = $app.ExitCode
+    if ($null -eq $exitCode) {
+        throw "Ratio quit, but PowerShell could not read the exit code (PID $($app.Id))."
+    }
+    if ($exitCode -ne 0) {
+        throw "Selecting Quit exited Ratio with code $exitCode (PID $($app.Id))."
     }
     Write-Host 'Verified a menu-free window, WebView2 F10 and the native Quit action.'
 }
@@ -144,10 +148,10 @@ function Assert-DesktopControls($app, $connectButton) {
 function Assert-ConnectionWindow([string]$phase) {
     Initialize-WindowInspection
     $installedVersion = (Get-Item -LiteralPath $appExe).VersionInfo.ProductVersion
-    $stderrFile = [IO.Path]::GetTempFileName()
-    $app = $null
+    $app = Start-Process $appExe -PassThru
     try {
-        $app = Start-Process $appExe -PassThru -RedirectStandardError $stderrFile
+        # Windows PowerShell needs the process handle open before Quit to report its exit code.
+        $null = $app.Handle
         $context = "$phase, Ratio $installedVersion, PID $($app.Id)"
         Write-Host "Opening connection window ($context)."
         $end = (Get-Date).AddSeconds(60)
@@ -158,7 +162,7 @@ function Assert-ConnectionWindow([string]$phase) {
         } until ($app.MainWindowTitle -like 'Ratio*Connection' -or (Get-Date) -gt $end)
         if ($app.MainWindowTitle -notlike 'Ratio*Connection') {
             $message = "Connection window timed out ({0}). Main HWND=0x{1:X} title='{2}'." -f $context, $app.MainWindowHandle.ToInt64(), $app.MainWindowTitle
-            try { Write-WindowTimeout $app $stderrFile } catch { Write-Warning "Window diagnostics failed: $_" }
+            try { Write-WindowTimeout $app } catch { Write-Warning "Window diagnostics failed: $_" }
             throw $message
         }
         # UI Automation reaches into WebView2. This verifies that the server-choice
@@ -180,11 +184,10 @@ function Assert-ConnectionWindow([string]$phase) {
             Assert-DesktopControls $app $button
         }
     } finally {
-        if ($app -and !$app.HasExited) {
+        if (!$app.HasExited) {
             $null = $app.CloseMainWindow()
             if (!$app.WaitForExit(5000)) { Stop-Process -Id $app.Id -Force }
         }
-        Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
     }
 }
 
