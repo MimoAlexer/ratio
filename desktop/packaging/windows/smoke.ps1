@@ -81,6 +81,15 @@ public static class RatioWindowSmoke {
     private static extern IntPtr GetWindow(IntPtr window, uint command);
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr window);
+
+    public static bool ActivateDialog(IntPtr window) {
+        if (GetForegroundWindow() != window) SetForegroundWindow(window);
+        return GetForegroundWindow() == window;
+    }
 
     public static WindowInfo[] Windows(int processId, bool visibleOnly) {
         var windows = new List<WindowInfo>();
@@ -377,11 +386,13 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
             [System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
         $end = (Get-Date).AddSeconds(30)
         $save = $null
-        $buttonCondition = [System.Windows.Automation.AndCondition]::new(
-            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button),
+        # Server 2025 exposes the native IDOK control as a Pane on some runners.
+        $saveCondition = [System.Windows.Automation.AndCondition]::new(
+            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1'),
+            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Save'),
             [System.Windows.Automation.OrCondition]::new(
-                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1'),
-                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Save')))
+                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button),
+                [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Pane)))
         do {
             foreach ($window in [RatioWindowSmoke]::Windows(0, $true)) {
                 if ($window.Title -ne 'Save canvas SVG' -or ![RatioWindowSmoke]::BelongsTo($window.Handle, $app.Id)) { continue }
@@ -397,8 +408,9 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
                         }
                         if (!$matchingName) { continue }
                     }
-                    $save = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
-                    if ($save) { break }
+                    $save = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $saveCondition)
+                    if ($save -and $save.Current.IsEnabled) { $saveWindow = $window.Handle; break }
+                    $save = $null
                 } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
             }
             if (!$save) { Start-Sleep -Milliseconds 200 }
@@ -411,10 +423,9 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         if (!(Test-Path -LiteralPath $receipt) -or [IO.File]::ReadAllText($receipt) -ne $name) {
             throw 'The fixture did not serve the canonical SVG GET attachment.'
         }
-        # Send real input after UIA confirms the process-owned control. Calling
-        # a UIA provider synchronously to invoke a modal control can block a test.
-        $save.SetFocus()
-        $shell.SendKeys(' ')
+        if (![RatioWindowSmoke]::ActivateDialog($saveWindow)) { throw 'Could not activate the verified SVG Save dialog.' }
+        # Enter accepts IDOK without requiring the UI Automation Pane to take focus.
+        $shell.SendKeys('{ENTER}')
         $end = (Get-Date).AddSeconds(15)
         while (!(Test-Path -LiteralPath $destination) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 100 }
         $expected = (Get-FileHash -LiteralPath (Join-Path $dir $name)).Hash
