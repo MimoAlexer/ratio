@@ -2,15 +2,17 @@
 
 The name comes from Latin *ratiō*, meaning “reckoning” or “reasoning.” [Latin dictionary entry](https://logeion.uchicago.edu/ratio)
 
-A desktop issue tracker for one developer per workspace, backed by a shared account. Home brings back your last checkpoint and critical security work. Notes, milestone dependencies and release charts point back to the underlying records. The application uses Rust, Axum, Maud server-rendered HTML, SQLx and PostgreSQL. Standard links and forms support the core workflow with JavaScript disabled.
+A web-based issue tracker for one developer per workspace, backed by a shared account. Home brings back your last checkpoint and critical security work. Notes, milestone dependencies and release charts point back to the underlying records. The application uses Rust, Axum, Maud server-rendered HTML, SQLx and PostgreSQL. Standard links and forms support the core workflow with JavaScript disabled.
 
-## Desktop app
+## Website
 
-Install Ratio on Windows or Linux from the [private GitHub releases](https://github.com/MimoAlexer/ratio/releases). Connect both computers to the same HTTPS server and approve each device using the same account. Each installation has its own persistent session. The desktop host is Rust using Tao with WebView2 on Windows and WebKitGTK on Linux. The issue workspace, backend and data model are shared with the web service.
+Open the website in your browser and sign in to your workspace. Home brings back your checkpoint and critical issues. Issues, Notes, Canvas and release planning are available from the sidebar.
 
-Ratio opens on Home. Resume your last checkpoint, review critical findings, or open a queue from the work summary. Issues opens as a list and shows its reader when you select a record. Use the ellipsis beside the Ratio name or press F10 for desktop controls.
+## Roadmap
 
-[Install and sign in](desktop/README.md) · [Private project board](https://github.com/users/MimoAlexer/projects/4/views/2) · [Issues and milestones](docs/github.md) · [Project Health screenshot](docs/images/ratio-health.png) · [Linear reference gallery](docs/design/ratio-0.3/references/index.html) · [Design direction and attribution](docs/design/direction.md) · [Original plans](docs/planning/product-plan.md)
+Windows and Linux desktop apps are planned after the website launch. The existing client implementation is retained for that milestone. [Desktop roadmap issue](https://github.com/MimoAlexer/ratio/issues/12)
+
+[Private project board](https://github.com/users/MimoAlexer/projects/4/views/2) · [Issues and milestones](docs/github.md) · [Project Health screenshot](docs/images/ratio-health.png) · [Linear reference gallery](docs/design/ratio-0.3/references/index.html) · [Design direction and attribution](docs/design/direction.md) · [Original plans](docs/planning/product-plan.md)
 
 ![Home with a saved checkpoint, critical work and a work summary](docs/images/ratio-home.png)
 

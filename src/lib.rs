@@ -208,15 +208,14 @@ async fn ui_asset(
     response
 }
 
-async fn landing(State(s): State<AppState>) -> Html<String> {
+async fn landing() -> Html<String> {
     ui::public_page(
-        "Connect to this workspace",
+        "Ratio",
         html! {
             div.public-workflow {
-                header.view-head { h1 {"Connect to this workspace"} }
-                p.reading {"Enter this server address in Ratio on each computer, then approve each device from the same account."}
-                dl.endpoint-facts { dt {"Server address"} dd { code {(&s.config.base_url)} } }
-                div.view-actions {a.action-primary href="/login"{"Sign in in this browser"} a.action-quiet href="/pricing"{"View plans"}}
+                header.view-head { h1 {"Your development workspace"} }
+                p.reading {"Track issues, link notes and plan your next release in your browser."}
+                div.view-actions {a.action-primary href="/" {"Open workspace"} a.action-quiet href="/pricing" {"View plans"}}
             }
         },
     )

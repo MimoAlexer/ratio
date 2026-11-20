@@ -1,8 +1,10 @@
-# Ratio desktop
+# Ratio desktop · planned
 
 Ratio opens a dedicated application window on Windows and Linux. Each installation keeps its own sign-in profile. Both use the same workspace records when connected to the same HTTPS deployment as the same account. The server owns the projects, issues, notes, release history and entitlements; copying a database between machines is unnecessary.
 
-## Install
+The website is the initial release. This directory preserves the desktop prototype and its qualification history. [Roadmap](https://github.com/MimoAlexer/ratio/issues/12)
+
+## Install a historical build
 
 Download the appropriate package from the [private releases](https://github.com/MimoAlexer/ratio/releases). The release contains SHA256SUMS for both installers.
 

@@ -1,9 +1,5 @@
 name: Desktop installers
 on:
-  push:
-    paths: ['desktop/**', '.github/workflows/desktop.yml', 'rust-toolchain.toml']
-  pull_request:
-    paths: ['desktop/**', '.github/workflows/desktop.yml', 'rust-toolchain.toml']
   workflow_dispatch:
 permissions:
   contents: read
