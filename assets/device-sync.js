@@ -4,9 +4,10 @@
     const rendered = document.querySelector('meta[name="workspace-revision"]')?.content;
     const content = document.querySelector(".page-content[data-view]");
     const desktop = /(?:^|\s)(?:RatioDesktop|WorkingSetDesktop)\//.test(navigator.userAgent);
-    if (!rendered || !content || !desktop) return;
+    // The canvas editor synchronizes its own board revision without reloading an active drawing.
+    if (!rendered || !content || !desktop || content.querySelector("[data-canvas-editor]")) return;
 
-    const readViews = new Set(["home", "issues", "inbox", "notes", "projects", "roadmap", "releases", "insights", "health"]);
+    const readViews = new Set(["home", "issues", "inbox", "notes", "projects", "canvas", "roadmap", "releases", "insights", "health"]);
     const fields = 'input:not([type="hidden"], [type="button"], [type="submit"], [type="reset"], [type="image"]), textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]';
     const notice = document.createElement("div");
     notice.className = "notice row";

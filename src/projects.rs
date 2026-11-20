@@ -721,6 +721,7 @@ async fn overview(
                 a href=(&overview_path) aria-current="page" { "Overview" }
                 a href=(&issues) { "Issues" }
                 a href=(format!("/notes?project={id}")) { "Notes" span { (totals.notes) } }
+                a href=(format!("/canvas?project={id}")) { "Canvas" }
                 a href=(format!("/roadmap?project={id}")) { "Roadmap" span { (totals.milestones) } }
                 a href=(format!("/releases?project={id}")) { "Releases" span { (totals.releases) } }
             }
@@ -823,7 +824,7 @@ async fn overview(
                     }
                     details {
                         summary { "Delete project" }
-                        p { "Permanently delete this project and its issues, notes, releases, files and history. This also disconnects its linked repositories." }
+                        p { "Permanently delete this project and its issues, notes, canvases, releases, files and history. This also disconnects its linked repositories." }
                         form.form-stack.project-form method="post" action=(format!("/projects/{id}/delete")) {
                             (ui::csrf(&auth))
                             label { "Type " code { (&project.key) } " to confirm"

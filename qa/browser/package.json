@@ -3,6 +3,6 @@
   "version":"0.2.0",
   "private":true,
   "type":"module",
-  "scripts":{"test":"node workbench.mjs","test:launcher":"node launcher.mjs"},
+  "scripts":{"test":"node workbench.mjs","test:launcher":"node launcher.mjs","test:canvas":"node canvas.mjs"},
   "devDependencies":{"playwright":"1.62.1"}
 }

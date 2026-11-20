@@ -20,6 +20,7 @@ const GROUPS: &[NavGroup] = &[
     (
         "Planning",
         &[
+            ("canvas", "/canvas", "Canvas"),
             ("roadmap", "/roadmap", "Roadmap"),
             ("releases", "/releases", "Releases"),
             ("insights", "/insights", "Insights"),
@@ -61,6 +62,7 @@ pub(crate) fn icon(name: &str) -> Markup {
         "notes" => "M5 3h10l4 4v14H5zM15 3v5h4M8.5 12h7M8.5 16h5",
         "projects" => "M2.8 7V5.5h6.4l2 2h9.5v11.3H2.8z",
         "roadmap" => "M4 4v16h17M7 7h7M11 11h8M8 15h6",
+        "canvas" => "M3 4h7v5H3zM14 15h7v5h-7zM6.5 9v5a3.5 3.5 0 0 0 3.5 3.5h4M13 6.5h6",
         "releases" => "m3 4 8.5.1 9 9-7.5 7.5-9.7-9.7zM7.4 8h.2",
         "insights" => "M3 4v15.5h18M6 14l4.8-5 3.6 2.8 5.6-7",
         "health" => "M2 12h5l3-7 4.5 14 3-7H22",
@@ -189,6 +191,7 @@ fn head(title: &str) -> Markup {
 fn view_styles(active: &str) -> &'static [&'static str] {
     match active {
         "home" => &["home.css"],
+        "canvas" => &["canvas.css"],
         "issues" | "inbox" => &["issues.css", "issue-detail.css", "relationships.css"],
         "projects" => &["projects.css", "relationships.css"],
         "notes" => &["notes.css", "relationships.css"],
@@ -227,7 +230,8 @@ pub fn page_in_project(
 fn parent_section(section: &str, path: &str, project: Option<Uuid>) -> Markup {
     let parent = match (path, project) {
         (
-            "/issues" | "/notes" | "/releases" | "/roadmap" | "/health" | "/insights" | "/transfer",
+            "/issues" | "/notes" | "/canvas" | "/releases" | "/roadmap" | "/health" | "/insights"
+            | "/transfer",
             Some(id),
         ) => format!("{path}?project={id}"),
         _ => path.to_owned(),

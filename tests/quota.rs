@@ -18,6 +18,119 @@ fn bytes(fields: &[&str]) -> i64 {
 }
 
 #[sqlx::test(migrations = false)]
+async fn canvas_meter_counts_each_retained_version(db: PgPool) -> Result<()> {
+    for migration in ratio_server::MIGRATIONS
+        .iter()
+        .take_while(|m| m.version < 28)
+    {
+        sqlx::raw_sql(&migration.sql).execute(&db).await?;
+    }
+    let (owner, project) = workspace(&db).await?;
+    let (other, _) = workspace(&db).await?;
+    let (board, stored): (Uuid, String) = sqlx::query_as(
+        r#"INSERT INTO canvas_boards(owner_id,project_id,title,document)
+           VALUES($1,$2,'Schéma','{"nodes":[],"edges":[],"strokes":[{"id":"78aa48dc-eccc-439c-ad89-12f20fa581c2","points":[[0,0],[24,12]]}],"version":1}')
+           RETURNING id, document::text"#,
+    )
+    .bind(owner)
+    .bind(project)
+    .fetch_one(&db)
+    .await?;
+    let checkpoint: Uuid = sqlx::query_scalar(
+        "INSERT INTO canvas_checkpoints(owner_id,project_id,board_id,name,title,document)
+         SELECT owner_id,project_id,id,'Étape',title,document FROM canvas_boards WHERE id=$1
+         RETURNING id",
+    )
+    .bind(board)
+    .fetch_one(&db)
+    .await?;
+    sqlx::query(
+        "INSERT INTO canvas_checkpoints(owner_id,project_id,board_id,name,title,document,automatic)
+         SELECT owner_id,project_id,id,'Before restore',title,document,true FROM canvas_boards WHERE id=$1",
+    )
+    .bind(board)
+    .execute(&db)
+    .await?;
+    let base = bytes(&["Schéma", &stored]);
+    let named = base + bytes(&["Étape"]);
+    let automatic = base + bytes(&["Before restore"]);
+    sqlx::raw_sql(include_str!(
+        "../migrations/0028_canvas_storage_and_transfer.sql"
+    ))
+    .execute(&db)
+    .await?;
+    assert_eq!(
+        store::storage_used(&db, owner).await?,
+        base + named + automatic
+    );
+
+    sqlx::query(
+        "INSERT INTO transfer_previews(owner_id,project_id,format,folder,payload,report)
+         VALUES($1,$2,'vault','','0'::bytea,'{}')",
+    )
+    .bind(owner)
+    .bind(project)
+    .execute(&db)
+    .await?;
+    // Both checkpoints still contain the original stroke after clearing the board.
+    let empty: String = sqlx::query_scalar(
+        "UPDATE canvas_boards SET title=title || '🚀',document=jsonb_set(document,'{strokes}','[]')
+         WHERE id=$1 RETURNING document::text",
+    )
+    .bind(board)
+    .fetch_one(&db)
+    .await?;
+    let cleared = bytes(&["Schéma🚀", &empty]);
+    assert!(cleared < base);
+    assert_eq!(
+        store::storage_used(&db, owner).await?,
+        cleared + named + automatic
+    );
+    let stale: bool = sqlx::query_scalar("SELECT stale FROM transfer_previews WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&db)
+        .await?;
+    assert!(stale);
+    sqlx::query("UPDATE transfer_previews SET stale=false WHERE owner_id=$1")
+        .bind(owner)
+        .execute(&db)
+        .await?;
+    sqlx::query(
+        "UPDATE canvas_checkpoints SET title='v2', name='N', document=$2::jsonb WHERE id=$1",
+    )
+    .bind(checkpoint)
+    .bind(&empty)
+    .execute(&db)
+    .await?;
+    assert_eq!(
+        store::storage_used(&db, owner).await?,
+        cleared + bytes(&["v2", "N", &empty]) + automatic
+    );
+    sqlx::query("DELETE FROM canvas_checkpoints WHERE id=$1")
+        .bind(checkpoint)
+        .execute(&db)
+        .await?;
+    assert_eq!(store::storage_used(&db, owner).await?, cleared + automatic);
+    let stale: bool = sqlx::query_scalar("SELECT stale FROM transfer_previews WHERE owner_id=$1")
+        .bind(owner)
+        .fetch_one(&db)
+        .await?;
+    assert!(stale);
+    assert_eq!(store::storage_used(&db, other).await?, 0);
+    sqlx::query("DELETE FROM canvas_checkpoints WHERE board_id=$1 AND automatic")
+        .bind(board)
+        .execute(&db)
+        .await?;
+    assert_eq!(store::storage_used(&db, owner).await?, cleared);
+    sqlx::query("DELETE FROM projects WHERE id=$1")
+        .bind(project)
+        .execute(&db)
+        .await?;
+    assert_eq!(store::storage_used(&db, owner).await?, 0);
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
 async fn migration_preserves_existing_source_and_workflow_charges(db: PgPool) -> Result<()> {
     for migration in ratio_server::MIGRATIONS
         .iter()
@@ -72,6 +185,84 @@ async fn migration_preserves_existing_source_and_workflow_charges(db: PgPool) ->
         .execute(&db)
         .await?;
     assert_eq!(store::storage_used(&db, owner).await?, expected + 2);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn named_and_recovery_checkpoints_share_the_workspace_cap(db: PgPool) -> Result<()> {
+    let (owner, project) = workspace(&db).await?;
+    let (board, document): (Uuid, String) = sqlx::query_as(
+        r#"INSERT INTO canvas_boards(owner_id,project_id,title,document)
+           VALUES($1,$2,'Map','{"version":1,"nodes":[],"edges":[],"strokes":[]}')
+           RETURNING id,document::text"#,
+    )
+    .bind(owner)
+    .bind(project)
+    .fetch_one(&db)
+    .await?;
+    let cap = store::limits("free").storage_bytes;
+    let board_bytes = bytes(&["Map", &document]);
+    let snapshot_bytes = board_bytes + bytes(&["v1"]);
+    let reserved = i32::try_from(board_bytes + 2 * snapshot_bytes)?;
+    // Fill the account with real content, leaving space for exactly two copies.
+    sqlx::query(
+        "INSERT INTO transfer_blobs(owner_id,project_id,path,content_type,bytes,sha256)
+         SELECT $1,$2,n::text,'image/png',
+                repeat('x',CASE WHEN n=20 THEN 5000000-$3 ELSE 5000000 END)::bytea,repeat('0',64)
+           FROM generate_series(1,20) n",
+    )
+    .bind(owner)
+    .bind(project)
+    .bind(reserved)
+    .execute(&db)
+    .await?;
+    assert_eq!(
+        store::storage_used(&db, owner).await?,
+        cap - 2 * snapshot_bytes
+    );
+    let capture = "INSERT INTO canvas_checkpoints(owner_id,project_id,board_id,title,name,document,automatic)
+                   SELECT owner_id,project_id,id,title,'v1',document,$2 FROM canvas_boards WHERE id=$1";
+    for automatic in [false, true] {
+        sqlx::query(capture)
+            .bind(board)
+            .bind(automatic)
+            .execute(&db)
+            .await?;
+    }
+    assert_eq!(store::storage_used(&db, owner).await?, cap);
+    for automatic in [false, true] {
+        let err = sqlx::query(capture)
+            .bind(board)
+            .bind(automatic)
+            .execute(&db)
+            .await
+            .expect_err("each retained version must fit the remaining quota");
+        assert_eq!(
+            err.as_database_error().and_then(|e| e.constraint()),
+            Some("workspace_storage_limit")
+        );
+        assert_eq!(store::storage_used(&db, owner).await?, cap);
+    }
+    let mut replace = db.begin().await?;
+    sqlx::query(capture)
+        .bind(board)
+        .bind(true)
+        .execute(&mut *replace)
+        .await?;
+    sqlx::query("DELETE FROM canvas_checkpoints WHERE board_id=$1 AND NOT automatic")
+        .bind(board)
+        .execute(&mut *replace)
+        .await?;
+    replace.commit().await?;
+    assert_eq!(store::storage_used(&db, owner).await?, cap);
+    sqlx::query("DELETE FROM canvas_checkpoints WHERE board_id=$1")
+        .bind(board)
+        .execute(&db)
+        .await?;
+    assert_eq!(
+        store::storage_used(&db, owner).await?,
+        cap - 2 * snapshot_bytes
+    );
     Ok(())
 }
 
@@ -178,6 +369,21 @@ async fn atomic_imports_allow_net_reductions_and_reject_competing_growth(db: PgP
          FROM generate_series(1,20) n",
     )
     .bind(owner).bind(project).execute(&db).await?;
+    assert_eq!(store::storage_used(&db, owner).await?, cap);
+
+    let board_error = sqlx::query(
+        r#"INSERT INTO canvas_boards(owner_id,project_id,title,document)
+           VALUES($1,$2,'Sketch','{"version":1,"nodes":[],"edges":[],"strokes":[]}')"#,
+    )
+    .bind(owner)
+    .bind(project)
+    .execute(&db)
+    .await
+    .expect_err("board growth must respect the same workspace cap");
+    assert_eq!(
+        board_error.as_database_error().and_then(|e| e.constraint()),
+        Some("workspace_storage_limit")
+    );
     assert_eq!(store::storage_used(&db, owner).await?, cap);
 
     let add_week = "INSERT INTO roadmap_weeks_off(owner_id,project_id,week_of,note) VALUES($1,$2,'2026-11-16','é')";

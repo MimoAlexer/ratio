@@ -67,6 +67,13 @@ INSERT INTO release_membership_events(owner_id,project_id,release_id,issue_id,in
 SELECT owner_id, project_id, :'rel_id', id, true, status FROM issues;
 INSERT INTO notes(owner_id,project_id,title,path,body) VALUES
 (:'keeper_id',:'proj_id','Status','Status.md','![pixel](assets/pixel.png)');
+INSERT INTO canvas_boards(owner_id,project_id,title,document) VALUES
+(:'keeper_id',:'proj_id','Release map','{"version":1,"nodes":[],"edges":[],"strokes":[]}') RETURNING id \gset board_
+INSERT INTO canvas_checkpoints(owner_id,project_id,board_id,name,title,document)
+SELECT owner_id,project_id,id,'Before sketch',title,document FROM canvas_boards WHERE id=:'board_id';
+UPDATE canvas_boards
+SET document=jsonb_set(document,'{strokes}','[{"id":"c6b3de43-5231-4b41-8d23-8a3177f266d6","points":[[0,0],[25,50]]}]')
+WHERE id=:'board_id';
 WITH image AS (
   SELECT decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=','base64') AS bytes
 )
@@ -141,16 +148,20 @@ SELECT (SELECT count(*) FROM portfolio_digest_schedules WHERE enabled AND NOT em
        count(*) FILTER (WHERE status='canceled' AND lease_id IS NULL),
        count(*) FILTER (WHERE status='sent'),count(*) FILTER (WHERE status='pending')
 FROM portfolio_digest_email_outbox;
+SELECT count(*) FROM canvas_boards b JOIN canvas_checkpoints c
+  ON (b.owner_id,b.project_id,b.id)=(c.owner_id,c.project_id,c.board_id)
+ WHERE b.title='Release map' AND c.name='Before sketch'
+   AND b.document #> '{strokes,0,points,1}'='[25,50]'::jsonb AND c.document->'strokes'='[]'::jsonb;
 SQL
 )
-    if [[ "$result" != $'2|1\n1|t\n3|5|0\n0|0|0|0|0\n2|3|2\n2\n1|1|1|0' ]]; then
+    if [[ "$result" != $'2|1\n1|t\n3|5|0\n0|0|0|0|0\n2|3|2\n2\n1|1|1|0\n1' ]]; then
         echo "Restored data verification failed: $result" >&2
         exit 1
     fi
 }
 verify_fixture "$restored_db"
 verified=$(date +%s%N)
-printf 'Verified chart counts, linked PNG, restored access revocation, 2 erasures, 2 stale inbox holds, 2 billing shutdowns and withdrawn email consent.\n'
+printf 'Verified chart counts, linked PNG, drawing and checkpoint, restored access revocation, 2 erasures, 2 stale inbox holds, 2 billing shutdowns and withdrawn email consent.\n'
 printf 'Local logical backup %d ms; restore through data checks %d ms; ciphertext %s bytes.\n' \
     "$(( (dumped - start)/1000000 ))" "$(( (verified - recovering)/1000000 ))" "$(stat -c %s "$archive/database.dump.age")"
 

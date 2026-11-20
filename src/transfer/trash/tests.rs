@@ -172,11 +172,13 @@ async fn trash_restore_preserves_original_binary_quota_and_path(db: PgPool) -> R
     );
     assert_eq!(store::storage_used(&db, owner.user).await?, used);
 
+    let transfer_guard = transfer::TRANSFER_SCENARIO.lock().await;
     let zip = owner
         .get(&app, &format!("/transfer/export/{}", owner.project))
         .await?;
     assert_eq!(zip.status(), StatusCode::OK);
     let zip = zip::ZipArchive::new(Cursor::new(to_bytes(zip.into_body(), 512_000).await?))?;
+    drop(transfer_guard);
     assert!(!zip.file_names().any(|p| p.ends_with(path)));
     let mut tx = db.begin().await?;
     store::lock_project(&mut tx, owner.user, owner.project).await?;

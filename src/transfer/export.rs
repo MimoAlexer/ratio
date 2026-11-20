@@ -1,7 +1,7 @@
 //! The snapshot feeds a bounded queue. The ZIP, manifest and event log live in
 //! anonymous temporary files, including while the HTTP client reads the result.
 
-use super::{Tx, archive, history, native_issues, reserve, vault};
+use super::{Tx, archive, canvas_archive, history, native_issues, reserve, vault};
 use crate::{AppError, AppResult, AppState, auth::Auth};
 use axum::{
     body::Body,
@@ -125,6 +125,7 @@ fn write_zip(project: Uuid, mut records: mpsc::Receiver<Record>) -> AppResult<Op
 async fn snapshot(tx: &mut Tx<'_>, owner: Uuid, project: Uuid, sink: &Sink) -> AppResult<()> {
     vault::stream(tx, owner, project, sink).await?;
     native_issues::stream(tx, owner, project, sink).await?;
+    canvas_archive::stream(tx, owner, project, sink).await?;
     history::stream(tx, owner, project, sink).await
 }
 

@@ -432,6 +432,7 @@ async fn project_http_forms_check_csrf_link_to_the_selected_project_and_export_a
     }
     let export_path = format!("/transfer/export/{id}");
     assert!(overview.contains(&format!("href=\"{export_path}\"")));
+    let transfer_guard = crate::transfer::TRANSFER_SCENARIO.lock().await;
     for forbidden in [
         format!("/projects/{foreign}"),
         format!("/transfer/export/{foreign}"),
@@ -450,6 +451,7 @@ async fn project_http_forms_check_csrf_link_to_the_selected_project_and_export_a
     assert_eq!(export.status(), StatusCode::OK);
     assert_eq!(export.headers()[header::CONTENT_TYPE], "application/zip");
     let bytes = to_bytes(export.into_body(), 256_000).await.unwrap();
+    drop(transfer_guard);
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut exported_note = String::new();
     archive

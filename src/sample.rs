@@ -17,6 +17,7 @@ pub const DEMO_EMAIL: &str = "demo@workspace.test";
 pub const DEMO_PROJECT: Uuid = id(2);
 const PREVIOUS: Uuid = id(3);
 const CURRENT: Uuid = id(4);
+const VAULT_CANVAS: &str = include_str!("../migrations/0029_demo_vault_canvas.sql");
 
 fn issue_id(number: i64) -> Uuid {
     id(100 + number as u64)
@@ -83,6 +84,7 @@ pub async fn seed(db: &PgPool) -> AppResult<()> {
     add_notes(&mut tx, now).await?;
     add_releases(&mut tx, now).await?;
     add_milestones(&mut tx, now).await?;
+    sqlx::query(VAULT_CANVAS).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -520,6 +522,69 @@ async fn add_milestones(tx: &mut Tx<'_>, now: Time) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[sqlx::test]
+    async fn vault_map_upgrades_an_existing_demo_once_and_preserves_edits(db: PgPool) {
+        seed(&db).await.unwrap();
+        let board = id(0x1000);
+        let links: (String, i32, i32, i64) = sqlx::query_as(
+            "SELECT title, jsonb_array_length(document->'nodes'), jsonb_array_length(document->'edges'),
+                (SELECT count(*) FROM jsonb_array_elements(document->'nodes') n WHERE n ? 'source')
+             FROM canvas_boards WHERE owner_id=$1 AND project_id=$2 AND id=$3",
+        )
+        .bind(DEMO_OWNER).bind(DEMO_PROJECT).bind(board).fetch_one(&db).await.unwrap();
+        assert_eq!(links, ("Vault indexing".into(), 6, 5, 5));
+
+        // Simulate the moment before migration 0029 on an older sample where
+        // the developer has already deleted one of the source notes.
+        sqlx::query("DELETE FROM canvas_boards WHERE id=$1")
+            .bind(board)
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM notes WHERE id=$1")
+            .bind(id(11))
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query(VAULT_CANVAS).execute(&db).await.unwrap();
+        let pinned: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT (node->'source'->>'id')::uuid FROM canvas_boards,
+                    jsonb_array_elements(document->'nodes') node
+             WHERE id=$1 AND node ? 'source'",
+        )
+        .bind(board)
+        .fetch_all(&db)
+        .await
+        .unwrap();
+        assert_eq!(pinned.len(), 4);
+        assert!(pinned.contains(&issue_id(32)) && !pinned.contains(&id(11)));
+
+        sqlx::query("UPDATE canvas_boards SET title='My indexing plan' WHERE id=$1")
+            .bind(board)
+            .execute(&db)
+            .await
+            .unwrap();
+        seed(&db).await.unwrap();
+        let title: String = sqlx::query_scalar("SELECT title FROM canvas_boards WHERE id=$1")
+            .bind(board)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(title, "My indexing plan");
+        sqlx::query("DELETE FROM canvas_boards WHERE id=$1")
+            .bind(board)
+            .execute(&db)
+            .await
+            .unwrap();
+        seed(&db).await.unwrap();
+        let boards: i64 = sqlx::query_scalar("SELECT count(*) FROM canvas_boards WHERE id=$1")
+            .bind(board)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(boards, 0);
+    }
 
     #[sqlx::test]
     async fn install_builds_connected_history_and_respects_later_changes(db: PgPool) {

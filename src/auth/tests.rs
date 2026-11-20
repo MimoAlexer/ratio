@@ -24,6 +24,16 @@ fn return_targets_stay_on_this_origin() {
     assert_eq!(safe_next(&issue), issue);
     let editor = format!("/notes/{}/edit", Uuid::new_v4());
     assert_eq!(safe_next(&editor), editor);
+    let drawing = format!("/canvas/{}", Uuid::new_v4());
+    assert_eq!(safe_next(&drawing), drawing);
+    let boards = format!("/canvas?project={}", Uuid::new_v4());
+    assert_eq!(safe_next(&boards), boards);
+    let new_board = format!("{boards}&new=true");
+    assert_eq!(safe_next(&new_board), new_board);
+    assert_eq!(
+        safe_next("/canvas?new=true&project=invalid"),
+        "/canvas?new=true"
+    );
     for target in [
         "https://elsewhere.example",
         "//elsewhere.example/path",

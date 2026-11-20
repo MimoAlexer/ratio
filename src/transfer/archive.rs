@@ -18,6 +18,7 @@ use {
 pub const MAX_UPLOAD: usize = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 2000;
 const MAX_NOTE: usize = 2_000_000;
+const MAX_CANVAS_FILE: usize = 8 * 1024 * 1024;
 const MAX_MANIFEST: usize = 8 * 1024 * 1024;
 const MAX_HISTORY: usize = 16 * 1024 * 1024;
 const MAX_HISTORY_RECORDS: usize = 25_000;
@@ -356,6 +357,16 @@ fn markdown_kind(path: &str, native: bool) -> Option<&'static str> {
     None
 }
 
+fn canvas_kind(file: &ManifestFile) -> Option<&'static str> {
+    let suffix = file.path.strip_prefix("Canvases/")?;
+    if suffix == format!("{}.json", file.id) {
+        return Some("canvas");
+    }
+    let board: Uuid = file.data.get("board_id")?.as_str()?.parse().ok()?;
+    (!board.is_nil() && suffix == format!("{board}/Checkpoints/{}.json", file.id))
+        .then_some("canvas_checkpoint")
+}
+
 // Tiny JSON arrays have considerable allocation overhead for each byte on the
 // wire. Count structural punctuation before building the serde_json Value tree.
 fn check_json_shape(bytes: &[u8]) -> AppResult<()> {
@@ -414,8 +425,9 @@ fn read_manifest(bytes: &[u8], has_native_history: bool) -> AppResult<Option<Man
     let mut ids = HashSet::new();
     let mut paths = HashSet::new();
     for f in &mut manifest.files {
-        let expected =
-            markdown_kind(&f.path, true).or_else(|| mime_for_extension(&f.path).map(|_| "blob"));
+        let expected = markdown_kind(&f.path, true)
+            .or_else(|| mime_for_extension(&f.path).map(|_| "blob"))
+            .or_else(|| canvas_kind(f));
         if !valid_path(&f.path)
             || f.id.is_nil()
             || !ids.insert(f.id)
@@ -429,6 +441,27 @@ fn read_manifest(bytes: &[u8], has_native_history: bool) -> AppResult<Option<Man
             ));
         }
         f.sha256.make_ascii_lowercase();
+    }
+    let boards: HashSet<_> = manifest
+        .files
+        .iter()
+        .filter(|f| f.kind == "canvas")
+        .map(|f| f.id)
+        .collect();
+    for checkpoint in manifest
+        .files
+        .iter()
+        .filter(|f| f.kind == "canvas_checkpoint")
+    {
+        if !checkpoint.data["board_id"]
+            .as_str()
+            .and_then(|s| s.parse::<Uuid>().ok())
+            .is_some_and(|board| boards.contains(&board))
+        {
+            return Err(invalid(
+                "A canvas checkpoint refers to a board missing from the manifest.",
+            ));
+        }
     }
     Ok(Some(manifest))
 }
@@ -517,9 +550,9 @@ pub fn parse(bytes: &[u8], folder: &str, image_limit: i64) -> AppResult<Package>
     let mut history = Vec::new();
     let mut entries = Vec::new();
     let mut has_history = false;
-    let native_paths: HashSet<_> = manifest
+    let native_paths: HashMap<_, _> = manifest
         .iter()
-        .flat_map(|m| m.files.iter().map(|f| f.path.as_str()))
+        .flat_map(|m| m.files.iter().map(|f| (f.path.as_str(), f.kind.as_str())))
         .collect();
     let mut skipped_macos = 0;
     for m in selected {
@@ -528,14 +561,14 @@ pub fn parse(bytes: &[u8], folder: &str, image_limit: i64) -> AppResult<Package>
         }
         // A user may explicitly author a note inside a folder named __MACOSX.
         // Preserve it when its identity is recorded by the native export.
-        if macos_metadata(&m.path) && !native_paths.contains(m.path.as_str()) {
+        if macos_metadata(&m.path) && !native_paths.contains_key(m.path.as_str()) {
             skipped_macos += 1;
             continue;
         }
         // These are human-readable copies of checkpoint state carried by issues.
         if manifest.is_some()
             && m.path.starts_with("Checkpoints/")
-            && !native_paths.contains(m.path.as_str())
+            && !native_paths.contains_key(m.path.as_str())
         {
             continue;
         }
@@ -571,6 +604,17 @@ pub fn parse(bytes: &[u8], folder: &str, image_limit: i64) -> AppResult<Package>
                     "{} must be UTF-8 Markdown without NUL bytes.",
                     m.path
                 )));
+            }
+            (kind, data)
+        } else if let Some(&kind @ ("canvas" | "canvas_checkpoint")) =
+            native_paths.get(m.path.as_str())
+        {
+            let data = content(&mut zip, &m, MAX_CANVAS_FILE)?;
+            check_json_shape(&data)?;
+            if data.iter().find(|c| !c.is_ascii_whitespace()) != Some(&b'{')
+                || serde_json::from_slice::<serde::de::IgnoredAny>(&data).is_err()
+            {
+                return Err(invalid(format!("{} must be a JSON object.", m.path)));
             }
             (kind, data)
         } else if mime_for_extension(&m.path).is_some() {
@@ -865,6 +909,73 @@ mod tests {
         });
         let encoded = serde_json::to_vec(&wrong_kind).unwrap();
         assert!(parse(&fixture(&[("manifest.json", &encoded)]), "", 1000).is_err());
+    }
+
+    #[test]
+    fn canvas_json_requires_a_native_manifest_and_matching_board_identity() {
+        let board = Uuid::new_v4();
+        let snapshot = Uuid::new_v4();
+        let board_path = format!("Canvases/{board}.json");
+        let snapshot_path = format!("Canvases/{board}/Checkpoints/{snapshot}.json");
+        let document =
+            br#"{"title":"Release","document":{"version":1,"nodes":[],"edges":[],"strokes":[]}}"#;
+        let manifest = Manifest {
+            version: 1,
+            project: Uuid::new_v4(),
+            files: vec![
+                ManifestFile {
+                    id: board,
+                    path: board_path.clone(),
+                    kind: "canvas".into(),
+                    sha256: super::super::hash(document),
+                    data: Value::Null,
+                },
+                ManifestFile {
+                    id: snapshot,
+                    path: snapshot_path.clone(),
+                    kind: "canvas_checkpoint".into(),
+                    sha256: super::super::hash(b"{}"),
+                    data: serde_json::json!({"board_id":board}),
+                },
+            ],
+        };
+        let metadata = serde_json::to_vec(&manifest).unwrap();
+        let archive = fixture(&[
+            ("manifest.json", &metadata),
+            (&board_path, document),
+            (&snapshot_path, b"{}"),
+        ]);
+        let restored = parse(&archive, "", 1024).unwrap();
+        assert!(
+            restored
+                .entries
+                .iter()
+                .any(|e| e.kind == "canvas" && e.bytes == document)
+        );
+        assert!(
+            restored
+                .entries
+                .iter()
+                .any(|e| e.kind == "canvas_checkpoint" && e.bytes == b"{}")
+        );
+        let vault = parse(&fixture(&[(&board_path, document)]), "", 1024).unwrap();
+        assert!(vault.entries.is_empty());
+        assert!(vault.warnings.iter().any(|w| w.contains(&board_path)));
+        assert!(
+            parse(
+                &fixture(&[("manifest.json", &metadata), (&board_path, b"[]")]),
+                "",
+                1024
+            )
+            .is_err()
+        );
+
+        let mut wrong = manifest.clone();
+        wrong.files[1].data["board_id"] = serde_json::json!(Uuid::new_v4());
+        assert!(read_manifest(&serde_json::to_vec(&wrong).unwrap(), true).is_err());
+        let mut orphan = manifest;
+        orphan.files.remove(0);
+        assert!(read_manifest(&serde_json::to_vec(&orphan).unwrap(), true).is_err());
     }
     #[test]
     fn unrelated_application_manifest_does_not_turn_a_vault_into_a_native_export() {

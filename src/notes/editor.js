@@ -69,6 +69,24 @@
     }
   }
 
+  // An explicit account sign-out clears that person's canvas recovery copies as
+  // well as note drafts. Each tab independently owns its sessionStorage.
+  function clearCanvasCopies(user, epoch) {
+    const prefix = "ratio.canvas.v1." + user + ".";
+    for (const area of ["localStorage", "sessionStorage"]) {
+      try {
+        const storage = window[area];
+        for (const key of Object.keys(storage)) {
+          if (!key.startsWith(prefix)) continue;
+          let current = false;
+          try { current = epoch !== null && JSON.parse(storage.getItem(key))?.epoch === epoch; }
+          catch { /* Remove invalid recovery entries for this account. */ }
+          if (!current) storage.removeItem(key);
+        }
+      } catch { /* Storage can be unavailable. The new epoch still prevents recovery. */ }
+    }
+  }
+
   function receive(change) {
     if (!change || typeof change.user !== "string" || !change.user) return;
     if (change.type === "logout") {
@@ -76,6 +94,7 @@
       if (current !== null && change.epoch !== null && current !== change.epoch) return;
       if (current !== null && change.epoch === null && change.previous && current !== change.previous) return;
       purgeObsolete(change.user, current === null ? null : change.epoch);
+      clearCanvasCopies(change.user, current === null ? null : change.epoch);
     } else if (change.type === "delete" && change.project && change.note) {
       removeDraft(draftKey(change.user, change.project, change.note));
     } else {

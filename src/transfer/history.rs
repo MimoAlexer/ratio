@@ -621,7 +621,7 @@ fn validate_row(table: &str, row: &Value) -> AppResult<()> {
 
 // Deterministic local IDs keep earlier references stable when a later archive
 // includes new events that refer back to a previous restore.
-fn target_id(owner: Uuid, project: Uuid, source: Uuid, kind: &str, id: Uuid) -> Uuid {
+pub(super) fn target_id(owner: Uuid, project: Uuid, source: Uuid, kind: &str, id: Uuid) -> Uuid {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     for part in [owner, project, source, id] {

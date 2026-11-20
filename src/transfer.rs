@@ -1,4 +1,6 @@
 mod archive;
+mod canvas_archive;
+mod canvas_restore;
 mod export;
 mod history;
 mod linear;
@@ -28,6 +30,9 @@ use uuid::Uuid;
 
 type Tx<'a> = Transaction<'a, Postgres>;
 static TRANSFERS: Semaphore = Semaphore::const_new(2);
+#[cfg(test)]
+// Real downloads and upload tests share the same two slots as the concurrency test.
+pub(crate) static TRANSFER_SCENARIO: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static OWNER_SLOTS: LazyLock<Mutex<HashMap<Uuid, Weak<Semaphore>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 struct TransferSlot {
@@ -307,6 +312,7 @@ async fn apply_vault(
     let mut ids = HashMap::new();
     let mut assigned = HashSet::new();
     let mut releases = Vec::new();
+    let mut canvases = Vec::new();
     let mut note_ids = Vec::new();
     for entry in pack.entries {
         let meta = files.get(entry.path.as_str()).copied();
@@ -324,6 +330,11 @@ async fn apply_vault(
                     mode,
                 )
                 .await?
+            }
+            "canvas" | "canvas_checkpoint" => {
+                let metadata = meta.ok_or_else(|| bad("Missing canvas metadata"))?;
+                canvases.push((metadata, entry.bytes));
+                continue;
             }
             "release" => {
                 releases.push((
@@ -351,6 +362,13 @@ async fn apply_vault(
     crate::notes::reindex(tx, owner, project).await?;
     if let Some(m) = manifest {
         map_missing(tx, owner, project, m, &mut ids).await?;
+        if !canvases.is_empty() {
+            report
+                .fields
+                .push("Planning canvases, source pins and saved checkpoints".into());
+            let context = canvas_restore::Destination::new(tx, owner, project, m, &ids).await?;
+            context.restore(tx, canvases, mode, &mut report).await?;
+        }
         for (name, action, count) in history::restore(
             tx,
             owner,
@@ -560,6 +578,7 @@ mod admission_tests {
     use super::*;
     #[tokio::test]
     async fn a_slow_transfer_leaves_capacity_for_another_owner() {
+        let _guard = TRANSFER_SCENARIO.lock().await;
         let first = Uuid::new_v4();
         let active = reserve(first).await.unwrap();
         assert!(

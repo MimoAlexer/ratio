@@ -21,72 +21,99 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - name: Install GTK3 and WebKitGTK 4.1 build and smoke-test tools
+      - name: Install GTK3 and WebKitGTK 4.1 build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev dpkg-dev desktop-file-utils dbus-x11 xvfb xauth python3-gi gir1.2-atspi-2.0 at-spi2-core
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev dpkg-dev desktop-file-utils
           rustup show active-toolchain
       - name: Test and build the Linux client
         run: |
           cargo test --locked
           cargo build --release --locked
-      - name: Fetch the published upgrade fixtures
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          legacy=working-set_0.1.0_amd64.deb
-          gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern "$legacy" --dir "$RUNNER_TEMP"
-          (cd "$RUNNER_TEMP" && echo "31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1  $legacy" | sha256sum --check)
-          for version in 0.2.0 0.2.1 0.3.0; do
-            gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "ratio_${version}_amd64.deb" --dir "$RUNNER_TEMP"
-          done
-          (cd "$RUNNER_TEMP" && sha256sum --check <<'SUMS'
-          9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b  ratio_0.2.0_amd64.deb
-          a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2  ratio_0.2.1_amd64.deb
-          4b534a35e8e8556be54e0ba7d8f0bce897d9912ba2a1ed54473b96d005cd55ed  ratio_0.3.0_amd64.deb
-          SUMS
-          )
-      - name: Test fresh install and upgrade on Ubuntu
+      - name: Package the Linux client
         run: |
           packaging/linux/build.sh target/release/ratio dist
-          for scenario in fresh working-set-upgrade 0.2.0 0.2.1 0.3.0; do
-            export XDG_DATA_HOME="$RUNNER_TEMP/ratio-$scenario"
-            profile="$XDG_DATA_HOME/Ratio"
-            if [[ "$scenario" == working-set-upgrade ]]; then
-              sudo apt-get install -y "$RUNNER_TEMP/working-set_0.1.0_amd64.deb"
-              test -x /usr/bin/working-set
-              test -f /usr/share/applications/working-set.desktop
-              profile="$XDG_DATA_HOME/Working Set"
-            elif [[ "$scenario" != fresh ]]; then
-              sudo apt-get install -y "$RUNNER_TEMP/ratio_${scenario}_amd64.deb"
-              test "$(ratio --version)" = "Ratio $scenario"
-            fi
-            if [[ "$scenario" != fresh ]]; then
-              mkdir -p "$profile"
-              echo retained > "$profile/installer-ci-sentinel"
-            fi
-            sudo apt-get install -y ./dist/ratio_*_amd64.deb
-            test "$(ratio --version)" = "Ratio $(dpkg-deb -f ./dist/ratio_*_amd64.deb Version)"
-            desktop-file-validate /usr/share/applications/ratio.desktop
-            test -f /usr/share/icons/hicolor/256x256/apps/ratio.png
-            test ! -e /usr/bin/working-set
-            test ! -e /usr/share/applications/working-set.desktop
-            test ! -e /usr/share/icons/hicolor/256x256/apps/working-set.png
-            timeout 90 xvfb-run -a dbus-run-session -- /usr/bin/python3 packaging/linux/smoke-controls.py
-            test -d "$profile/launcher"
-            if [[ "$scenario" == fresh ]]; then echo retained > "$profile/installer-ci-sentinel"; fi
-            sudo apt-get remove -y ratio
-            test ! -e /usr/bin/ratio
-            test ! -e /usr/share/applications/ratio.desktop
-            test ! -e /usr/share/icons/hicolor/256x256/apps/ratio.png
-            test "$(cat "$profile/installer-ci-sentinel")" = retained
-          done
           (cd dist && sha256sum *.deb > SHA256SUMS)
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: Ratio-linux-amd64
           path: desktop/dist/
           if-no-files-found: error
+
+  linux-install:
+    needs: linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: [fresh, '0.1.0', '0.2.0', '0.2.1', '0.3.0', '0.3.1']
+    env:
+      FIXTURE: ${{ matrix.fixture }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Ratio-linux-amd64
+          path: desktop/dist
+      - name: Prepare desktop smoke tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends desktop-file-utils dbus-x11 xvfb xauth python3-gi gir1.2-gtk-3.0 gir1.2-atspi-2.0 at-spi2-core
+          (cd dist && sha256sum --check SHA256SUMS)
+      - name: Install the published predecessor
+        if: matrix.fixture != 'fresh'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          package="ratio_${FIXTURE}_amd64.deb"
+          case "$FIXTURE" in
+            0.1.0) package=working-set_0.1.0_amd64.deb
+                   checksum=31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1 ;;
+            0.2.0) checksum=9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b ;;
+            0.2.1) checksum=a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2 ;;
+            0.3.0) checksum=4b534a35e8e8556be54e0ba7d8f0bce897d9912ba2a1ed54473b96d005cd55ed ;;
+            0.3.1) checksum=86c8f5b4372f4e208c4c9605f5844f5701349134948d0b963c8274a82f6b3975 ;;
+            *) exit 1 ;;
+          esac
+          gh release download "v$FIXTURE" --repo "$GITHUB_REPOSITORY" --pattern "$package" --dir "$RUNNER_TEMP"
+          (cd "$RUNNER_TEMP" && echo "$checksum  $package" | sha256sum --check)
+          sudo apt-get install -y "$RUNNER_TEMP/$package"
+          if [[ "$FIXTURE" == 0.1.0 ]]; then
+            test -x /usr/bin/working-set
+            test -f /usr/share/applications/working-set.desktop
+          else
+            test "$(ratio --version)" = "Ratio $FIXTURE"
+          fi
+      - name: Verify installation, launcher, controls and removal
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/ratio-profile"
+          profile="$XDG_DATA_HOME/Ratio"
+          if [[ "$FIXTURE" == 0.1.0 ]]; then profile="$XDG_DATA_HOME/Working Set"; fi
+          if [[ "$FIXTURE" != fresh ]]; then
+            mkdir -p "$profile"
+            echo retained > "$profile/installer-ci-sentinel"
+          fi
+          sudo apt-get install -y ./dist/ratio_*_amd64.deb
+          test "$(ratio --version)" = "Ratio $(dpkg-deb -f ./dist/ratio_*_amd64.deb Version)"
+          desktop-file-validate /usr/share/applications/ratio.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/ratio.png
+          test ! -e /usr/bin/working-set
+          test ! -e /usr/share/applications/working-set.desktop
+          test ! -e /usr/share/icons/hicolor/256x256/apps/working-set.png
+          timeout 90 xvfb-run -a dbus-run-session -- /usr/bin/python3 packaging/linux/smoke-controls.py
+          test -d "$profile/launcher"
+          if [[ "$FIXTURE" == fresh ]]; then echo retained > "$profile/installer-ci-sentinel"; fi
+          sudo apt-get remove -y ratio
+          test ! -e /usr/bin/ratio
+          test ! -e /usr/share/applications/ratio.desktop
+          test ! -e /usr/share/icons/hicolor/256x256/apps/ratio.png
+          test "$(cat "$profile/installer-ci-sentinel")" = retained
 
   windows:
     runs-on: windows-2025
@@ -153,7 +180,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [working-set, '0.2.0', '0.2.1', '0.3.0']
+        fixture: [working-set, '0.2.0', '0.2.1', '0.3.0', '0.3.1']
     runs-on: windows-2025
     timeout-minutes: 12
     steps:

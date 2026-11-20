@@ -67,6 +67,7 @@
         issue: "M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM9 12h6",
         note: "M5 3h10l4 4v14H5zM15 3v5h4M8.5 12h7M8.5 16h5",
         project: "M3 7V5h6l2 2h10v12H3z",
+        canvas: "M3 4h7v5H3zM14 15h7v5h-7zM6.5 9v5a3.5 3.5 0 0 0 3.5 3.5h4M13 6.5h6",
         create: "M12 5v14M5 12h14",
         navigate: "M5 5v6a3 3 0 0 0 3 3h11m-4-4 4 4-4 4",
     };
@@ -104,12 +105,15 @@
             issueUrl.hash = "new-issue";
             add("Create issue", "create", issueUrl.href, "new issue create issue add issue");
             add("Create note", "create", destination("/notes/new", project).href, "new note create note add note markdown");
+            const canvasUrl = destination("/canvas", project);
+            canvasUrl.searchParams.set("new", "true");
+            add("Create board", "create", canvasUrl.href, "create board new board draw diagram canvas map");
         }
         if (term) {
             for (const link of document.querySelectorAll(".sidebar a.nav-link")) {
                 const title = link.textContent.trim();
                 const url = new URL(link.href);
-                if (project && ["/", "/issues", "/notes", "/roadmap", "/releases", "/insights", "/health"].includes(url.pathname)) {
+                if (project && ["/", "/issues", "/notes", "/canvas", "/roadmap", "/releases", "/insights", "/health"].includes(url.pathname)) {
                     url.searchParams.set("project", project);
                 }
                 add("Go to " + title, "navigate", url.href, "go to " + title.toLowerCase());
@@ -121,7 +125,7 @@
     }
 
     function validResult(entry) {
-        const prefix = {issue: "issues", note: "notes", project: "projects"}[entry?.kind];
+        const prefix = {issue: "issues", note: "notes", project: "projects", canvas: "canvas"}[entry?.kind];
         return prefix && uuid.test(entry.id) && entry.href === "/" + prefix + "/" + entry.id
             && typeof entry.title === "string" && typeof entry.detail === "string";
     }
@@ -227,7 +231,7 @@
         let message;
         if (phase === "loading") message = "Searching…";
         else if (phase === "error") message = "Workspace search is unavailable.";
-        else if (!options.length) message = "No matching issues, notes, projects or actions.";
+        else if (!options.length) message = "No matches.";
         else if (!query && !results.length) message = "No recent work.";
         else message = options.length + (options.length === 1 ? " option available." : " options available.");
         status.classList.toggle("command-sr", holdRows || phase === "ready" && (results.length > 0 || (query && options.length > 0)));

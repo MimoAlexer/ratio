@@ -190,6 +190,23 @@ pub(super) fn safe_next(value: &str) -> String {
     if path.starts_with("//") {
         return "/".into();
     }
+    if let ("/canvas", Some(query)) = (path, uri.query()) {
+        let mut create = false;
+        let mut project = None;
+        for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+            match key.as_ref() {
+                "new" => create = value == "true",
+                "project" => project = Uuid::parse_str(&value).ok(),
+                _ => {}
+            }
+        }
+        if create {
+            return match project {
+                Some(id) => format!("/canvas?project={id}&new=true"),
+                None => "/canvas?new=true".into(),
+            };
+        }
+    }
     if path == "/desktop/authorize" {
         return uri
             .query()
@@ -212,7 +229,7 @@ pub(super) fn safe_next(value: &str) -> String {
     }
     let collection = match pieces.as_slice() {
         [
-            top @ ("projects" | "issues" | "notes" | "roadmap" | "releases" | "insights"
+            top @ ("projects" | "issues" | "notes" | "canvas" | "roadmap" | "releases" | "insights"
             | "integrations" | "billing" | "transfer" | "settings" | "search" | "workflows"
             | "health"),
         ] => *top,
@@ -226,9 +243,10 @@ pub(super) fn safe_next(value: &str) -> String {
         ["transfer", "review", id] if Uuid::parse_str(id).is_ok() => {
             return format!("/transfer/review/{id}");
         }
-        [top @ ("projects" | "issues" | "notes" | "releases"), id]
-            if Uuid::parse_str(id).is_ok() =>
-        {
+        [
+            top @ ("projects" | "issues" | "notes" | "canvas" | "releases"),
+            id,
+        ] if Uuid::parse_str(id).is_ok() => {
             return format!("/{top}/{id}");
         }
         _ => return "/".into(),

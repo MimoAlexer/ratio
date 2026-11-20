@@ -34,6 +34,7 @@ enum Kind {
     Issue,
     Note,
     Project,
+    Canvas,
 }
 
 #[derive(FromRow, Serialize)]
@@ -116,6 +117,14 @@ async fn lookup(db: &PgPool, owner: Uuid, query: Search) -> AppResult<Matches> {
              WHERE $3='' OR strpos(lower(n.title),lower($3))>0 OR strpos(lower(n.path),lower($3))>0
              ORDER BY rank, p.archived, n.updated_at DESC, n.id LIMIT 4)
             UNION ALL
+            (SELECT 'canvas', b.id, b.title, p.key || ' · Canvas', '/canvas/' || b.id::text,
+                    b.updated_at, p.archived,
+                    CASE WHEN lower(b.title) = lower($3) THEN 1
+                         WHEN starts_with(lower(b.title),lower($3)) THEN 2 ELSE 3 END AS rank
+             FROM visible_projects p JOIN canvas_boards b ON b.project_id=p.id AND b.owner_id=$1
+             WHERE $3='' OR strpos(lower(b.title),lower($3))>0
+             ORDER BY rank, p.archived, b.updated_at DESC, b.id LIMIT 4)
+            UNION ALL
             (SELECT 'project', p.id, p.name, p.key, '/projects/' || p.id::text, p.created_at, p.archived,
                     CASE WHEN lower(p.key) = lower($3) OR lower(p.name) = lower($3) THEN 1
                          WHEN starts_with(lower(p.name),lower($3)) THEN 2 ELSE 3 END AS rank
@@ -186,6 +195,10 @@ mod tests {
                 .bind(owner).bind(project).execute(&db).await.unwrap();
             sqlx::query("INSERT INTO notes(owner_id,project_id,title,path) VALUES($1,$2,'Release notes','design/ratio.md')")
                 .bind(owner).bind(project).execute(&db).await.unwrap();
+            sqlx::query("INSERT INTO canvas_boards(owner_id,project_id,title,document) VALUES($1,$2,'Release diagram',$3)")
+                .bind(owner).bind(project)
+                .bind(serde_json::json!({"version":1,"nodes":[],"edges":[],"strokes":[]}))
+                .execute(&db).await.unwrap();
         }
         let recent = find(&db, me, None, "   ").await;
         assert!(recent.can_create);
@@ -193,6 +206,13 @@ mod tests {
         let results = find(&db, me, Some(here), "  rAtiO   ").await;
         assert_eq!(results.scope.unwrap().id, here);
         assert_eq!(results.results.len(), 8); // six issues, one project, one note
+        let drawings = find(&db, me, Some(here), "release diagram").await;
+        assert_eq!(drawings.results.len(), 1);
+        assert_eq!(drawings.results[0].kind, Kind::Canvas);
+        assert_eq!(
+            drawings.results[0].href,
+            format!("/canvas/{}", drawings.results[0].id)
+        );
         assert!(
             results
                 .results

@@ -10,41 +10,85 @@ use std::{
 };
 use tempfile::{NamedTempFile, TempDir};
 
-fn suggested_name(origin: &ServerOrigin, candidate: &str) -> Option<String> {
-    if !origin.same_origin(candidate) {
-        return None;
-    }
-    let url = url::Url::parse(candidate).ok()?;
-    let id = url.path().strip_prefix("/transfer/export/")?;
-    if id.len() != 36
-        || !id.bytes().enumerate().all(|(i, byte)| {
-            if matches!(i, 8 | 13 | 18 | 23) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
-        })
-    {
-        return None;
-    }
-    Some(format!("project-{id}.zip"))
+#[derive(Debug, Eq, PartialEq)]
+struct ExportFormat {
+    prefix: &'static str,
+    extension: &'static str,
+    mime: &'static str,
+    title: &'static str,
+    filter: &'static str,
 }
 
-const INVALID_EXPORT: &str =
-    "The server did not return the requested project ZIP. Check your sign-in and retry the export.";
+const ZIP: ExportFormat = ExportFormat {
+    prefix: "project",
+    extension: "zip",
+    mime: "application/zip",
+    title: "Save project export",
+    filter: "ZIP archive",
+};
+const SVG: ExportFormat = ExportFormat {
+    prefix: "canvas",
+    extension: "svg",
+    mime: "image/svg+xml",
+    title: "Save canvas SVG",
+    filter: "SVG image",
+};
 
-fn expected_response(origin: &ServerOrigin, job: &Export, uri: &str, mime: &str) -> bool {
-    mime.eq_ignore_ascii_case("application/zip")
-        && suggested_name(origin, uri).as_deref() == Some(job.name.as_str())
-}
-
-struct Export {
-    directory: TempDir,
+#[derive(Debug, Eq, PartialEq)]
+struct ExportFile {
+    format: &'static ExportFormat,
     name: String,
 }
 
+impl ExportFile {
+    fn from_url(origin: &ServerOrigin, candidate: &str) -> Option<Self> {
+        if !origin.same_origin(candidate) {
+            return None;
+        }
+        let url = url::Url::parse(candidate).ok()?;
+        let (format, id) = if let Some(id) = url.path().strip_prefix("/transfer/export/") {
+            (&ZIP, id)
+        } else {
+            // Accept exactly the canonical canvas path, without aliases, queries or fragments.
+            let path = candidate.strip_prefix(origin.as_str())?;
+            let id = path.strip_prefix("/canvas/")?.strip_suffix("/export.svg")?;
+            if id.bytes().any(|b| b.is_ascii_uppercase()) {
+                return None;
+            }
+            (&SVG, id)
+        };
+        if id.len() != 36
+            || !id.bytes().enumerate().all(|(i, byte)| {
+                if matches!(i, 8 | 13 | 18 | 23) {
+                    byte == b'-'
+                } else {
+                    byte.is_ascii_hexdigit()
+                }
+            })
+        {
+            return None;
+        }
+        let name = format!("{}-{id}.{}", format.prefix, format.extension);
+        Some(Self { format, name })
+    }
+
+    fn accepts_response(&self, origin: &ServerOrigin, uri: &str, mime: &str) -> bool {
+        let media_type = mime.split(';').next().unwrap_or_default().trim();
+        media_type.eq_ignore_ascii_case(self.format.mime)
+            && Self::from_url(origin, uri).as_ref() == Some(self)
+    }
+}
+
+const INVALID_EXPORT: &str =
+    "The server did not return the requested export. Check your sign-in and retry.";
+
+struct Export {
+    directory: TempDir,
+    file: ExportFile,
+}
+
 impl Export {
-    fn new(name: String) -> io::Result<Self> {
+    fn new(file: ExportFile) -> io::Result<Self> {
         let mut builder = tempfile::Builder::new();
         builder.prefix("ratio-export-");
         #[cfg(unix)]
@@ -54,12 +98,12 @@ impl Export {
         }
         Ok(Self {
             directory: builder.tempdir()?,
-            name,
+            file,
         })
     }
 
     fn archive(&self) -> PathBuf {
-        self.directory.path().join("export.zip")
+        self.directory.path().join(&self.file.name)
     }
 
     fn save(&self, target: &Path) -> io::Result<()> {
@@ -72,7 +116,7 @@ impl Export {
             Err(_) => {}
         }
         // The user can choose another volume or one without hard links. Stage
-        // the copy on that volume first so a partial ZIP never becomes visible.
+        // the copy on that volume first so a partial file never becomes visible.
         let parent = target.parent().ok_or(io::ErrorKind::InvalidInput)?;
         let copy = NamedTempFile::new_in(parent)?.into_temp_path();
         fs::copy(&archive, &copy)?;
@@ -102,10 +146,10 @@ pub fn configure<'a>(
     let allowed = origin.clone();
     // Replace Wry's built-in automatic-saves handler before creating the view.
     let builder = builder.with_download_started_handler(move |candidate, destination| {
-        let Some(name) = suggested_name(&allowed, &candidate) else {
+        let Some(file) = ExportFile::from_url(&allowed, &candidate) else {
             return false;
         };
-        let job = match Export::new(name) {
+        let job = match Export::new(file) {
             Ok(job) => job,
             Err(err) => {
                 let message = format!("Could not start the export.\n\n{err}");
@@ -136,7 +180,7 @@ pub fn configure<'a>(
 impl Downloads {
     pub fn install(self, view: &wry::WebView) -> Result<(), String> {
         use gtk::prelude::*;
-        use webkit2gtk::{DownloadExt, URIResponseExt, WebContextExt, WebViewExt};
+        use webkit2gtk::{DownloadExt, URIRequestExt, URIResponseExt, WebContextExt, WebViewExt};
         use wry::WebViewExtUnix;
         let native = view.webview();
         let context = native
@@ -177,15 +221,16 @@ impl Downloads {
                 let Some(job) = completed.borrow_mut().remove(&path) else {
                     return;
                 };
-                if download.response().is_some_and(|response| {
-                    (200..300).contains(&response.status_code())
-                        && response
-                            .uri()
-                            .zip(response.mime_type())
-                            .is_some_and(|(uri, mime)| {
-                                expected_response(&allowed, &job, &uri, &mime)
-                            })
-                }) {
+                let allowed_method = job.file.format != &SVG
+                    || download.request().and_then(|r| r.http_method()).as_deref() == Some("GET");
+                if allowed_method
+                    && download.response().is_some_and(|response| {
+                        (200..300).contains(&response.status_code())
+                            && response.uri().zip(response.mime_type()).is_some_and(
+                                |(uri, mime)| job.file.accepts_response(&allowed, &uri, &mime),
+                            )
+                    })
+                {
                     gtk_save_as(job, parent.clone());
                 } else {
                     gtk_error(parent.clone(), INVALID_EXPORT.into());
@@ -215,7 +260,7 @@ fn gtk_error(parent: Option<gtk::Window>, message: String) {
             gtk::ButtonsType::Close,
             &message,
         );
-        dialog.set_title("Project export");
+        dialog.set_title("Export");
         dialog.run_future().await;
         dialog.close();
     });
@@ -229,7 +274,7 @@ fn gtk_save_as(job: Export, parent: Option<gtk::Window>) {
         let job = Arc::new(job);
         loop {
             let chooser = gtk::FileChooserNative::new(
-                Some("Save project export"),
+                Some(job.file.format.title),
                 parent.as_ref(),
                 gtk::FileChooserAction::Save,
                 Some("Save"),
@@ -238,7 +283,13 @@ fn gtk_save_as(job: Export, parent: Option<gtk::Window>) {
             if let Some(directory) = dirs::download_dir().filter(|d| d.is_dir()) {
                 chooser.set_current_folder(directory);
             }
-            chooser.set_current_name(&job.name);
+            if job.file.format == &SVG {
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some(job.file.format.filter));
+                filter.add_pattern("*.svg");
+                chooser.add_filter(filter);
+            }
+            chooser.set_current_name(&job.file.name);
             if chooser.run_future().await != gtk::ResponseType::Accept {
                 return;
             }
@@ -269,6 +320,50 @@ fn gtk_save_as(job: Export, parent: Option<gtk::Window>) {
 }
 
 #[cfg(target_os = "windows")]
+fn require_svg_get(view: &wry::WebView, origin: ServerOrigin) -> windows_core::Result<()> {
+    use webview2_com::{
+        Microsoft::Web::WebView2::Win32::COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+        WebResourceRequestedEventHandler, take_pwstr,
+    };
+    use windows_core::{HSTRING, PWSTR};
+    use wry::WebViewExtWindows;
+
+    // DownloadOperation has no HTTP method. Check it at the request stage while
+    // WebView2 still exposes it, preserving the signed-in browser's normal GET.
+    let webview = view.webview();
+    let environment = view.environment();
+    let pattern = HSTRING::from(format!("{origin}/canvas/*/export.svg"));
+    unsafe {
+        webview.AddWebResourceRequestedFilter(&pattern, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)?;
+        webview.add_WebResourceRequested(
+            &WebResourceRequestedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()) };
+                let request = args.Request()?;
+                let mut method = PWSTR::null();
+                request.Method(&mut method)?;
+                if take_pwstr(method) == "GET" {
+                    return Ok(());
+                }
+                let mut uri = PWSTR::null();
+                request.Uri(&mut uri)?;
+                if ExportFile::from_url(&origin, &take_pwstr(uri)).is_some_and(|f| f.format == &SVG)
+                {
+                    let response = environment.CreateWebResourceResponse(
+                        None,
+                        405,
+                        &HSTRING::from("Method Not Allowed"),
+                        &HSTRING::from("Allow: GET\r\nContent-Type: text/plain"),
+                    )?;
+                    args.SetResponse(&response)?;
+                }
+                Ok(())
+            })),
+            &mut 0,
+        )
+    }
+}
+
+#[cfg(target_os = "windows")]
 impl Downloads {
     pub fn install(self, view: &wry::WebView) -> Result<(), String> {
         use webview2_com::{
@@ -281,6 +376,7 @@ impl Downloads {
         };
         use windows_core::{Interface, PWSTR};
         use wry::WebViewExtWindows;
+        require_svg_get(view, self.origin.clone()).map_err(|e| e.to_string())?;
         let engine: ICoreWebView2_4 = view.webview().cast().map_err(|e| format!("{e}"))?;
         // Wry has assigned the private staging path. Bind the directory to this
         // COM operation so concurrent downloads of the same URL stay independent.
@@ -302,7 +398,10 @@ impl Downloads {
                         let uri = take_pwstr(uri);
                         let mut mime = PWSTR::null();
                         operation.MimeType(&mut mime)?;
-                        if !expected_response(&self.origin, &job, &uri, &take_pwstr(mime)) {
+                        if !job
+                            .file
+                            .accepts_response(&self.origin, &uri, &take_pwstr(mime))
+                        {
                             args.SetCancel(true)?;
                             std::thread::spawn(|| windows_error(INVALID_EXPORT));
                             return Ok(());
@@ -345,9 +444,9 @@ impl Downloads {
 fn windows_save_as(job: Export) {
     loop {
         let mut dialog = rfd::FileDialog::new()
-            .set_title("Save project export")
-            .add_filter("ZIP archive", &["zip"])
-            .set_file_name(&job.name);
+            .set_title(job.file.format.title)
+            .add_filter(job.file.format.filter, &[job.file.format.extension])
+            .set_file_name(&job.file.name);
         if let Some(directory) = dirs::download_dir() {
             dialog = dialog.set_directory(directory);
         }
@@ -364,7 +463,7 @@ fn windows_save_as(job: Export) {
 #[cfg(target_os = "windows")]
 fn windows_error(message: &str) {
     rfd::MessageDialog::new()
-        .set_title("Project export")
+        .set_title("Export")
         .set_level(rfd::MessageLevel::Error)
         .set_description(message)
         .show();
@@ -381,7 +480,7 @@ mod tests {
         let id = "12e45678-e89b-42d3-a456-426614174000";
         let path = format!("/transfer/export/{id}");
         assert_eq!(
-            suggested_name(&origin, &format!("{origin}{path}")),
+            ExportFile::from_url(&origin, &format!("{origin}{path}")).map(|file| file.name),
             Some(format!("project-{id}.zip"))
         );
         for candidate in [
@@ -391,7 +490,7 @@ mod tests {
             format!("{origin}/transfer/export/%2e%2e"),
             format!("blob:{origin}{path}"),
         ] {
-            assert_eq!(suggested_name(&origin, &candidate), None);
+            assert_eq!(ExportFile::from_url(&origin, &candidate), None);
         }
     }
 
@@ -399,23 +498,51 @@ mod tests {
     fn login_redirect_and_html_error_are_rejected_as_export_responses() {
         let origin = ServerOrigin::parse("https://work.example").unwrap();
         let id = "12e45678-e89b-42d3-a456-426614174000";
-        let job = Export::new(format!("project-{id}.zip")).unwrap();
         let uri = format!("{origin}/transfer/export/{id}");
-        assert!(expected_response(&origin, &job, &uri, "application/zip"));
-        assert!(!expected_response(&origin, &job, &uri, "text/html"));
-        assert!(!expected_response(
-            &origin,
-            &job,
-            &format!("{origin}/login"),
-            "text/html"
-        ));
+        let file = ExportFile::from_url(&origin, &uri).unwrap();
+        assert!(file.accepts_response(&origin, &uri, "application/zip"));
+        assert!(!file.accepts_response(&origin, &uri, "text/html"));
+        assert!(!file.accepts_response(&origin, &format!("{origin}/login"), "text/html"));
         let other_project = uri.replace("12e45678", "42e45678");
-        assert!(!expected_response(
+        assert!(!file.accepts_response(&origin, &other_project, "application/zip"));
+    }
+
+    #[test]
+    fn canvas_export_requires_a_canonical_route_and_matching_file_type() {
+        let origin = ServerOrigin::parse("https://work.example").unwrap();
+        let id = "12e45678-e89b-42d3-a456-426614174000";
+        let uri = format!("{origin}/canvas/{id}/export.svg");
+        let file = ExportFile::from_url(&origin, &uri).unwrap();
+        assert_eq!(file.name, format!("canvas-{id}.svg"));
+        assert_eq!(file.format, &SVG);
+        assert!(file.accepts_response(&origin, &uri, "image/svg+xml; charset=utf-8"));
+        assert!(!file.accepts_response(&origin, &uri, "text/html"));
+        assert!(!file.accepts_response(&origin, &uri, "application/zip"));
+        assert!(!file.accepts_response(
             &origin,
-            &job,
-            &other_project,
-            "application/zip"
+            &uri.replace("12e45678", "22e45678"),
+            "image/svg+xml"
         ));
+        assert!(!file.accepts_response(
+            &origin,
+            &format!("{origin}/transfer/export/{id}"),
+            "image/svg+xml"
+        ));
+        for invalid in [
+            uri.replace("work.example", "other.example"),
+            uri.replace(id, &id.to_ascii_uppercase()),
+            uri.replace(id, "wrong"),
+            uri.replace("/canvas/", "/old/../canvas/"),
+            uri.replace("/canvas/", "/%63anvas/"),
+            format!("{uri}?render=true"),
+            format!("{uri}#fragment"),
+            format!("{uri}/"),
+        ] {
+            assert!(
+                ExportFile::from_url(&origin, &invalid).is_none(),
+                "{invalid}"
+            );
+        }
     }
 
     #[test]
@@ -426,7 +553,11 @@ mod tests {
         let results = std::thread::scope(|scope| {
             let mut writers = Vec::new();
             for payload in ["zip A", "zip B"] {
-                let export = Export::new("example.zip".into()).unwrap();
+                let export = Export::new(ExportFile {
+                    format: &ZIP,
+                    name: "example.zip".into(),
+                })
+                .unwrap();
                 fs::write(export.archive(), payload).unwrap();
                 let gate = gate.clone();
                 let path = target.clone();

@@ -20,6 +20,10 @@ Export one project’s issues to CSV in Linear. Select **One Linear project** as
 
 To restore a native export, select **Markdown vault or Workspace export** and upload the unchanged ZIP with the folder field empty. Its IDs and links are mapped into the destination. To edit a portable note, change the Markdown inside `Notes/`. A rename with unchanged bytes can be recognized when its hash identifies one file. For a simultaneous rename and content edit, update the matching file’s `path` in the manifest while retaining its original ID and base hashes. Keep release reading copies intact for structured release restoration.
 
+Each drawing lives in `Canvases/<board-id>.json`. Its nodes, connections and pen strokes retain their positions. Named checkpoints and automatic recovery snapshots live in `Canvases/<board-id>/Checkpoints/<checkpoint-id>.json`. Keep these paths and their manifest entries together. Each canvas JSON file has an 8 MiB import limit. Import preview includes the current drawing and every retained checkpoint in the destination’s storage calculation. An import over the limit leaves the destination untouched.
+
+When restoring to another project, Ratio maps issue and note pins to their destination records. If a source is missing, the preview reports the missing link and the node keeps its text and position. Omitting a board or checkpoint from the ZIP preserves any existing copy in the destination.
+
 Full exports can exceed the browser limits. A native restore must also fit the 8 MiB manifest, 16 MiB history and 25,000 history-row limits. The current destination’s individual image and workspace quotas apply. Oversized ZIPs still open in standard archive tools. To bring only notes and images into another workspace, extract them from `Notes/`, keep relative paths, and split them into smaller vault ZIPs. This partial migration carries current Markdown and images. Full-service disaster recovery uses a PostgreSQL backup from the source service, restored by its operator. The browser has no single-project restore path for an oversized native history archive.
 
 ## Images and retention

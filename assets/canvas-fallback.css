@@ -1,0 +1,79 @@
+.canvas-reading-map {
+  display: block;
+  width: 100%;
+  height: clamp(220px, 56vh, 675px);
+  color: var(--fg);
+}
+.canvas-reading-node > :is(rect, path, polygon) {
+  fill: var(--canvas);
+  stroke: var(--control-line);
+  stroke-width: 1.5;
+}
+.canvas-reading-wire, .canvas-reading-stroke, #canvas-reading-arrow path {
+  fill: none;
+  stroke: var(--muted-ink);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.canvas-reading-stroke { stroke: var(--fg); stroke-width: 2.2; }
+.canvas-reading-edge-label {
+  fill: var(--fg-2);
+  stroke: var(--canvas);
+  stroke-width: 4px;
+  paint-order: stroke;
+  font: 12px var(--sans);
+}
+.canvas-reading-label {
+  height: 100%;
+  display: grid;
+  align-items: center;
+  text-align: center;
+  overflow: hidden;
+  line-height: 1.25;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.canvas-reading-label > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.canvas-reading-outline {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  border: 0;
+  border-block: 1px solid var(--line);
+  background: var(--canvas);
+}
+.canvas-reading-outline > summary { width: fit-content; padding: var(--s1); }
+.canvas-reading-outline ul { list-style: none; margin: 0; padding: 0; }
+.canvas-reading-outline h2 { font-size: var(--fs-body); margin: var(--s4) 0 var(--s1); }
+.canvas-reading-outline li {
+  max-width: 68ch;
+  border-bottom: 1px solid var(--subtle-line);
+  padding-block: var(--s2);
+  overflow-wrap: anywhere;
+}
+.canvas-reading-outline small { color: var(--muted-ink); margin-inline-start: var(--s2); }
+.canvas-reading-outline li p { white-space: pre-line; color: var(--fg-2); margin: var(--s1) 0; }
+.canvas-reading-outline li a { display: block; width: fit-content; margin-block-start: var(--s1); }
+.canvas-reading-empty { text-align: center; padding: var(--s7) var(--s4); color: var(--muted-ink); }
+.canvas-reading-label { text-align: start; }
+.canvas-reading-node[data-kind="decision"] .canvas-reading-label { text-align: center; }
+.canvas-reading-dot { fill: var(--fg); }
+@media (max-width: 760px) {
+  .canvas-reading-map {
+    height: auto;
+    min-height: 145px;
+    max-height: 38vh;
+    max-height: 38dvh;
+  }
+}
+@media (forced-colors: active) {
+  .canvas-reading-node > :is(rect, path, polygon) { fill: Canvas; stroke: CanvasText; }
+  .canvas-reading-wire, .canvas-reading-stroke, #canvas-reading-arrow path { stroke: CanvasText; }
+  .canvas-reading-edge-label, .canvas-reading-dot { fill: CanvasText; }
+  .canvas-reading-edge-label { stroke: Canvas; }
+}

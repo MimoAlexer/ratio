@@ -140,16 +140,27 @@
             dialog = document.createElement("dialog");
             dialog.className = "shortcut-dialog";
             dialog.setAttribute("aria-labelledby", "workspace-shortcut-title");
+            const onCanvas = Boolean(document.querySelector("[data-canvas-editor]"));
+            const localKeys = onCanvas ? `
+                    <dt><kbd>[</kbd> / <kbd>]</kbd></dt><dd>Previous or next object</dd>
+                    <dt><kbd>Arrows</kbd></dt><dd>Move the selected shape</dd>
+                    <dt><kbd>Enter</kbd></dt><dd>Place a shape or edit the selection</dd>
+                    <dt><kbd>V</kbd> / <kbd>H</kbd></dt><dd>Select or pan</dd>
+                    <dt><kbd>N</kbd> / <kbd>P</kbd> / <kbd>C</kbd></dt><dd>Note, pen or connector</dd>
+                    <dt><kbd>Delete</kbd></dt><dd>Remove the selection</dd>
+                    <dt><kbd>Ctrl/⌘ Z</kbd> / <kbd>Ctrl/⌘ Shift Z</kbd></dt><dd>Undo or redo</dd>` : `
+                    <dt><kbd>/</kbd></dt><dd>Search issues</dd>
+                    <dt><kbd>C</kbd></dt><dd>Create an issue</dd>`;
             dialog.innerHTML = `
                 <h2 id="workspace-shortcut-title">Keyboard shortcuts</h2>
+                ${onCanvas ? "<p>Focus the drawing to use its tools and move between objects.</p>" : ""}
                 <dl>
                     <dt><kbd>Ctrl</kbd> + <kbd>K</kbd> or <kbd>⌘</kbd> + <kbd>K</kbd></dt><dd>Search and jump to work</dd>
-                    <dt><kbd>/</kbd></dt><dd>Search issues</dd>
-                    <dt><kbd>C</kbd></dt><dd>Create an issue</dd>
+                    ${localKeys}
                     <dt><kbd>?</kbd></dt><dd>Show keyboard shortcuts</dd>
                     <dt><kbd>Esc</kbd></dt><dd>Close this dialog</dd>
                 </dl>
-                <label><input type="checkbox" name="single_keys"> Enable single-key shortcuts</label>
+                <label><input type="checkbox" name="single_keys"> ${onCanvas ? "Enable single-key shortcuts outside the drawing" : "Enable single-key shortcuts"}</label>
                 <form method="dialog"><button type="submit" autofocus>Close</button></form>`;
             if (document.querySelector(".issue-ledger")) {
                 const list=dialog.querySelector("dl");
@@ -195,7 +206,7 @@
 
         // The command dialog owns the modified K shortcut; / keeps inline issue search.
         if (event.ctrlKey || event.metaKey) return;
-        if (!singleKeys) return;
+        if (!singleKeys || event.target.closest?.("[data-canvas-editor]")) return;
         if (event.key === "?") {
             event.preventDefault();
             openHelp();

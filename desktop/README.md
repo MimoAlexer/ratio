@@ -7,11 +7,11 @@ Ratio opens a dedicated application window on Windows and Linux. Each installati
 Download the appropriate package from the [private releases](https://github.com/MimoAlexer/ratio/releases). The release contains SHA256SUMS for both installers.
 
 - **Windows x64:** run the setup EXE. It installs for the current user and adds Ratio to the Start menu. Microsoft Edge WebView2 Evergreen is required. If it is missing, follow the installer’s instructions or install the [official Microsoft WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The release is unsigned.
-- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.3.1_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
+- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.4.0_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
 
 ## Upgrading
 
-Close the app and install 0.3.1 over Ratio 0.3.0, 0.2.1, 0.2.0, 0.1.1, or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need the 0.3.1 server for the updated Home view.
+Close the app and install 0.4.0 over Ratio 0.3.1, 0.3.0, 0.2.1, 0.2.0, 0.1.1, or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need the 0.4.0 server to use planning canvases.
 
 ## Connect two computers
 
@@ -27,7 +27,7 @@ The local demo uses `http://127.0.0.1:4178` on the machine running the bundled d
 - Desktop and website sessions are independent; approving the desktop creates a separate session. Use **Settings** to manage sessions.
 - Connection settings and WebView profiles are stored in the current OS user’s application-data directory. Each distinct origin receives its own profile. Uninstalling preserves local preferences and profiles. Signing out revokes the server session.
 - Ordinary operations and same-origin screens stay in the application. Approved external HTTPS links open in the system browser. Arbitrary HTTP and mail links in notes can be copied manually.
-- ZIP downloads use the native save dialog and preserve an existing destination file. Sensitive temporary export files are deleted after completion or cancellation.
+- Project ZIP and canvas SVG downloads use the native save dialog and preserve an existing destination file. Sensitive temporary export files are deleted after completion or cancellation.
 - Select the **Desktop controls** button or press **F10** to open the native menu. Use **Alt+Left** and **Alt+Right** for history, **Ctrl+R** to reload, **Ctrl+,** for connection settings, and **Ctrl+Q** to quit.
 
 ## The workspace

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod billing;
+pub mod canvas;
 pub mod commands;
 pub mod github;
 pub mod issues;
@@ -327,6 +328,7 @@ pub fn app(state: AppState) -> Router {
         .merge(auth::routes())
         .merge(sync::routes())
         .merge(commands::routes())
+        .merge(canvas::routes())
         .merge(issues::routes())
         .merge(notes::routes())
         .merge(projects::routes())
