@@ -77,8 +77,27 @@ jobs:
       - name: Verify NSIS and package the Windows client
         run: |
           $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.13.zip'
-          Invoke-WebRequest 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip' -OutFile $zip
-          if ((Get-FileHash $zip).Hash -ne 'ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8') { throw 'NSIS SHA-256 mismatch' }
+          $expected = 'ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8'
+          $sources = @(
+            'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip'
+            'https://pilotfiber.dl.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
+          )
+          $verified = $false
+          foreach ($source in $sources) {
+            try {
+              $response = Invoke-WebRequest $source -OutFile $zip -PassThru -TimeoutSec 60 -ErrorAction Stop
+              $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
+              if ($actual -ne $expected) {
+                throw "Expected $expected, received $actual ($((Get-Item $zip).Length) bytes, $($response.Headers['Content-Type']))."
+              }
+              $verified = $true
+              Write-Host "Verified NSIS 3.13 archive from $source"
+              break
+            } catch {
+              Write-Warning "NSIS archive from $source was rejected. $($_.Exception.Message)"
+            }
+          }
+          if (!$verified) { throw 'Could not retrieve the pinned NSIS 3.13 archive from either mirror.' }
           Expand-Archive $zip $env:RUNNER_TEMP
           $nsis = Join-Path $env:RUNNER_TEMP 'nsis-3.13\makensis.exe'
           $objdump = Join-Path $env:ProgramFiles 'LLVM\bin\llvm-objdump.exe'

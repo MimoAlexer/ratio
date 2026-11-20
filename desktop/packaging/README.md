@@ -19,7 +19,7 @@ Install the resulting file with `sudo apt install ./dist/working-set_*_amd64.deb
 
 ## Windows x64
 
-Use a Visual Studio C++ build environment with the Windows SDK, the Rust MSVC toolchain, Python 3, NSIS 3 and LLVM. Make `makensis.exe` and `llvm-objdump.exe` available on PATH or pass absolute paths with `--makensis` and `--objdump`. The native CI job pins and checks the official NSIS archive.
+Use a Visual Studio C++ build environment with the Windows SDK, the Rust MSVC toolchain, Python 3, NSIS 3 and LLVM. Make `makensis.exe` and `llvm-objdump.exe` available on PATH or pass absolute paths with `--makensis` and `--objdump`. The native CI job downloads the upstream NSIS 3.13 archive from Tauri’s GitHub mirror, with a direct SourceForge mirror as a fallback. Both copies must match the same pinned SHA-256 before extraction. [Archive provenance and digest](https://github.com/tauri-apps/binary-releases/releases/tag/nsis-3.13)
 
 ```powershell
 $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
