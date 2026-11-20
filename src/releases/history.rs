@@ -477,7 +477,7 @@ fn render(
                             span { i.review-key-scope aria-hidden="true" {} "Scope" }
                             span { i.review-key-done aria-hidden="true" {} "Done" }
                             @if let Some(date) = ship {
-                                a href="#manifest" { "Shipped " (date) }
+                                a.review-key-shipped href="#manifest" { "Shipped " (date) }
                             }
                         }
                     }

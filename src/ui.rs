@@ -250,6 +250,16 @@ fn location(
     }
 }
 
+fn search_control(search: &str) -> Markup {
+    html! {
+        a.search-command data-command-trigger href=(search) title="Search workspace" aria-label="Search issues" {
+            (icon("search"))
+            span.command-label data-command-label { "Search issues" }
+            kbd data-command-key hidden { "Ctrl K" }
+        }
+    }
+}
+
 fn workspace_page(
     auth: &Auth,
     title: &str,
@@ -291,10 +301,11 @@ fn workspace_page(
                         div.brandbar {
                             (brand("/"))
                             @if sample { span.demo-label title="Workspace with sample data" { "Sample" } }
+                            (search_control(&search))
                         }
                         (navigation(auth, active))
                     }
-                    div.workspace-window {
+                    div.workspace-window data-issue-index[at_index && matches!(active, "issues" | "inbox")] {
                         header.window-bar {
                             (location(group, section, path, at_index, project))
                             div.mobile-brand {
@@ -302,11 +313,7 @@ fn workspace_page(
                                 @if sample { span.demo-label title="Workspace with sample data" { "Sample" } }
                             }
                             div.window-tools {
-                                a.search-command data-command-trigger href=(&search) aria-label="Search issues" {
-                                    (icon("search"))
-                                    span.command-label data-command-label { "Search issues" }
-                                    kbd data-command-key hidden { "Ctrl K" }
-                                }
+                                (search_control(&search))
                                 details.mobile-menu {
                                     summary.icon-button aria-label="Workspace navigation" { (icon("menu")) }
                                     div.mobile-sheet { (navigation(auth, active)) }

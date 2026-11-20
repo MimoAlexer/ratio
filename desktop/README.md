@@ -7,11 +7,11 @@ Ratio opens a dedicated application window on Windows and Linux. Each installati
 Download the appropriate package from the [private releases](https://github.com/MimoAlexer/ratio/releases). The release contains SHA256SUMS for both installers.
 
 - **Windows x64:** run the setup EXE. It installs for the current user and adds Ratio to the Start menu. Microsoft Edge WebView2 Evergreen is required. If it is missing, follow the installer’s instructions or install the [official Microsoft WebView2 runtime](https://developer.microsoft.com/microsoft-edge/webview2/). The release is unsigned.
-- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.2.0_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
+- **Ubuntu / Debian x86-64** — from the directory containing the downloaded package, run `sudo apt install ./ratio_0.2.1_amd64.deb`. APT installs GTK 3 and WebKitGTK 4.1 as needed. Launch **Ratio** from the applications menu or run `ratio`.
 
 ## Upgrading
 
-Close the app and install 0.2.0 over Ratio 0.1.1 or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need the 0.2.0 server to see the redesigned workspace.
+Close the app and install 0.2.1 over Ratio 0.2.0, Ratio 0.1.1, or Working Set 0.1.0. Ratio reuses your saved server address and sign-in profile. A new installation starts in a private Ratio data directory. The workspace interface comes from the server you connect to. Self-hosted installations need the 0.2.1 server to see the updated workspace styling.
 
 ## Connect two computers
 

@@ -69,7 +69,7 @@
 .review-hit { fill: transparent; }
 .review-point:is(:hover,:focus-visible) .review-hit { stroke: var(--fg, var(--text)); stroke-width: 1.5px; }
 .review-legend { gap: var(--s2, 8px) var(--s4, 16px); min-height: 28px; }
-.review-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.review-legend span, .review-legend .review-key-shipped { display: inline-flex; align-items: center; gap: 6px; }
 .review-legend i { position: relative; width: 18px; height: 0; border-top: 2px solid var(--fg-2,var(--muted)); }
 .review-legend .review-key-done { border-top: 2px dashed var(--accent); }
 .review-legend i::after {
@@ -83,6 +83,10 @@
   background: var(--canvas);
 }
 .review-legend .review-key-done::after { border-radius: 50%; background: var(--accent); border-color: var(--accent); }
+.review-key-shipped::before {
+  content: ""; width: 7px; height: 7px;
+  background: var(--accent); border: 1px solid var(--accent); transform: rotate(45deg);
+}
 .release-review table { margin: 0; }
 .release-review .review-waterfall { display: table; width: 100%; font-variant-numeric: tabular-nums; table-layout: auto; }
 .release-review .review-waterfall :is(td,th) {

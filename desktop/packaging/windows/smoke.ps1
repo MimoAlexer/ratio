@@ -98,12 +98,16 @@ if ($LegacyInstaller) {
 }
 if ($PreviousRatioInstaller) {
     $previous = (Resolve-Path $PreviousRatioInstaller).Path
-    if ((Get-FileHash $previous).Hash -ne 'ddc157fe6e6787f21a2e93735a933a6441ec169061fc61b29a5ab12a02026057') {
-        throw 'Published Ratio 0.1.1 installer checksum mismatch.'
+    $publishedVersions = @{
+        'ddc157fe6e6787f21a2e93735a933a6441ec169061fc61b29a5ab12a02026057' = '0.1.1'
+        '699086b5326a2156b5cd85026bed0f9f5c8f802a5e6823241b35e58de5e3a152' = '0.2.0'
     }
+    $previousVersion = $publishedVersions[(Get-FileHash $previous).Hash]
+    if (!$previousVersion) { throw 'Unknown previous Ratio installer checksum.' }
+    if ([version]$previousVersion -ge [version]$version) { throw 'The upgrade fixture must be an older Ratio version.' }
     Install-Application $previous
-    if ((Get-ItemProperty -LiteralPath $key).DisplayVersion -ne '0.1.1' -or !(Test-Path $appExe)) {
-        throw 'The previous installer did not establish the Ratio 0.1.1 upgrade fixture.'
+    if ((Get-ItemProperty -LiteralPath $key).DisplayVersion -ne $previousVersion -or !(Test-Path $appExe)) {
+        throw "The previous installer did not establish the Ratio $previousVersion upgrade fixture."
     }
     Assert-ConnectionWindow
 }

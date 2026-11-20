@@ -7,11 +7,11 @@ dialog.command-dialog {
     padding: 0;
     max-height: min(36rem, 76vh);
     max-height: min(36rem, 76dvh);
-    border: 1px solid var(--control-line);
+    border: 1px solid var(--rim);
     border-radius: var(--radius-panel, 6px);
     background: var(--surface);
     color: var(--text);
-    box-shadow: 0 12px 38px rgb(0 0 0 / 36%);
+    box-shadow: 0 0 0 1px var(--edge-dark), 0 12px 32px rgb(0 0 0 / 40%);
     overflow: hidden;
 }
 dialog.command-dialog[open] { display: flex; flex-direction: column; }
@@ -23,7 +23,9 @@ dialog.command-dialog[open] { display: flex; flex-direction: column; }
     flex: none;
     min-height: 56px;
     padding: var(--s2, 8px) var(--s4, 16px);
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rim);
+    background: var(--raised);
+    box-shadow: inset 0 1px var(--edge-light);
 }
 .command-searchline > svg {
     flex: none;
@@ -63,14 +65,15 @@ dialog.command-dialog[open] { display: flex; flex-direction: column; }
     padding: 0 3px;
     border: 1px solid var(--line);
     border-radius: 3px;
-    background: transparent;
-    box-shadow: none;
+    background: var(--raised);
+    box-shadow: 0 1px var(--edge-dark);
     text-align: center;
     color: var(--muted);
     font: 400 11px/17px var(--mono);
 }
 .command-dialog .command-close .command-dismiss { display: none; width: 18px; height: 18px; }
 .command-dialog .command-close:hover span { border-color: var(--control-line); color: var(--text); }
+.command-dialog .command-close:active span { background: var(--surface); box-shadow: inset 0 1px var(--edge-dark); }
 .command-dialog .command-scope {
     display: flex;
     gap: var(--s1, 4px);
@@ -86,10 +89,11 @@ dialog.command-dialog[open] { display: flex; flex-direction: column; }
 }
 .command-dialog .command-scope button[aria-pressed="true"] {
     color: var(--text);
-    background: var(--raised);
-    box-shadow: inset 0 -2px var(--faint);
+    background: var(--selected);
+    box-shadow: inset 0 -2px var(--faint), inset 0 1px 2px var(--edge-dark);
 }
-.command-dialog .command-scope button:hover { color: var(--text); background: var(--raised); }
+.command-dialog .command-scope button:hover { color: var(--text); background: var(--hover); }
+.command-dialog .command-scope button:active { box-shadow: inset 0 1px 2px var(--edge-dark); }
 .command-tray { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--s2, 8px); }
 .command-group-title {
     padding: 6px var(--s2, 8px) 4px;
@@ -161,7 +165,8 @@ dialog.command-dialog[open] { display: flex; flex-direction: column; }
     justify-content: space-between;
     gap: var(--s3, 12px);
     padding: var(--s2, 8px) var(--s4, 16px);
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--subtle-line);
+    background: var(--canvas);
     color: var(--faint);
     font-size: 12px;
 }

@@ -1,36 +1,30 @@
-# Ratio 0.2.0 desktop qualification
+# Ratio 0.2.1 desktop qualification
 
-The private release provides x86-64 installers for Windows and Linux. Verify the downloaded files against the release’s `SHA256SUMS`. [Ratio 0.2.0 release](https://github.com/MimoAlexer/ratio/releases/tag/v0.2.0)
+The 0.2.1 desktop launcher uses a recessed URL field, a raised Connect button and neutral keyboard-focus rings. Connected workspace screens come from the Ratio server. Install the 0.2.1 server to receive those visual updates on an existing client. [Release and checksums](https://github.com/MimoAlexer/ratio/releases/tag/v0.2.1)
 
-| File | Bytes | SHA-256 |
+| Installer | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `Ratio-0.2.0-windows-x64-setup.exe` | 1,343,150 | `699086b5326a2156b5cd85026bed0f9f5c8f802a5e6823241b35e58de5e3a152` |
-| `ratio_0.2.0_amd64.deb` | 660,392 | `9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b` |
+| `Ratio-0.2.1-windows-x64-setup.exe` | 1,343,188 | `e6d2969993ca3063b53a84a2527526e621003040af29cdf657d0955c0cd2d0c8` |
+| `ratio_0.2.1_amd64.deb` | 659,760 | `a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2` |
 
-## Connection and workspace
+## Connection and profiles
 
-The launcher places the workspace address, recovery message and Connect button on one reading edge. First launch focuses the URL field. When a saved server is unreachable, the launcher offers Retry connection, Use another address and Forget saved address. The signed-in workspace comes from the selected Ratio server, so its host must also run the redesigned server to serve the new views.
+First launch focuses Workspace URL. When a saved server is unreachable, Retry connection receives focus. A rejected address stays editable. Both appearance modes use equal red, green and blue channel values for the launcher surfaces, text, borders and focus ring. Input boundaries measure 3.68∶1 in dark mode and 3.65∶1 in light mode. Focus rings measure 11.37∶1 and 7.26∶1 against the canvas.
 
-The first-run comparisons show the same 1280 × 800 Linux window with the native application menu. The packaged client was also checked at 1440 × 900 and at its minimum window width of 520 px. The separate 390 × 844 check used the launcher document in WebKit. [Previous launcher](design/ratio-0.2/images/native-connection-before.png) · [Current launcher](design/ratio-0.2/images/native-connection-after.png)
+The packaged Linux launcher was checked in light and dark modes at 1440, 1280 and 520 pixels wide. At each size, the verification covered initial URL focus, Connect button focus, invalid-address recovery and the offline Retry state.
 
-The Linux WebView exposed the focused URL field to accessibility tools on first launch, kept a rejected address available for correction and focused Retry connection after a connection refusal. The packaged app then paired through a separate browser, opened the sample issues and forgot the saved server on request. Dark and light launcher text measured at least 6.04∶1 against its background, and input boundaries measured at least 3.72∶1.
+On the packaged client, Orca 50.3 spoke the HTTPS correction after a pasted remote HTTP address was submitted and repeated it on Tab to Connect. Editing cleared the invalid state while the field kept focus. On connection refusal, Orca read Retry connection and the complete recovery message.
 
-Orca 50.3 spoke the full rejection reason after a remote HTTP address was pasted and submitted, repeated it when focus moved to Connect, and announced the offline reason on Retry connection. With simulated character-by-character typing, a run announced only the invalid state on Enter. The field retained focus and Orca’s braille output included the complete explanation. Editing the address cleared the invalid state.
-
-A separate sign-in test used the archived 0.1.1 Linux client and a synthetic Luma account. After the older process quit, the 0.2.0 package reopened the same WebKit profile and remembered origin. It displayed the same authenticated issue list without a second pairing.
-
-The 1440 × 900 workspace captures came from the packaged 0.2.0 Linux client connected to the redesigned server. Both show LU-32 from the same read-only Luma sample. [Issue list and inspector](images/ratio-issues.png) · [Full issue with activity](images/ratio-issue-detail.png)
+A separate end-to-end check paired the published 0.2.0 Linux client with the read-only Luma sample, quit it, and launched the 0.2.1 package with the same profile. It reopened the remembered server and the authenticated issue list without a second approval. A clean 0.2.1 installation recovered from an unreachable server, connected to the live service, and forgot the saved address on request.
 
 ## Platform checks
 
-| Environment | Verified on the 0.2.0 artifacts |
+| Environment | Qualification |
 | --- | --- |
-| Ubuntu 22.04 and Debian 12 | APT clean installation, upgrade from published Ratio 0.1.1 and Working Set 0.1.0 packages, and purge. Each case checked the installed executable, desktop entry and icon. During upgrade and removal, synthetic saved-origin and profile data retained their original bytes. The distribution userspaces ran on a shared Linux kernel. |
-| Windows Server 2025, published installer | Three independent clean workers downloaded the private release, checked its SHA-256, installed it, found the rendered Connect control through Windows UI Automation and uninstalled it. Both the 0.1.0 and 0.1.1 upgrades retained the profile. [Published installer checks](https://github.com/MimoAlexer/ratio/actions/runs/44806476304) |
-| Windows x64 installer under Wine | Clean per-user installation, upgrades from both published predecessors, Start menu shortcut, uninstall registration, PE payload and removal. Profiles and unrelated files survived the installer lifecycle. The silent installer returned status 3 when the WebView2 prerequisite was absent. |
-| Desktop unit suites | All 20 tests passed in the Ubuntu release build and as Windows binaries under Wine. Coverage includes origin parsing, isolated profiles, legacy upgrade paths, browser handoff and native export rules. |
-| Packaging | Repackaging each exact release executable twice produced byte-identical installers. Windows Explorer metadata reports 0.2.0.0, and all ten embedded icon images matched the application artwork. |
+| Ubuntu 22.04 and Debian 12 | APT clean installation, direct upgrades from Ratio 0.2.0, Ratio 0.1.1 and Working Set 0.1.0, and purge in isolated distribution userspaces on a shared Linux kernel. Checks covered the installed executable, desktop entry, icon and original saved profile data. |
+| Windows x64 installer under Wine | Clean install, direct upgrades from all three published predecessors, and uninstall. Tests checked the installed PE, Start menu shortcut, registration, user profile and unrelated files. Without WebView2 the silent installer returned status 3. |
+| Linux and Windows release executables | All 20 desktop tests passed on both targets. Repackaging each frozen executable produced identical installer bytes. Explorer metadata reports 0.2.1.0 and all ten embedded icon images matched the application artwork. |
 
-The Linux package uses GTK 3, WebKitGTK 4.1, bubblewrap and glibc 2.34 or newer. The Windows installer is unsigned and requires Microsoft Edge WebView2 Evergreen. The native Windows workflow launches the installed executable and looks up its Connect button through Windows UI Automation. [Windows release verification](https://github.com/MimoAlexer/ratio/actions/workflows/verify-published-desktop.yml)
+The Linux package requires GTK 3, WebKitGTK 4.1, bubblewrap and glibc 2.34 or newer. The Windows installer is unsigned and requires Microsoft Edge WebView2 Evergreen. The published-installer workflow launches the downloaded package on Windows and locates the Connect button through Windows UI Automation. [Native Windows release checks](https://github.com/MimoAlexer/ratio/actions/workflows/verify-published-desktop.yml)
 
-The 0.1.1 release and its original compatibility evidence remain available. [Archived installers](https://github.com/MimoAlexer/ratio/releases/tag/v0.1.1) · [0.1.1 qualification](https://github.com/MimoAlexer/ratio/blob/v0.1.1/docs/desktop-verification.md)
+Release 0.2.0 and its Linux, Wine and native Windows results are archived. [0.2.0 installers](https://github.com/MimoAlexer/ratio/releases/tag/v0.2.0) · [0.2.0 qualification](https://github.com/MimoAlexer/ratio/blob/a455ef1c01104ca93fa97aff6e34a1177d8a07c6/docs/desktop-verification.md)

@@ -31,7 +31,11 @@
 }
 
 .issue-description + .issue-checkpoint { margin-top: var(--s5); }
-.issue-checkpoint { padding: var(--s3) var(--s4); background: var(--surface); border-radius: var(--radius); }
+.issue-checkpoint {
+  padding: var(--s3) var(--s4); background: var(--surface);
+  border: 1px solid var(--rim); border-radius: var(--radius-panel);
+  box-shadow: inset 0 1px var(--edge-light);
+}
 .issue-checkpoint.has-checkpoint { border-inline-start: 2px solid var(--accent); }
 .checkpoint-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0 var(--s3); }
 .checkpoint-heading h2 { display: flex; align-items: center; gap: var(--s2); margin: 0; font-size: 14px; font-weight: 580; }
@@ -50,15 +54,23 @@
 .issue-detail .issue-editor { border: 0; padding: 0; }
 .issue-editor > summary {
   position: absolute; inset-block-start: 0; inset-inline-end: 0; display: inline-flex; align-items: center; gap: var(--s2);
-  min-height: var(--control); margin: 0; padding: var(--s1) var(--s3); border: 1px solid var(--control-line); border-radius: var(--radius);
+  min-height: var(--control); margin: 0; padding: var(--s1) var(--s3); border: 1px solid var(--rim); border-radius: var(--radius);
+  background: var(--raised); box-shadow: inset 0 1px var(--edge-light), 0 1px var(--edge-dark);
   color: var(--fg); font-size: 13px; font-weight: 540; line-height: 1.4;
 }
-.issue-editor > summary:hover, .issue-status-picker > summary:hover { background: var(--raised); }
+.issue-editor > summary:hover, .issue-status-picker > summary:hover { background: var(--hover); }
+.issue-editor > summary:active, .issue-editor[open] > summary {
+  background: var(--surface); box-shadow: inset 0 1px 2px var(--edge-dark);
+}
 .issue-editor > summary::-webkit-details-marker, .issue-status-picker > summary::-webkit-details-marker, .related-disclosure > summary::-webkit-details-marker { display: none; }
 .issue-editor > summary .ui-icon { width: 13px; height: 13px; }
 .issue-editor .editor-open-label, .issue-editor[open] .editor-closed-label { display: none; }
 .issue-editor[open] .editor-open-label { display: inline; }
-.issue-editor[open] > form { max-width: 72ch; padding-top: var(--s5); margin-top: var(--s4); border-top: 1px solid var(--line); }
+.issue-editor[open] > form {
+  max-width: 72ch; margin-top: var(--s4); padding: var(--s4);
+  background: var(--surface); border: 1px solid var(--rim); border-radius: var(--radius-panel);
+  box-shadow: inset 0 1px 2px var(--edge-dark);
+}
 .issue-editor .grid { grid-template-columns: repeat(auto-fit,minmax(min(100%,155px),1fr)); }
 .issue-editor textarea[name=body], .issue-checkpoint textarea { line-height: 1.55; }
 .issue-detail [id] { scroll-margin-top: var(--s4); }
@@ -108,6 +120,12 @@
 .related-content { margin: 0 0 var(--s4) var(--s5); font-size: 13px; }
 .issue-detail .related-content > .panel { margin: 0; padding: 0; border: 0; background: none; }
 .related-content > .panel > h2 { position: absolute; overflow: hidden; width: 1px; height: 1px; clip-path: inset(50%); }
+.issue-detail #github-context .issue-list {
+  margin-block-end: var(--s3); padding-inline: var(--s3);
+  background: var(--surface); border: 1px solid var(--rim); border-radius: var(--radius-panel);
+  box-shadow: inset 0 1px 2px var(--edge-dark);
+}
+.issue-detail #github-context .issue-list > li:last-child { border-bottom: 0; }
 .issue-dependencies { display: grid; gap: var(--s3); }
 .issue-dependencies ul { margin: 0; padding-inline-start: var(--s4); }
 .issue-dependencies .inline { display: inline; }

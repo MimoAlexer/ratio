@@ -89,13 +89,13 @@
 .rm-svg .rm-chain { stroke: var(--rm-accent); stroke-width: 1.65; stroke-dasharray: none; }
 .rm-svg .rm-tip-chain { fill: var(--rm-accent); }
 .rm-svg .rm-week { fill: url(#rm-hatch); }
-.rm-svg .rm-hatch-line { fill: none; stroke: var(--rm-meta); stroke-width: .7; opacity: .4; }
+.rm-svg .rm-hatch-line { fill: none; stroke: var(--rm-meta); stroke-width: 1; opacity: .7; }
 .rm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: var(--s3, 12px) 0; color: var(--rm-meta); font-size: 12px; }
 .rm-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .rm-key-span { display: inline-block; width: 16px; border-top: 2px solid var(--rm-track); }
 .rm-key-target, .rm-key-shipped { width: 6px; height: 6px; border: 1px solid currentColor; transform: rotate(45deg); }
 .rm-key-shipped { background: var(--rm-text); color: var(--rm-text); }
-.rm-key-off { width: 12px; height: 9px; border: 1px dashed currentColor; }
+.rm-key-off { flex: none; }
 .rm-entry { padding: 4px 10px; border-bottom: 1px solid var(--rm-rule); overflow-wrap: anywhere; position: relative; }
 .rm-entry-selected { background: var(--raised); }
 .rm-entry-selected::before { content: ''; position: absolute; inset: 13px auto auto 0; width: 2px; height: 18px; background: var(--rm-accent); }

@@ -68,6 +68,7 @@ pub(super) async fn render(
         f.change_url("inspect", "none", true),
         item.id
     );
+    let return_to_queue = format!("{}#record-{}", f.change_url("inspect", "", true), item.id);
     Ok(html! {
         aside.issue-preview id="issue-preview" tabindex="-1" aria-labelledby="preview-title" data-issue=(item.id) {
             div.preview-top {
@@ -79,49 +80,55 @@ pub(super) async fn render(
                 }
                 div.preview-tools {
                     a.preview-open href=(&detail) { "Open issue" (ledger_icon("open")) }
-                    a.preview-close href=(close) aria-label="Close preview and return to the list" title="Close preview" {
+                    a.preview-dismiss.preview-close href=(close) aria-label="Close preview and show the full issue list" title="Close preview" {
+                        (ledger_icon("close"))
+                    }
+                    a.preview-dismiss.preview-return href=(return_to_queue) aria-label="Return to the issue queue" title="Return to the queue" {
                         (ledger_icon("close"))
                     }
                 }
             }
             div.preview-reading {
-                header.preview-issue-head {
-                    h2 id="preview-title" tabindex="-1" { (&item.title) }
-                    div.preview-fields {
-                        span { (status_mark(&item.status)) (label(&item.status)) }
-                        span { (priority_mark(&item.priority)) (label(&item.priority)) " priority" }
-                        span { (label(&item.kind)) }
-                        @if item.archived || item.project_archived { span { "Archived" } }
-                    }
-                    @if !has_action && !p.description.trim().is_empty() {
-                        p.preview-description { (excerpt(&p.description, 300)) }
-                    }
-                }
-                @if has_action {
-                    section.preview-action {
-                        header {
-                            h3 { "Next action" }
-                            @if let Some(stamp) = item.checkpoint_at {
-                                small { "Saved " (day(stamp)) }
-                            }
+                article.preview-document aria-labelledby="preview-title" {
+                    header.preview-issue-head {
+                        h2 id="preview-title" tabindex="-1" { (&item.title) }
+                        div.preview-fields {
+                            span.preview-status { (status_mark(&item.status)) (label(&item.status)) }
+                            span { (priority_mark(&item.priority)) (label(&item.priority)) " priority" }
+                            span { (label(&item.kind)) }
+                            @if item.archived || item.project_archived { span { "Archived" } }
                         }
-                        p { (excerpt(&p.next_action, 350)) }
+                        @if !has_action && !p.description.trim().is_empty() {
+                            p.preview-description { (excerpt(&p.description, 300)) }
+                        }
                     }
-                    @if !p.description.trim().is_empty() {
-                        section.preview-description { h3 { "Description" } p { (excerpt(&p.description, 300)) } }
+                    @if has_action {
+                        section.preview-action {
+                            header {
+                                h3 { (ui::icon("resume")) "Next action" }
+                                @if let Some(stamp) = item.checkpoint_at {
+                                    small { "Saved " (day(stamp)) }
+                                }
+                            }
+                            p { (excerpt(&p.next_action, 350)) }
+                        }
+                        @if !p.description.trim().is_empty() {
+                            section.preview-description { h3 { "Description" } p { (excerpt(&p.description, 300)) } }
+                        }
+                    } @else if !item.archived && !item.project_archived && matches!(item.status.as_str(), "ready" | "backlog" | "in_progress") {
+                        a.preview-add-action href=(format!("{detail}#next-action-title")) { (ui::icon("plus")) "Add a next action" }
                     }
-                } @else if !item.archived && !item.project_archived && matches!(item.status.as_str(), "ready" | "backlog" | "in_progress") {
-                    a.preview-add-action href=(format!("{detail}#next-action-title")) { (ui::icon("plus")) "Add a next action" }
-                }
-                @if let (Some(id), Some(title), Some(anchor)) = (p.note_id, p.note_title, p.note_anchor) {
-                    section.preview-source {
-                        h3 { "Source note" }
-                        a href=(format!("/notes/{id}#{anchor}")) { (ui::icon("notes")) (title) (ledger_icon("next")) }
-                        @if let Some(source) = p.note_excerpt.filter(|s| !s.trim().is_empty()) { p { (excerpt(&source, 180)) } }
+                    @if let (Some(id), Some(title), Some(anchor)) = (p.note_id, p.note_title, p.note_anchor) {
+                        section.preview-source {
+                            h3 { (ui::icon("notes")) "Source note" }
+                            a href=(format!("/notes/{id}#{anchor}")) { (title) (ledger_icon("open")) }
+                            @if let Some(source) = p.note_excerpt.filter(|s| !s.trim().is_empty()) { p { (excerpt(&source, 180)) } }
+                        }
                     }
                 }
                 @if !p.recent.is_empty() {
-                    section.preview-activity { h3 { "Recent activity" }
+                    details.preview-activity open {
+                        summary { (ledger_icon("chevron")) "Recent activity" span { (p.recent.len()) } }
                         ol { @for event in &p.recent.0 {
                             li { div {
                                 span { (event_title(&event.action)) }

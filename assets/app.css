@@ -3,27 +3,27 @@
 /* Ratio's shared foundation. Route stylesheets load after these defaults. */
 :root {
   color-scheme: dark;
-  --canvas: #171819;
-  --sidebar: #101112;
-  --surface: #1d1f20;
-  --raised: #232526;
-  --hover: #282b2c;
-  --selected: #303334;
-  --fg: #eeeeed;
-  --fg-2: #bdc0c1;
-  --fg-3: #999d9e;
+  --canvas: #181819;
+  --sidebar: #131314;
+  --surface: #1b1b1d;
+  --raised: #242426;
+  --hover: #29292c;
+  --selected: #27272a;
+  --fg: #ededf0;
+  --fg-2: #c0c0c5;
+  --fg-3: #9a9aa1;
   --text: var(--fg);
   --muted: var(--fg-2);
   --faint: var(--fg-3);
-  --line: #3b3d3f;
-  --subtle-line: #2b2d2e;
-  --control-line: #787d80;
-  --accent: #abc0cf;
-  --accent-surface: #2b3439;
-  --link: #c3d4dc;
-  --risk: #e3b8ab;
-  --button-bg: #e4e5e0;
-  --button-text: #1b1c1a;
+  --line: #343438;
+  --subtle-line: #272729;
+  --control-line: #78787f;
+  --accent: #c6c6d0;
+  --accent-surface: #28282d;
+  --link: #d5d5dd;
+  --risk: #e5aaa8;
+  --button-bg: #e6e6e8;
+  --button-text: #202022;
   --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
   --fs-meta: .75rem;
@@ -44,14 +44,26 @@
   --s8: 32px;
   --row: 36px;
   --control: 32px;
-  --radius: 4px;
-  --radius-panel: 6px;
+  --radius: 5px;
+  --radius-panel: 8px;
+  /* Two opposing edges separate a cut-in pane from its surrounding frame. */
+  --shell: #111112;
+  --rim: #303033;
+  --edge-light: #39393d;
+  --edge-dark: #0d0d0e;
+  --bevel-outline: inset 0 1px 0 rgb(255 255 255 / .038), 0 0 0 1px var(--edge-dark), 0 1px 3px rgb(0 0 0 / .28);
+  --bevel-control: inset 0 1px 0 rgb(255 255 255 / .065), 0 1px 0 rgb(0 0 0 / .28);
+  --shell-inset: 8px;
   --speed: 110ms;
-  --gutter: clamp(24px, 2.4vw, 40px);
-  --sidebar-width: 196px;
-  --bar-height: 48px;
+  --gutter: clamp(20px, 2.05vw, 32px);
+  --sidebar-width: clamp(196px, 17.8vw, 240px);
+  --bar-height: 44px;
 }
 :root[data-theme="mono"] {
+  --shell: #111;
+  --rim: #303030;
+  --edge-light: #393939;
+  --edge-dark: #0d0d0d;
   --canvas: #171717;
   --sidebar: #101010;
   --surface: #1e1e1e;
@@ -106,7 +118,8 @@ code, samp, kbd, pre, .mono { font-family: var(--mono); font-size: .9em; }
 kbd { white-space: nowrap; }
 pre {
   max-width: 100%; overflow-x: auto; padding: var(--s3) var(--s4);
-  background: var(--sidebar); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--rim); border-radius: var(--radius-panel);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / .2), 0 1px 0 rgb(255 255 255 / .035);
 }
 time { font-variant-numeric: tabular-nums; }
 img, svg { max-width: 100%; }
@@ -126,23 +139,23 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 /* The permanent rail keeps everyday destinations in a single reading column. */
 .app-shell {
   display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  min-height: 100vh; min-height: 100dvh;
+  min-height: 100vh; min-height: 100dvh; background: var(--shell);
 }
 .sidebar {
   position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh;
   min-width: 0; display: flex; flex-direction: column; background: var(--sidebar);
-  border-inline-end: 1px solid var(--subtle-line);
+  border-inline-end: 0;
 }
 .brandbar, .public-brandbar {
   display: flex; align-items: center; gap: var(--s3); min-height: var(--bar-height);
-  padding-inline: 17px; border-bottom: 1px solid var(--subtle-line);
+  padding-inline: var(--s4); border-bottom: 0;
 }
 .brand, .auth-brand {
   display: inline-flex; align-items: center; gap: var(--s2); width: fit-content;
-  color: var(--fg); text-decoration: none; font-size: 18px; font-weight: 660;
+  color: var(--fg); text-decoration: none; font-size: 16px; font-weight: 620;
   line-height: 1; letter-spacing: -.05em;
 }
-.brand img, .auth-brand img { display: block; width: 27px; height: 27px; object-fit: contain; }
+.brand img, .auth-brand img { display: block; width: 23px; height: 23px; object-fit: contain; }
 .demo-label { color: var(--fg-3); font-size: var(--fs-meta); font-weight: 450; }
 .brandbar .demo-label, .mobile-brand .demo-label { padding-inline-start: var(--s3); border-inline-start: 1px solid var(--line); }
 .nav {
@@ -161,7 +174,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 }
 .nav-link .ui-icon { width: 16px; height: 16px; color: var(--fg-3); }
 .nav-link:hover, .project-links a:hover { background: var(--raised); color: var(--fg); }
-.nav-link[aria-current="page"] { color: var(--fg); background: var(--selected); font-weight: var(--weight-heading); }
+.nav-link[aria-current="page"] {
+  color: var(--fg); background: var(--selected); font-weight: 555;
+  border-radius: 6px; box-shadow: inset 0 1px 0 rgb(255 255 255 / .035);
+}
 .nav-link[aria-current="page"] .ui-icon { color: var(--fg); }
 .project-links {
   margin: 2px 0 0 15px;
@@ -253,6 +269,45 @@ a.location-current:hover { text-decoration: underline; }
 .icon-button[aria-pressed="true"] { background: var(--raised); color: var(--fg); }
 .mobile-menu, .mobile-brand { display: none; }
 
+/* One frame encloses the full working surface. Long pages scroll inside it on desktop. */
+@media (min-width: 761px) {
+  .brandbar { padding-block-start: var(--shell-inset); min-height: calc(var(--bar-height) + var(--shell-inset)); }
+  .brandbar .demo-label { margin-inline-start: 0; padding-inline-start: 0; border: 0; font-size: 11px; }
+  .brandbar .search-command {
+    margin-inline-start: auto; justify-content: center; width: 28px; min-width: 28px;
+    height: 28px; min-height: 28px; padding: 0; background: transparent; border: 1px solid transparent;
+    border-radius: var(--radius); color: var(--fg-3);
+  }
+  .brandbar .search-command:hover { color: var(--fg); border-color: var(--rim); background: var(--selected); }
+  .brandbar .search-command :is(.command-label,kbd), .window-tools .search-command { display:none; }
+  .workspace-window {
+    margin: var(--shell-inset) var(--shell-inset) var(--shell-inset) 0;
+    border: 1px solid var(--rim); border-block-start-color: var(--edge-light);
+    border-radius: 9px; background: var(--canvas);
+    box-shadow: var(--bevel-outline); overflow: clip;
+  }
+  .workspace-window .window-bar {
+    background: var(--canvas); box-shadow: inset 0 1px 0 rgb(255 255 255 / .026);
+    flex: none;
+  }
+  .workspace-window[data-issue-index] .window-bar { display:none; }
+  .workspace-window[data-issue-index] .page-content { padding-top:0; }
+  .workspace-window[data-issue-index] .issue-heading {
+    min-height: var(--bar-height); margin-block-end:0; padding-block:6px;
+  }
+  .workspace-window[data-issue-index] .issue-heading h1 { font-size:16px; font-weight:575; letter-spacing:-.02em; }
+}
+@media (min-width:761px) and (min-height:541px) {
+  .workspace-window {
+    position: sticky; top:var(--shell-inset); height:calc(100vh - 2 * var(--shell-inset));
+    height:calc(100dvh - 2 * var(--shell-inset)); display:flex; flex-direction:column;
+  }
+  .workspace-window > .main { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--line) var(--canvas); }
+}
+@media (max-width:760px) {
+  .workspace-window { background:var(--canvas); }
+  .workspace-window .window-bar { border-block-end:1px solid var(--rim); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04); }
+}
 /* Content and record primitives. The feature owns its column template. */
 .page-content {
   width: 100%; max-width: 1560px; min-width: 0; margin-inline: auto;
@@ -348,6 +403,13 @@ legend { padding-inline: var(--s1); }
 :is(.action-primary, .primary) { background: var(--button-bg); border-color: var(--button-bg); color: var(--button-text); font-weight: 620; }
 :is(.action-primary, .primary):hover { background: var(--fg); border-color: var(--fg); }
 :is(.action-primary, .primary):active { background: var(--fg-2); border-color: var(--fg-2); }
+.action-secondary, .secondary, :where(button[type="submit"]:not(.action-quiet):not(.icon-button)) {
+  box-shadow: var(--bevel-control);
+}
+:is(.action-primary,.primary) { box-shadow: inset 0 1px 0 rgb(255 255 255 / .45), 0 1px 0 var(--edge-dark); }
+:is(.action-primary,.primary,.action-secondary,.secondary):active {
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / .23);
+}
 :where(.action-quiet) { border-color: transparent; background: transparent; color: var(--fg-2); }
 :where(.action-quiet:hover) { color: var(--fg); border-color: transparent; }
 :where(button,.btn,.button).danger { color: var(--risk); }
@@ -492,5 +554,7 @@ dialog::backdrop { background-color: rgb(0 0 0 / 58%); }
 @media print {
   .app-shell { display: block; }
   .sidebar, .window-bar, .skip-link { display: none; }
+  .workspace-window { position: static; height: auto; overflow: visible; margin:0; border:0; border-radius:0; box-shadow:none; }
+  .workspace-window > .main { overflow:visible; }
   .page-content { padding: 0; }
 }

@@ -6,7 +6,8 @@ Ratio uses one shell for two different tasks. A developer scans many records in 
 
 | Token | Use |
 | --- | --- |
-| `--sidebar`, `--canvas` | Persistent navigation on charcoal, work on the lighter canvas |
+| `--sidebar`, `--canvas` | A dark neutral navigation rail and a slightly lighter inset working surface |
+| `--rim`, `--edge-light`, `--edge-dark` | One-pixel perimeter, upper lip, lower shadow; use together for a workspace or recessed reading pane |
 | `--surface`, `--raised`, `--hover`, `--selected` | Group or reading surface, raised control, pointer feedback and selection |
 | `--fg`, `--fg-2`, `--fg-3` | Issue titles and edited text, supporting labels and quiet metadata |
 | `--subtle-line`, `--line`, `--control-line` | Row division, group boundary and field outline |
@@ -36,5 +37,7 @@ Call `ui::section_page` for a section index. Its header gives the group and the 
 | Emphasize an intended action | `.action-primary` for the main action, `.action-secondary` for a supporting operation, `.action-quiet` for a low-emphasis action |
 
 Place a field error beside its input, preserve submitted values and connect the error using `aria-describedby`. Use a native form for a write, a link with a real destination for navigation and native details/summary for disclosure. Keep a visible focus outline. Stateful menus support Escape and restore focus to their trigger. New content should remain usable at browser zoom, with long project names and on a phone.
+
+In the desktop issue workbench, the queue uses about a third of the working pane; the rest is reserved for the selected issue. The 8px shell gutter and opposing light and dark edges give the desktop workspace depth. A phone uses the available width for the queue and then the selected issue. [Reference images](ratio-0.2.1/linear-references/sources.md)
 
 The [foundation stylesheet](../../assets/app.css) imports the local fonts. The [page renderer](../../src/ui.rs) adds route styles after the foundation, followed by the private command stylesheet. Scope feature-specific selectors to their view. Buttons, inputs and layout defaults use low specificity so a local layout can change density without competing with global selectors.

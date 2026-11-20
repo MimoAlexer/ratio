@@ -37,9 +37,9 @@ jobs:
           legacy=working-set_0.1.0_amd64.deb
           gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern "$legacy" --dir "$RUNNER_TEMP"
           (cd "$RUNNER_TEMP" && echo "31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1  $legacy" | sha256sum --check)
-          previous=ratio_0.1.1_amd64.deb
-          gh release download v0.1.1 --repo "$GITHUB_REPOSITORY" --pattern "$previous" --dir "$RUNNER_TEMP"
-          (cd "$RUNNER_TEMP" && echo "c0bdb765e1f88570d7fce3283874278ae86dfb81e86af194e695d768ff07b761  $previous" | sha256sum --check)
+          previous=ratio_0.2.0_amd64.deb
+          gh release download v0.2.0 --repo "$GITHUB_REPOSITORY" --pattern "$previous" --dir "$RUNNER_TEMP"
+          (cd "$RUNNER_TEMP" && echo "9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b  $previous" | sha256sum --check)
       - name: Test fresh install and upgrade on Ubuntu
         run: |
           packaging/linux/build.sh target/release/ratio dist
@@ -52,8 +52,8 @@ jobs:
               test -f /usr/share/applications/working-set.desktop
               profile="$XDG_DATA_HOME/Working Set"
             elif [[ "$scenario" == ratio-upgrade ]]; then
-              sudo apt-get install -y "$RUNNER_TEMP/ratio_0.1.1_amd64.deb"
-              test "$(ratio --version)" = 'Ratio 0.1.1'
+              sudo apt-get install -y "$RUNNER_TEMP/ratio_0.2.0_amd64.deb"
+              test "$(ratio --version)" = 'Ratio 0.2.0'
             fi
             if [[ "$scenario" != fresh ]]; then
               mkdir -p "$profile"
@@ -179,8 +179,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $name = 'Ratio-0.1.1-windows-x64-setup.exe'
-          gh release download v0.1.1 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
+          $name = 'Ratio-0.2.0-windows-x64-setup.exe'
+          gh release download v0.2.0 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "PREVIOUS_RATIO_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
       - name: Test the upgrade on a clean Windows worker

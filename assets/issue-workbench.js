@@ -70,12 +70,14 @@
                 controls.querySelectorAll(".issue-view-tabs a").forEach((tab, n) => { tab.href = layouts[n].href; });
             }
             const focusWasInList = workbench.contains(document.activeElement) || document.activeElement === document.body;
+            const listScroll = workbench.querySelector(".issue-register").scrollTop;
             workbench.replaceWith(next);
+            next.querySelector(".issue-register").scrollTop = listScroll;
             history.pushState({issuePreview: true}, "", url);
             renderedSearch = location.search;
             if (!focusWasInList) return;
             const title = next.querySelector("#preview-title");
-            if (title) {
+            if (title?.getClientRects().length) {
                 title.focus({preventScroll: true});
                 const top = next.querySelector("#issue-preview").getBoundingClientRect().top;
                 if (top < 0 || top > window.innerHeight / 2) title.scrollIntoView({block: "center"});
@@ -94,7 +96,7 @@
 
     document.addEventListener("click", event => {
         if (event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.defaultPrevented) return;
-        const link = event.target.closest?.(".issue-preview-trigger, .preview-close");
+        const link = event.target.closest?.(".issue-preview-trigger, .preview-dismiss");
         if (!link) return;
         event.preventDefault();
         inspect(link);
@@ -108,11 +110,11 @@
             if (current().querySelector(".issue-register").getClientRects().length) {
                 focusRow(preview.dataset.issue);
             } else {
-                inspect(preview.querySelector(".preview-close"));
+                inspect(preview.querySelector(".preview-return"));
             }
             return;
         }
-        const link = event.target.closest?.(".issue-ledger-row, .issue-preview-trigger");
+        const link = event.target.closest?.(".issue-ledger-row, .issue-row-tool");
         if (!link) return;
         const row = link.closest(".issue-record");
         if (event.key === " " && !event.repeat) {

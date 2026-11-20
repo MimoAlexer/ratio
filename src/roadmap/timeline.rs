@@ -361,7 +361,14 @@ impl Schedule<'_> {
                 span { i class="rm-key-target" {} "Target" }
                 @if self.releases.iter().any(|r|r.published_on.is_some()) { span { i class="rm-key-shipped" {} "Shipped" } }
                 @if !self.deps.is_empty() { span { b aria-hidden="true" { "→" } "Prerequisite to dependent" } }
-                @if !self.weeks.is_empty() { span { i class="rm-key-off" {} "Unavailable week" } }
+                @if !self.weeks.is_empty() {
+                    span {
+                        svg class="rm-key-off" width="14" height="11" aria-hidden="true" {
+                            rect width="14" height="11" fill="url(#rm-hatch)" {}
+                        }
+                        "Unavailable week"
+                    }
+                }
             }
         }
     }
@@ -565,6 +572,7 @@ mod tests {
             timeline(Uuid::nil(), &[], &[], None, nov(20), &weeks, &releases).into_string();
         for expected in [
             "rm-week",
+            "fill=\"url(#rm-hatch)\"",
             "Start 05 Nov 2026",
             "End 15 Nov 2026",
             "rm-shipped",

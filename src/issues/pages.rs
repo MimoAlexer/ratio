@@ -541,40 +541,54 @@ fn issue_row(f: &Filters, item: &ListItem, selected: Option<Uuid>) -> Markup {
         "{}#issue-preview",
         f.change_url("inspect", &item.id.to_string(), true)
     );
+    let detail = format!("/issues/{}", item.id);
+    let split = selected.is_some();
+    let current = (selected == Some(item.id)).then_some("true");
+    let finding = html! {
+        @if item.manual_severity != "none" {
+            @let text = format!("{} finding{}", label(&item.manual_severity), if item.finding_closed { " · closed" } else { "" });
+            span.issue-flag.issue-finding title=(&text) data-severity=[(!item.finding_closed).then_some(&item.manual_severity)] { (text) }
+        }
+    };
     html! {
-        li.issue-record data-id=(item.id) data-selected=[(selected == Some(item.id)).then_some("true")] {
-            a.issue-ledger-row id=(format!("record-{}", item.id)) href=(format!("/issues/{}", item.id)) {
-                span.issue-ref title=(&item.project_name) { (&key) }
+        li.issue-record data-id=(item.id) data-selected=[current] {
+            a.issue-ledger-row.issue-preview-trigger[split] id=(format!("record-{}", item.id))
+                href=(if split { &inspect } else { &detail }) aria-current=[current] {
+                @if split { span.sr-only { "Preview issue " } }
                 span.issue-name-cell {
                     span.issue-item-state title=(label(&item.status)) {
                         (status_mark(&item.status)) span.sr-only { (label(&item.status)) }
                     }
                     span.issue-title { (&item.title) }
                     @if item.archived || item.project_archived { span.issue-flag { "Archived" } }
-                    @if item.manual_severity != "none" {
-                        span.issue-flag data-severity=[(!item.finding_closed).then_some(&item.manual_severity)] {
-                            (label(&item.manual_severity)) " finding" @if item.finding_closed { " · closed" }
-                        }
-                    }
+                    (finding)
                     @if item.checkpoint { span.issue-bookmark title="Latest checkpoint" { (ledger_icon("bookmark")) span.sr-only { "Latest checkpoint" } } }
                     @if !item.labels.is_empty() {
                         span.issue-row-labels { @for tag in &item.labels { span { (tag) } } }
                     }
-                    span.issue-narrow-project { (&item.project_name) }
                 }
-                span.issue-priority title=(format!("{} priority", label(&item.priority))) {
-                    (priority_mark(&item.priority)) span { (label(&item.priority)) }
-                }
-                span.issue-project { (&item.project_name) }
-                span.issue-kind { (label(&item.kind)) }
-                time.issue-date datetime=(item.updated_at.to_rfc3339()) title=(item.updated_at.format("%Y-%m-%d %H:%M UTC")) {
-                    (item.updated_at.format("%b %e"))
+                span.issue-row-meta {
+                    span.issue-ref title=(&item.project_name) { (&key) }
+                    span.issue-priority title=(format!("{} priority", label(&item.priority))) {
+                        (priority_mark(&item.priority)) span { (label(&item.priority)) }
+                    }
+                    (finding)
+                    span.issue-project { (&item.project_name) }
+                    span.issue-kind { (label(&item.kind)) }
+                    time.issue-date datetime=(item.updated_at.to_rfc3339()) title=(item.updated_at.format("%Y-%m-%d %H:%M UTC")) {
+                        (item.updated_at.format("%b %e"))
+                    }
                 }
             }
-            a.issue-preview-trigger href=(inspect) aria-label=(format!("Preview {key}: {}", item.title))
-                title=(format!("Preview {key}")) aria-current=[(selected == Some(item.id)).then_some("true")] {
-                span.preview-desktop-mark { (ledger_icon("inspect")) }
-                span.preview-touch-mark { (ledger_icon("next")) }
+            @if split {
+                a.issue-row-tool href=(&detail) aria-label=(format!("Open full issue {key}: {}", item.title))
+                    title=(format!("Open full issue {key}")) { (ledger_icon("open")) }
+            } @else {
+                a.issue-row-tool.issue-preview-trigger href=(&inspect) aria-label=(format!("Preview {key}: {}", item.title))
+                    title=(format!("Preview {key}")) {
+                    span.preview-desktop-mark { (ledger_icon("inspect")) }
+                    span.preview-touch-mark { (ledger_icon("next")) }
+                }
             }
         }
     }
@@ -666,6 +680,14 @@ fn issue_results(auth: &Auth, f: &Filters, items: &[ListItem], selected: Option<
     html! {
         section.issue-ledger data-group=(&f.group) aria-label="Issue list"
             data-mixed-projects=[items.first().filter(|first| items.iter().any(|i| i.project_id != first.project_id)).map(|_| "true")] {
+            div.issue-queue-head {
+                span { (ledger_icon("list")) "Issue queue" }
+                small { @match f.group.as_str() {
+                    "priority" => { "By priority" }
+                    "status" => { "By status" }
+                    _ => { "Ungrouped" }
+                } }
+            }
             div.issue-column-head aria-hidden="true" {
                 span { "ID" } span { "Issue" } span.issue-priority { "Priority" } span.issue-project { "Project" } span.issue-kind { "Type" } span.issue-date { "Updated" }
                 span.issue-preview-col { "Preview" }
