@@ -32,6 +32,8 @@ The issue list opens first. Use Filters and Display to control the records, grou
 
 ![Issue detail in Working Set on Linux](../docs/images/working-set-issue-detail.png)
 
+[Desktop qualification and checksums](../docs/desktop-verification.md)
+
 ## Build and test
 
 The native client is a separate Rust Cargo package. The server can be deployed to Railway using [the operations guide](../ops/railway.md).
