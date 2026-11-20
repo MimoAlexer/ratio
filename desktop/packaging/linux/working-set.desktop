@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Working Set
+Comment=Track projects, issues, and releases
+Exec=working-set
+Icon=working-set
+Terminal=false
+Categories=Development;ProjectManagement;
+Keywords=tasks;issues;projects;roadmap;

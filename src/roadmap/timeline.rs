@@ -140,11 +140,22 @@ fn diamond(x: f64, y: usize, radius: f64, class: &str) -> Markup {
     html! { path class=(class) d=(format!("M {x:.1} {:.1} l {radius} {radius} -{radius} {radius} -{radius} -{radius} Z", y-radius)) {} }
 }
 
-fn svg_labels(title: &str, subtitle: &str, y: usize) -> Markup {
+fn svg_labels(title: &str, subtitle: &str, y: usize, kind: &str) -> Markup {
     html! {
         g clip-path="url(#rm-name-clip)" {
-            text class="rm-name" x="14" y=(y-2) { (title) }
-            text class="rm-meta" x="14" y=(y+15) { (subtitle) }
+            g class="rm-state" aria-hidden="true" transform=(format!("translate(21 {})",y-6)) {
+                @match kind {
+                    "release" => path d="M0 -6 6 0 0 6 -6 0Z" {},
+                    "reached" => path d="M-6 0 -2 4 6 -5" {},
+                    "in_progress" => {
+                        circle r="5.5" {}
+                        path d="M0 -5.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor" {}
+                    },
+                    _ => circle r="5.5" stroke-dasharray="2 2" {},
+                }
+            }
+            text class="rm-name" x="38" y=(y-2) { (title) }
+            text class="rm-meta" x="38" y=(y+15) { (subtitle) }
         }
     }
 }
@@ -202,7 +213,7 @@ fn milestone_row(
         a class=(class) href=(detail(project,m.id)) aria-label=(format!("{}, {}, open milestone details",m.title,state)) {
             title { (m.title) " · " (state) @if let Some(d) = m.target_on { " · Target " (date(d)) } }
             rect class="rm-hit" x="0" y=(AXIS+i*ROW) width=(WIDTH) height=(ROW) {}
-            (svg_labels(&m.title,state,y))
+            (svg_labels(&m.title,state,y,&m.status))
             (span(calendar,y,m.start_on,m.end_on))
             @if let Some(target) = m.target_on {
                 (diamond(calendar.x(target),y,5.5,"rm-target"))
@@ -219,7 +230,7 @@ fn release_row(r: &ReleaseDate, i: usize, calendar: &Calendar) -> Markup {
         a class="rm-release" href=(format!("/releases/{}",r.id)) aria-label=(format!("Open release {} {}",r.name,r.version)) {
             title { (r.name) " · " (r.version) @if let Some(d) = r.published_on { " · Shipped " (date(d)) } }
             rect class="rm-hit" x="0" y=(AXIS+i*ROW) width=(WIDTH) height=(ROW) {}
-            (svg_labels(&r.name,&format!("Release · {}",r.version),y))
+            (svg_labels(&r.name,&format!("Release · {}",r.version),y,"release"))
             (span(calendar,y,r.start_on,r.end_on))
             @if let Some(d) = r.target_on { (diamond(calendar.x(d),y,7.0,"rm-target")) }
             @if let Some(d) = r.published_on { (diamond(calendar.x(d),y,4.0,"rm-shipped")) }
@@ -297,6 +308,7 @@ impl Schedule<'_> {
                         }
                         clipPath id="rm-name-clip" { rect x="0" y="0" width=(LEFT-18.0) height=(height) {} }
                     }
+                    rect class="rm-axis-band" x="0" y="0" width=(WIDTH) height=(AXIS) {}
                     @if let Some(index) = self.selected.and_then(|id|self.index.get(&id)) {
                         rect class="rm-active-row" x="0" y=(AXIS+index*ROW) width=(WIDTH) height=(ROW) {}
                         rect class="rm-active-tick" x="0" y=(y(*index)-11) width="2" height="22" {}
@@ -311,16 +323,19 @@ impl Schedule<'_> {
                         }
                     }
                     text class="rm-axis-title" x="14" y="38" { "Workstream" }
+                    line class="rm-rule" x1=(LEFT-10.0) x2=(LEFT-10.0) y1="0" y2=(height) {}
                     @for d in ticks {
                         @let x = calendar.x(d);
                         line class="rm-grid" x1=(x) x2=(x) y1=(AXIS-8) y2=(height) {}
-                        text class="rm-axis" x=(x) y="44" text-anchor="middle" { (calendar.tick_label(d)) }
+                        text class="rm-axis" x=(x) y="44" text-anchor=(if x-LEFT < 24.0 { "start" } else if RIGHT-x < 24.0 { "end" } else { "middle" }) { (calendar.tick_label(d)) }
                     }
                     @for i in 0..=rows {
                         line class="rm-rule" x1="0" x2=(WIDTH) y1=(AXIS+i*ROW) y2=(AXIS+i*ROW) {}
                     }
-                    line class="rm-today-line" x1=(calendar.x(today)) x2=(calendar.x(today)) y1="22" y2=(height) {}
-                    text class="rm-today" x=(calendar.x(today)) y="16" text-anchor="middle" { "Today" }
+                    @let now = calendar.x(today);
+                    line class="rm-today-line" x1=(now) x2=(now) y1="23" y2=(height) {}
+                    path class="rm-active-tick" d=(format!("M {now:.1} 26 l -4 -5 h 8 Z")) {}
+                    text class="rm-today" x=(now) y="16" text-anchor="middle" { "Today" }
                     @for edge in self.deps {
                         @if let (Some(&a),Some(&b)) = (self.index.get(&edge.prerequisite_id),self.index.get(&edge.dependent_id)) {
                             @let from = &self.milestones[a];

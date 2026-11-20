@@ -160,13 +160,13 @@ async fn home(
     );
     let critical_sql = format!(
         "{HOME_SELECT}
-        AND i.security_critical ORDER BY i.updated_at DESC, i.id LIMIT 6"
+        AND i.security_critical AND NOT i.finding_closed ORDER BY i.updated_at DESC, i.id LIMIT 6"
     );
     let (resume, active, critical, critical_count) = tokio::try_join!(
         sqlx::query_as::<_, HomeIssue>(&resume_sql).bind(owner).bind(project).fetch_optional(&state.db),
         sqlx::query_as::<_, HomeIssue>(&active_sql).bind(owner).bind(project).fetch_all(&state.db),
         sqlx::query_as::<_, HomeIssue>(&critical_sql).bind(owner).bind(project).fetch_all(&state.db),
-        sqlx::query_scalar::<_,i64>("SELECT count(*) FROM issues WHERE owner_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND NOT archived AND security_critical")
+        sqlx::query_scalar::<_,i64>("SELECT count(*) FROM issues WHERE owner_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND NOT archived AND security_critical AND NOT finding_closed")
             .bind(owner).bind(project).fetch_one(&state.db)
     )?;
     let (source_note, pull_request) = if let Some(issue) = &resume {
@@ -185,8 +185,7 @@ async fn home(
     } else {
         (None, html! {})
     };
-    let (github_summary, remote_security) =
-        crate::github::project_home_parts(&state, &auth, project).await;
+    let (_, remote_security) = crate::github::project_home_parts(&state, &auth, project).await;
     let directory = issues_url(project, "");
     let create_url = if writable {
         format!("{directory}#new-issue")
@@ -199,18 +198,12 @@ async fn home(
         .take(6)
         .collect();
     let body = html! {
-        header.page-head {
-            div {
-                h1 { "Home" }
-                p.muted { @match projects.iter().find(|p| Some(p.id) == project) {
-                    Some(p) => { (p.name) }
-                    None => { "All projects" }
-                } }
-            }
+        header.page-head.home-head {
+            h1 { "Home" }
             div.actions {
                 @if !projects.is_empty() {
                     form.row method="get" action="/" {
-                        label { "Project" select name="project" {
+                        label { span.sr-only { "Project" } select name="project" {
                             option value="" selected[project.is_none()] { "All projects" }
                             @for p in &projects {
                                 option value=(p.id) selected[project == Some(p.id)] {
@@ -218,98 +211,109 @@ async fn home(
                                 }
                             }
                         } }
-                        button type="submit" { "Apply" }
+                        button.secondary type="submit" { "Apply" }
                     }
                 }
-                a.btn href=(&create_url) { @if writable { "New issue" } @else { "Create a project" } }
-            }
-        }
-        p.home-security-summary {
-            a href="#critical-findings" {
-                (critical_count) @if critical_count == 1 { " open manual critical" } @else { " open manual criticals" }
-                " · GitHub · " (github_summary.trim_start_matches("GitHub "))
+                a.btn.primary href=(&create_url) {
+                    (ui::icon("plus")) @if writable { "New issue" } @else { "Create a project" }
+                }
             }
         }
         div.home-columns {
-            section.panel id="resume" {
-                header { h2 { "Resume work" } }
-                @if let Some(item) = &resume {
-                    p.muted { (item.identity()) " · " (label(&item.status)) }
-                    h3 { a href=(item.url()) { (item.title) } }
-                    @if !item.next_action.is_empty() {
-                        p { strong { "Next action" } br; (item.next_action) }
-                    }
-                    @if let Some(stamp) = item.checkpoint_at {
-                        p.muted { "Checkpoint saved "
-                            time datetime=(stamp.to_rfc3339()) { (stamp.format("%b %d, %Y at %H:%M UTC")) }
-                        }
-                    } @else { p.muted { "Your most recently edited issue in progress." } }
-                    @if let Some((id, title, anchor)) = &source_note {
-                        p { "Source note · " a href=(format!("/notes/{id}#{anchor}")) { (title) } }
-                    }
-                    div.actions {
-                        a.btn.primary href=(item.url()) { "Resume issue" }
-                        (pull_request)
-                    }
-                } @else {
-                    @if projects.is_empty() {
-                        h3 { "Start your first issue" }
-                        p { "Name the project this issue belongs to. You can enter the issue and its next action on the following screen." }
-                        form.stack method="post" action="/projects" {
-                            (ui::csrf(&auth))
-                            input type="hidden" name="next" value="first-issue";
-                            label { "Project name" input name="name" maxlength="120" required; }
-                            div.actions { button.primary type="submit" { "Create my first issue" } }
-                        }
-                    } @else if writable {
-                        p { "Choose an issue to start, or save a next action on an open issue." }
-                        div.actions {
-                            a.btn.primary href=(&create_url) { "Create an issue" }
-                            a href=(&directory) { "Browse issues" }
+            div.home-main {
+                section.home-resume id="resume" aria-labelledby="resume-title" {
+                    header.home-section-heading { h2 id="resume-title" { "Resume work" } }
+                    @if let Some(item) = &resume {
+                        div.resume-content {
+                            p.issue-context { (item.identity()) span.work-state { (label(&item.status)) } }
+                            h3 { a href=(item.url()) { (item.title) } }
+                            @if !item.next_action.is_empty() {
+                                div.checkpoint-copy {
+                                    p.home-label { "Next action" }
+                                    p { (item.next_action) }
+                                }
+                            }
+                            @if let Some((id, title, anchor)) = &source_note {
+                                p.source-note { "Source note · " a href=(format!("/notes/{id}#{anchor}")) { (title) } }
+                            }
+                            div.actions.resume-actions {
+                                a.btn.primary href=(item.url()) { "Resume issue" (ui::icon("arrow")) }
+                                (pull_request)
+                            }
+                            @if let Some(stamp) = item.checkpoint_at {
+                                p.checkpoint-stamp { "Checkpoint saved "
+                                    time datetime=(stamp.to_rfc3339()) { (stamp.format("%b %d, %Y at %H:%M UTC")) }
+                                }
+                            } @else { p.checkpoint-stamp { "Your most recently edited issue in progress." } }
                         }
                     } @else {
-                        p { "Work in archived projects is available in the issue list." }
-                        a href=(&directory) { "Browse issues" }
-                    }
-                }
-            }
-            section.panel id="critical-findings" {
-                h2 { "Critical findings" }
-                h3 { "Manual reports" }
-                @if critical_count == 0 {
-                    p.muted { "No open manual critical findings. Set an issue’s manual severity to Critical to track it here." }
-                    a href=(if writable {&directory} else {&create_url}) { "Flag an issue" }
-                } @else {
-                    ul.clean-list {
-                        @for issue in &critical {
-                            li.home-issue-row {
-                                small.muted { (issue.identity()) " · Manual critical" } br;
-                                a href=(issue.url()) { (issue.title) }
-                                @if !issue.next_action.is_empty() { p { (issue.next_action) } }
+                        div.resume-content {
+                            @if projects.is_empty() {
+                                h3 { "Start your first issue" }
+                                p { "Choose a project name to start tracking the issue and its next action." }
+                                form.stack method="post" action="/projects" {
+                                    (ui::csrf(&auth))
+                                    input type="hidden" name="next" value="first-issue";
+                                    label { "Project name" input name="name" maxlength="120" required; }
+                                    div.actions { button.primary type="submit" { "Create my first issue" } }
+                                }
+                            } @else if writable {
+                                h3 { "No work to resume" }
+                                p { "Choose an issue to start, or save a next action on an open issue." }
+                                div.actions {
+                                    a.btn.primary href=(&create_url) { "Create an issue" }
+                                    a href=(&directory) { "Browse issues" }
+                                }
+                            } @else {
+                                p { "Work in archived projects is available in the issue list." }
+                                a href=(&directory) { "Browse issues" }
                             }
                         }
                     }
-                    @if critical_count > critical.len() as i64 {
-                        a href=(issues_url(project,"critical=open&scope=all")) { "View all " (critical_count) " open manual criticals" }
+                }
+                section.home-active id="active-work" aria-labelledby="active-title" {
+                    header.home-section-heading { h2 id="active-title" { "Other work in progress" } }
+                    @if active_others.is_empty() {
+                        p.muted { "No other issues in progress." }
+                    } @else {
+                        ul.clean-list {
+                            @for issue in active_others {
+                                li.home-issue-row {
+                                    span.issue-context { (issue.identity()) }
+                                    a href=(issue.url()) { (issue.title) }
+                                }
+                            }
+                        }
+                    }
+                    a.text-action href=(issues_url(project,"status=in_progress")) { "View in-progress issues" (ui::icon("arrow")) }
+                }
+            }
+            section.home-findings id="critical-findings" aria-labelledby="findings-title" {
+                header.home-section-heading { h2 id="findings-title" { "Critical findings" } }
+                div.manual-findings {
+                    h3 { (ui::icon("flag")) "Manual reports" }
+                    @if critical_count == 0 {
+                        p.muted { "No open manual critical findings. Set an issue’s manual severity to Critical to track it here." }
+                        a.text-action href=(if writable {&directory} else {&create_url}) { "Flag an issue" (ui::icon("arrow")) }
+                    } @else {
+                        p.finding-count {
+                            (critical_count) @if critical_count == 1 { " open critical finding" } @else { " open critical findings" }
+                        }
+                        ul.clean-list {
+                            @for issue in &critical {
+                                li.home-issue-row {
+                                    span.issue-context { (issue.identity()) }
+                                    a href=(issue.url()) { (issue.title) }
+                                    @if !issue.next_action.is_empty() { p { (issue.next_action) } }
+                                }
+                            }
+                        }
+                        @if critical_count > critical.len() as i64 {
+                            a.text-action href=(issues_url(project,"critical=open&scope=all")) { "View all " (critical_count) " open findings" (ui::icon("arrow")) }
+                        }
                     }
                 }
                 (remote_security)
-            }
-            section.panel id="active-work" {
-                header { h2 { "Other work in progress" } }
-                @if active_others.is_empty() {
-                    p.muted { "No other issues in progress." }
-                } @else {
-                    ul.clean-list {
-                        @for issue in active_others {
-                            li.home-issue-row {
-                                small.muted { (issue.identity()) } br;
-                                a href=(issue.url()) { (issue.title) }
-                            }
-                        }
-                    }
-                }
-                a href=(issues_url(project,"status=in_progress")) { "View in-progress issues" }
             }
         }
     };

@@ -171,7 +171,7 @@ pub(super) fn normalized_email(value: &str) -> Option<String> {
 }
 
 // Only known, navigable workspace pages are valid post-login destinations.
-// Keep a project filter, but never forward arbitrary query contents or provider callbacks.
+// Preserve only explicitly supported query parameters.
 pub(super) fn safe_next(value: &str) -> String {
     if value.len() > 512 {
         return "/".into();
@@ -189,6 +189,26 @@ pub(super) fn safe_next(value: &str) -> String {
     let pieces = path.trim_start_matches('/').split('/').collect::<Vec<_>>();
     if path.starts_with("//") {
         return "/".into();
+    }
+    if path == "/desktop/authorize" {
+        return uri
+            .query()
+            .and_then(|q| q.strip_prefix("code="))
+            .filter(|code| super::desktop::valid_code(code))
+            .map(|code| format!("/desktop/authorize?code={code}"))
+            .unwrap_or_else(|| "/".into());
+    }
+    // The owner in a desktop GitHub handoff is displayed and checked by the
+    // browser confirmation page before it creates an OAuth state.
+    if path == "/integrations/github/browser" {
+        return uri
+            .query()
+            .and_then(|q| q.strip_prefix("owner="))
+            .and_then(|owner| {
+                let id = Uuid::parse_str(owner).ok()?;
+                (id.hyphenated().to_string() == owner).then(|| format!("{path}?owner={id}"))
+            })
+            .unwrap_or_else(|| "/".into());
     }
     let collection = match pieces.as_slice() {
         [
@@ -269,7 +289,12 @@ impl FromRequestParts<AppState> for Auth {
             return Err(signin_redirect(parts, state));
         };
         match session(&state.db, raw).await {
-            Ok(Some(auth)) => Ok(auth),
+            Ok(Some(auth)) => {
+                crate::sync::capture_baseline(&state.db, auth.user_id)
+                    .await
+                    .map_err(IntoResponse::into_response)?;
+                Ok(auth)
+            }
             Ok(None) => Err(signin_redirect(parts, state)),
             Err(err) => Err(err.into_response()),
         }
@@ -380,6 +405,9 @@ pub(super) async fn budget(
 }
 
 pub(super) async fn purge_expired(tx: &mut Transaction<'_, Postgres>) -> AppResult<()> {
+    sqlx::query("DELETE FROM desktop_devices WHERE expires_at<=now()")
+        .execute(&mut **tx)
+        .await?;
     sqlx::query("DELETE FROM login_rate_limits WHERE started_at<now()-interval '1 day'")
         .execute(&mut **tx)
         .await?;

@@ -1,19 +1,26 @@
 use super::{Command, configured, credentials, provider::Repo, references};
-use crate::{AppResult, AppState, auth::Auth, store, ui};
+use crate::{
+    AppResult, AppState,
+    auth::{Auth, is_desktop_client},
+    store, ui,
+};
 use axum::{
     Form, Router,
-    extract::State,
-    response::Html,
+    extract::{Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use maud::{Markup, html};
+use serde::Deserialize;
 use sqlx::FromRow;
 use uuid::Uuid;
 
 pub(super) fn routes() -> Router<AppState> {
     Router::new()
         .route("/integrations", get(index))
+        .route("/integrations/github/browser", get(browser_handoff))
         .route("/integrations/github/repositories", post(discover))
 }
 
@@ -29,13 +36,63 @@ struct Mapping {
     failures: i32,
 }
 
-async fn index(State(s): State<AppState>, auth: Auth) -> AppResult<Html<String>> {
-    render(&s, &auth, None).await
+async fn index(
+    State(s): State<AppState>,
+    auth: Auth,
+    headers: HeaderMap,
+) -> AppResult<Html<String>> {
+    render(&s, &auth, None, is_desktop_client(&headers)).await
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BrowserTarget {
+    owner: Uuid,
+}
+
+fn handoff_path(owner: Uuid) -> String {
+    format!("/integrations/github/browser?owner={owner}")
+}
+
+fn authorize_control(auth: &Auth, desktop: bool, label: &str) -> Markup {
+    if desktop {
+        html! { a.button href=(handoff_path(auth.user_id)) target="_blank" rel="noopener noreferrer" { "Manage GitHub in browser" } }
+    } else {
+        html! { form method="post" action="/integrations/github/connect" { (ui::csrf(auth)) button { (label) } } }
+    }
+}
+
+async fn browser_handoff(
+    auth: Auth,
+    Query(target): Query<BrowserTarget>,
+    headers: HeaderMap,
+) -> Response {
+    if target.owner != auth.user_id {
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("next", &handoff_path(target.owner))
+            .finish();
+        return (StatusCode::FORBIDDEN, ui::public_page("Switch Working Set account", html! {
+            h1 { "Switch Working Set account" }
+            p { "This browser is signed in as " strong { (auth.email) } ". To connect GitHub, sign in with the account open in your desktop app." }
+            a.button href=(format!("/login?{query}")) { "Sign in with another account" }
+        })).into_response();
+    }
+    // The browser creates its own OAuth state only after the user confirms this account.
+    ui::public_page(
+        "Connect GitHub",
+        html! {
+            h1 { "Connect GitHub" }
+            p { "Authorize GitHub for the Working Set account " strong { (auth.email) } "." }
+            (authorize_control(&auth, is_desktop_client(&headers), "Continue to GitHub"))
+        },
+    )
+    .into_response()
 }
 
 async fn discover(
     State(s): State<AppState>,
     auth: Auth,
+    headers: HeaderMap,
     Form(f): Form<Command>,
 ) -> AppResult<Html<String>> {
     auth.check_csrf(&f.csrf)?;
@@ -46,7 +103,7 @@ async fn discover(
     if super::grant(&s.db, auth.user_id).await? != epoch {
         return Err(crate::AppError::Forbidden);
     }
-    render(&s, &auth, Some(repos)).await
+    render(&s, &auth, Some(repos), is_desktop_client(&headers)).await
 }
 
 fn projects(projects: &[store::Project], selected: Option<Uuid>) -> Markup {
@@ -57,7 +114,12 @@ fn projects(projects: &[store::Project], selected: Option<Uuid>) -> Markup {
     } }}
 }
 
-async fn render(s: &AppState, auth: &Auth, choices: Option<Vec<Repo>>) -> AppResult<Html<String>> {
+async fn render(
+    s: &AppState,
+    auth: &Auth,
+    choices: Option<Vec<Repo>>,
+    desktop: bool,
+) -> AppResult<Html<String>> {
     let p = configured(s).ok();
     type ConnectionExpiry = (Option<DateTime<Utc>>, Option<DateTime<Utc>>, bool);
     let connection: Option<ConnectionExpiry> = sqlx::query_as(
@@ -106,13 +168,13 @@ async fn render(s: &AppState, auth: &Auth, choices: Option<Vec<Repo>>) -> AppRes
                         a href=(provider.install_url()) target="_blank" rel="noopener noreferrer" {"Manage installation on GitHub"}
                     }
                     details { summary {"Manage authorization"}
-                        form method="post" action="/integrations/github/connect" {(ui::csrf(auth)) button {"Authorize again"}}
+                        (authorize_control(auth, desktop, "Authorize again"))
                         (disconnect_action(auth))
                     }
                 } @else {
                     div.toolbar {
                         a class="button secondary" href=(provider.install_url()) target="_blank" rel="noopener noreferrer" {"Install the GitHub App"}
-                        form method="post" action="/integrations/github/connect" {(ui::csrf(auth)) button {"Authorize with GitHub"}}
+                        (authorize_control(auth, desktop, "Authorize with GitHub"))
                     }
                     p.muted {"Install the app on the repositories you want to connect, then authorize your GitHub account."}
                 }

@@ -90,13 +90,13 @@ async fn send_verification_email(
     url: &str,
 ) -> AppResult<()> {
     let message = format!(
-        "Open this link to continue in Workspace. It expires in 15 minutes and can be used once.\n\n{url}\n\nIf you did not request this email, you can ignore it."
+        "Open this link to continue in Working Set. It expires in 15 minutes and can be used once.\n\n{url}\n\nIf you did not request this email, you can ignore it."
     );
     let response = client.post(endpoint)
         .timeout(Duration::from_secs(12))
         .bearer_auth(api_key)
         .json(&serde_json::json!({
-            "from": sender, "to": [email], "subject": "Your Workspace verification link", "text": message
+            "from": sender, "to": [email], "subject": "Your Working Set verification link", "text": message
         }))
         .send().await.map_err(|_| mail_unavailable())?;
     if !response.status().is_success() {

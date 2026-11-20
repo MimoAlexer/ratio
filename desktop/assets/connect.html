@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connect to Working Set</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --canvas: #fafafa;
+      --bar: #f4f4f5;
+      --ink: #1d1d1f;
+      --secondary: #56565b;
+      --line: #dcdcdf;
+      --field: #fff;
+      --control-line: #8b8b90;
+      --focus: #52677b;
+      --button: #252527;
+      --button-text: #fff;
+      font: 15px/1.46 "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #151516;
+        --bar: #111112;
+        --ink: #eeeef0;
+        --secondary: #aaaab0;
+        --line: #303033;
+        --field: #202022;
+        --control-line: #6f6f75;
+        --focus: #a4b6c7;
+        --button: #e7e7e9;
+        --button-text: #19191b;
+      }
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100vh; color: var(--ink); background: var(--canvas); }
+    .brand {
+      display: flex; align-items: center; gap: 8px; min-height: 48px;
+      padding: 8px 24px; background: var(--bar); border-bottom: 1px solid var(--line);
+      font-size: 15px; font-weight: 600;
+    }
+    .mark, .mark svg { width: 24px; height: 24px; display: block; }
+    main { max-width: 600px; margin-inline: auto; padding: 72px 24px 40px; }
+    h1 { margin: 0; font-weight: 550; font-size: 28px; line-height: 1.2; letter-spacing: -.035em; }
+    .intro { margin: 8px 0 28px; color: var(--secondary); }
+    form { margin: 0; }
+    label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 550; }
+    .controls { display: flex; gap: 8px; }
+    input, button { font: inherit; }
+    input {
+      min-width: 0; flex: 1; min-height: 38px; padding: 7px 10px;
+      border: 1px solid var(--control-line); border-radius: 4px; color: var(--ink); background: var(--field);
+      font: 400 14px/1.45 "IBM Plex Mono", ui-monospace, Consolas, monospace;
+    }
+    input::placeholder { color: var(--secondary); opacity: 1; }
+    :where(input, button, summary):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    button { cursor: pointer; }
+    .submit {
+      min-height: 38px; padding: 7px 16px; border: 1px solid var(--button); border-radius: 4px;
+      color: var(--button-text); background: var(--button); font-size: 14px; font-weight: 600;
+    }
+    .submit:hover { opacity: .87; }
+    .feedback {
+      margin: 12px 0 0; padding-inline-start: 10px; border-inline-start: 2px solid var(--control-line);
+      font-size: 14px; overflow-wrap: anywhere;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 0 20px; margin-top: 8px; }
+    .text-button {
+      padding: 4px 0; border: 0; background: transparent; color: var(--secondary);
+      font-size: 14px; text-decoration: underline; text-underline-offset: 3px;
+    }
+    .text-button:hover, summary:hover { color: var(--ink); }
+    .local-demo { margin-top: 8px; }
+    .help { margin-top: 24px; color: var(--secondary); font-size: 14px; }
+    summary { width: fit-content; cursor: pointer; padding-block: 4px; }
+    .help p { max-width: 56ch; margin: 4px 0 0; overflow-wrap: anywhere; }
+    code { font: 400 .95em/1.45 "IBM Plex Mono", ui-monospace, Consolas, monospace; }
+    @media (max-width: 520px) {
+      main { padding: 36px 20px; }
+      .brand { padding-inline: 20px; }
+      h1 { font-size: 25px; }
+      .intro { margin-bottom: 24px; }
+      .controls { flex-direction: column; align-items: stretch; gap: 12px; }
+      .submit { align-self: flex-start; }
+      input, .submit { min-height: 40px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="brand"><span class="mark" aria-hidden="true">{{MARK}}</span>Working Set</header>
+  <main>
+    <h1>Workspace connection</h1>
+    <p class="intro">Enter the address of the Working Set server you use to sign in.</p>
+    <form id="connection">
+      <label for="origin">Workspace URL</label>
+      <div class="controls">
+        <input id="origin" name="origin" type="url" inputmode="url" autocapitalize="none"
+               autocomplete="off" spellcheck="false" required placeholder="https://workspace.example.com" value="{{ORIGIN}}">
+        <button class="submit" type="submit"><span id="verb">Connect</span></button>
+      </div>
+      <p id="feedback" class="feedback" role="status" aria-live="polite" {{MESSAGE_HIDDEN}}>{{MESSAGE}}</p>
+    </form>
+    <div class="actions" id="saved" {{SAVED_HIDDEN}}>
+      <button type="button" class="text-button" id="change">Use another address</button>
+      <button type="button" class="text-button" id="forget">Forget saved address</button>
+    </div>
+    <button type="button" class="text-button local-demo" id="demo" data-origin="{{DEMO_ORIGIN}}" {{DEMO_HIDDEN}}>Open local demo</button>
+    <details class="help">
+      <summary>Where do I find my workspace URL?</summary>
+      <p>Use the HTTPS address where Working Set is deployed. If the server runs on this computer, enter its local address and port, such as <code>http://127.0.0.1:3000</code>.</p>
+    </details>
+  </main>
+  <script>
+    "use strict";
+    const form = document.getElementById("connection");
+    const field = document.getElementById("origin");
+    const feedback = document.getElementById("feedback");
+    const change = document.getElementById("change");
+    const demo = document.getElementById("demo");
+    const verb = document.getElementById("verb");
+    const savedOrigin = field.defaultValue;
+    const startingMessage = feedback.textContent;
+    function showMessage(text) {
+      feedback.textContent = text;
+      feedback.hidden = !text;
+    }
+    function updateAction() {
+      const sameAddress = savedOrigin && field.value.trim() === savedOrigin;
+      verb.textContent = sameAddress && startingMessage ? "Retry connection" : "Connect";
+      change.hidden = !sameAddress;
+    }
+    function send(message, progress) {
+      if (!window.ipc || typeof window.ipc.postMessage !== "function") {
+        showMessage("Open the Working Set desktop app to connect.");
+        return;
+      }
+      showMessage(progress);
+      window.ipc.postMessage(JSON.stringify(message));
+    }
+    field.addEventListener("input", () => {
+      updateAction();
+      showMessage(field.value.trim() === savedOrigin ? startingMessage : "");
+    });
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      send({action: "connect", origin: field.value.trim()}, "Opening workspace…");
+    });
+    change.addEventListener("click", () => {
+      field.value = "";
+      updateAction();
+      showMessage("");
+      field.focus();
+    });
+    document.getElementById("forget").addEventListener("click", () => {
+      send({action: "forget"}, "Forgetting saved address…");
+    });
+    demo.addEventListener("click", () => {
+      if (!demo.hidden && demo.dataset.origin) send({action: "connect", origin: demo.dataset.origin}, "Opening local demo…");
+    });
+    updateAction();
+  </script>
+</body>
+</html>

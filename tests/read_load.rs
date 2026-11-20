@@ -147,7 +147,8 @@ impl Page {
     fn request(self, reader: &Reader, base: &str) -> (String, String) {
         match self {
             Page::Home => (format!("{base}/"), "Confirm saved capacity".into()),
-            Page::List => (format!("{base}/issues"), "Verify component 10000".into()),
+            // The work list begins with active issues, newest update first within that group.
+            Page::List => (format!("{base}/issues"), "Verify component 9989".into()),
             Page::Detail => (
                 reader.detail_url.clone(),
                 format!("<h1>{}</h1>", reader.detail_title),

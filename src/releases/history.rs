@@ -483,10 +483,9 @@ fn render(
     }
 }
 
-const ACCENT: &str = "var(--accent, #4e73c7)";
+const ACCENT: &str = "var(--accent, currentColor)";
 
 fn burnup(review: &Review, window: &Window, shipment: Option<NaiveDate>) -> Markup {
-    let width = 600.0;
     let left = 45.0;
     let max = review
         .days
@@ -494,41 +493,54 @@ fn burnup(review: &Review, window: &Window, shipment: Option<NaiveDate>) -> Mark
         .map(|d| d.scope.len())
         .max()
         .unwrap_or(0)
-        .max(1) as f64;
-    let y = |value: usize| 143.0 - 105.0 * value as f64 / max;
+        .max(1);
+    let mut ticks = vec![0, max / 2, max];
+    ticks.dedup();
+    let y = |value: usize| 143.0 - 105.0 * value as f64 / max as f64;
     let x = |date: NaiveDate| left + 512.0 * (date - window.week).num_days() as f64 / 6.0;
     html! {
-        svg.chart viewBox=(format!("0 0 {width} 178")) width="100%" role="group" aria-label="Daily observed scope and Done, in issues" {
-            @for tick in [0, max as usize] {
-                line x1="30" x2="578" y1=(y(tick)) y2=(y(tick)) stroke="currentColor" opacity="0.22" {}
-                text x="22" y=(y(tick)+4.0) text-anchor="end" fill="currentColor" font-size="11" { (tick) }
-            }
-            @for (index, day) in review.days.iter().enumerate() {
-                @let xx = x(day.date);
-                @for (name, value, color) in [("scope", day.scope.len(), "currentColor"), ("done", day.done.len(), ACCENT)] {
-                    @let yy = y(value);
-                    a href=(format!("#{name}-{}", day.date)) aria-label=(format!("{}: {value} {name} issues", day.date)) {
-                        title { (day.date) " · " (value) " " (name) }
-                        @if index > 0 {
-                            @let prior = &review.days[index - 1];
-                            @let prev = if name == "scope" { prior.scope.len() } else { prior.done.len() };
-                            line x1=(x(prior.date)) y1=(y(prev)) x2=(xx) y2=(yy)
-                                stroke=(color) stroke-width="2.5" stroke-dasharray=(if name=="done" {"6 3"} else {"none"}) {}
-                        }
-                        @if name == "scope" {
-                            rect x=(xx-5.5) y=(yy-5.5) width="11" height="11" fill="none" stroke=(color) stroke-width="2" {}
-                        } @else {
-                            circle cx=(xx) cy=(yy) r="3.6" fill=(color) {}
+        div.review-chart-frame tabindex="0" role="region" aria-label="Observed burnup chart" {
+            svg.chart viewBox="0 0 600 178" width="100%" role="group" aria-label="Daily observed scope and Done, in issues" {
+                @for tick in ticks {
+                    line x1="40" x2="578" y1=(y(tick)) y2=(y(tick)) stroke="currentColor" opacity="0.2" {}
+                    text x="32" y=(y(tick)+4.0) text-anchor="end" fill="currentColor" font-size="11" { (tick) }
+                }
+                g fill="none" stroke-width="2" {
+                    @for pair in review.days.windows(2) {
+                        @let (a,b) = (&pair[0],&pair[1]);
+                        line x1=(x(a.date)) y1=(y(a.scope.len())) x2=(x(b.date)) y2=(y(b.scope.len())) stroke="currentColor" {}
+                        line x1=(x(a.date)) y1=(y(a.done.len())) x2=(x(b.date)) y2=(y(b.done.len())) stroke=(ACCENT) stroke-dasharray="5 4" {}
+                    }
+                }
+                @for day in &review.days {
+                    @let xx = x(day.date);
+                    @for (name, value) in [("scope", day.scope.len()), ("done", day.done.len())] {
+                        @let yy = y(value);
+                        a href=(format!("#{name}-{}", day.date)) aria-label=(format!("{}: {value} {name} issues", day.date)) {
+                            title { (day.date) " · " (value) " " (name) }
+                            @if name == "scope" {
+                                rect x=(xx-10.0) y=(yy-10.0) width="20" height="20" fill="transparent" {}
+                                rect x=(xx-5.5) y=(yy-5.5) width="11" height="11" fill="var(--surface, Canvas)" stroke="currentColor" stroke-width="1.8" {}
+                            } @else {
+                                circle cx=(xx) cy=(yy) r=(if day.scope.len()==value { 4 } else { 10 }) fill="transparent" {}
+                                circle cx=(xx) cy=(yy) r="3.6" fill=(ACCENT) {}
+                            }
                         }
                     }
                 }
-                text x=(xx) y="167" text-anchor="middle" font-size="11" fill="currentColor" { (day.date.format("%a %d")) }
-            }
-            @if let Some(date) = shipment {
-                @let xx = x(date);
-                a href="#manifest" aria-label=(format!("Open published manifest from {date}")) {
-                    title { "Published manifest · " (date) }
-                    path d=(format!("M {xx} 4 l 7 7 -7 7 -7 -7 Z")) fill=(ACCENT) {}
+                @for date in window.week.iter_days().take(7) {
+                    @let observed = review.days.iter().any(|day| day.date == date);
+                    text x=(x(date)) y="167" text-anchor="middle" font-size="11" fill=(if observed { "currentColor" } else { "var(--faint, GrayText)" }) {
+                        @if !observed { title { (date) " · No observation" } }
+                        (date.format("%a %d"))
+                    }
+                }
+                @if let Some(date) = shipment {
+                    @let xx = x(date);
+                    a href="#manifest" aria-label=(format!("Open published manifest from {date}")) {
+                        title { "Published manifest · " (date) }
+                        path d=(format!("M {xx} 4 l 7 7 -7 7 -7 -7 Z")) fill=(ACCENT) {}
+                    }
                 }
             }
         }
@@ -581,6 +593,7 @@ fn steps(review: &Review) -> Vec<Step> {
 
 fn waterfall(review: &Review) -> Markup {
     let bars = steps(review);
+    let last = bars.len() - 1;
     let peak = bars
         .iter()
         .map(|bar| bar.to.max(bar.from))
@@ -589,23 +602,33 @@ fn waterfall(review: &Review) -> Markup {
         .max(1) as f64;
     let y = |n: usize| 142.0 - 110.0 * n as f64 / peak;
     html! {
-        svg.chart viewBox="0 0 600 178" width="100%" role="group" aria-label="Weekly changes to open issue inventory" {
-            line x1="13" x2="584" y1="142" y2="142" stroke="currentColor" opacity="0.24" {}
-            @for (i, bar) in bars.iter().enumerate() {
-                @let xx = 26 + i*96;
-                @let high = y(bar.from.max(bar.to));
-                @let height = (y(bar.from) - y(bar.to)).abs().max(2.0);
-                @let sign = if i==0 || i==5 || bar.from==bar.to { "" } else if bar.to>bar.from { "+" } else { "−" };
-                @let value = bar.from.abs_diff(bar.to);
-                @if i<5 {
-                    line x1=(xx+54) x2=(xx+96) y1=(y(bar.to)) y2=(y(bar.to)) stroke="currentColor" stroke-dasharray="3 3" opacity=".55" {}
+        div.review-chart-frame tabindex="0" role="region" aria-label="Open work waterfall chart" {
+            svg.chart viewBox="0 0 600 178" width="100%" role="group" aria-label="Weekly changes to open issue inventory" {
+                defs {
+                    pattern id="review-decrease" width="6" height="6" patternUnits="userSpaceOnUse" {
+                        path d="M-1 1 1 -1 M0 6 6 0 M5 7 7 5" fill="none" stroke="currentColor" stroke-width="1" opacity=".7" {}
+                    }
                 }
-                a href=(format!("#{}", bar.anchor)) aria-label=(format!("{}: {sign}{value} issues", bar.label)) {
-                    title { (bar.label) " · " (sign) (value) }
-                    rect x=(xx) y=(high) width="54" height=(height)
-                        fill=(if i==0 || i==5 { "currentColor" } else { ACCENT }) opacity=(if i==0 || i==5 { ".78" } else { ".88" }) {}
-                    text x=(xx+27) y=(high-8.0) text-anchor="middle" font-size="13" fill="currentColor" { (sign) (value) }
-                    text x=(xx+27) y="165" text-anchor="middle" font-size="11" fill="currentColor" { (bar.label) }
+                line x1="13" x2="584" y1="142" y2="142" stroke="currentColor" opacity="0.24" {}
+                @for (i, bar) in bars.iter().enumerate() {
+                    @let xx = 26 + i*96;
+                    @let high = y(bar.from.max(bar.to));
+                    @let height = (y(bar.from) - y(bar.to)).abs().max(2.0);
+                    @let total = i == 0 || i == last;
+                    @let growth = !total && bar.to > bar.from;
+                    @let sign = if total || bar.from == bar.to { "" } else if growth { "+" } else { "−" };
+                    @let value = bar.from.abs_diff(bar.to);
+                    @if i < last {
+                        line x1=(xx+54) x2=(xx+96) y1=(y(bar.to)) y2=(y(bar.to)) stroke="currentColor" stroke-dasharray="3 3" opacity=".55" {}
+                    }
+                    a href=(format!("#{}", bar.anchor)) aria-label=(format!("{}: {sign}{value} issues", bar.label)) {
+                        title { (bar.label) " · " (sign) (value) }
+                        @let fill = if total || value == 0 { "currentColor" } else if growth { ACCENT } else { "url(#review-decrease)" };
+                        rect x=(xx) y=(high) width="54" height=(height) fill=(fill)
+                            stroke=(if growth { ACCENT } else { "currentColor" }) stroke-width="1" {}
+                        text x=(xx+27) y=(high-8.0) text-anchor="middle" font-size="13" fill="currentColor" { (sign) (value) }
+                        text x=(xx+27) y="165" text-anchor="middle" font-size="11" fill="currentColor" { (bar.label) }
+                    }
                 }
             }
         }
@@ -765,6 +788,25 @@ mod tests {
         clock.observed_through = date("2025-01-20");
         clock.published_on = Some(date("2025-01-15"));
         assert!(select_window(&clock, None, "free").is_none());
+    }
+
+    #[test]
+    fn burnup_labels_the_whole_week_and_links_only_observed_days() {
+        let week = date("2025-03-24");
+        let end = date("2025-03-26");
+        let window = Window {
+            earliest: week,
+            latest: end,
+            week,
+            first: week,
+            last: end,
+        };
+        let review = reconstruct(Inventory::new(), vec![], week, end);
+        let chart = burnup(&review, &window, None).into_string();
+        assert!(chart.contains("Sun 30"));
+        assert_eq!(chart.matches("No observation").count(), 4);
+        assert_eq!(chart.matches("href=\"#done-").count(), 3);
+        assert!(!chart.contains("href=\"#done-2025-03-27\""));
     }
 
     #[sqlx::test]

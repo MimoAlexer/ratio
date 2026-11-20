@@ -9,6 +9,7 @@ pub mod releases;
 pub mod roadmap;
 pub mod sample;
 pub mod store;
+pub mod sync;
 pub mod transfer;
 pub mod ui;
 pub mod workflows;
@@ -158,11 +159,57 @@ async fn ready(State(s): State<AppState>) -> Response {
         (StatusCode::SERVICE_UNAVAILABLE, "database not ready").into_response()
     }
 }
+#[derive(serde::Serialize, sqlx::FromRow)]
+struct SidebarProject {
+    id: uuid::Uuid,
+    name: String,
+    key: String,
+}
+
+async fn sidebar_projects(
+    State(state): State<AppState>,
+    auth: auth::Auth,
+) -> AppResult<axum::Json<Vec<SidebarProject>>> {
+    let projects=sqlx::query_as("SELECT id,name,key FROM projects WHERE owner_id=$1 AND NOT archived ORDER BY name,id LIMIT 6")
+        .bind(auth.user_id).fetch_all(&state.db).await?;
+    Ok(axum::Json(projects))
+}
+
+async fn ui_asset(axum::extract::Path(path): axum::extract::Path<String>) -> Response {
+    let (kind, bytes): (&str, &'static [u8]) = match path.as_str() {
+        "type.css" => (
+            "text/css; charset=utf-8",
+            include_bytes!("../assets/type.css"),
+        ),
+        "fonts/instrument-sans.woff2" => (
+            "font/woff2",
+            include_bytes!("../assets/fonts/instrument-sans.woff2"),
+        ),
+        "fonts/ibm-plex-mono.woff2" => (
+            "font/woff2",
+            include_bytes!("../assets/fonts/ibm-plex-mono.woff2"),
+        ),
+        "issue-detail.css" => (
+            "text/css; charset=utf-8",
+            include_bytes!("../assets/issue-detail.css"),
+        ),
+        "projects.css" => (
+            "text/css; charset=utf-8",
+            include_bytes!("../assets/projects.css"),
+        ),
+        "issues.css" => (
+            "text/css; charset=utf-8",
+            include_bytes!("../assets/issues.css"),
+        ),
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    ([(header::CONTENT_TYPE, kind)], bytes).into_response()
+}
 async fn landing() -> Html<String> {
     ui::public_page(
-        "Workspace",
+        "Working Set",
         html! {
-            h1 {"Pick up your project where you left it."}
+            h1 {"Your development workspace"}
             p {"Keep issues, Markdown decisions, release progress and critical repository alerts together in a private workspace."}
             p class="actions" {a class="button" href="/login"{"Open workspace"} " " a href="/pricing"{"See plans"}}
         },
@@ -240,6 +287,7 @@ async fn protect(State(app): State<AppState>, req: Request, next: Next) -> Respo
 pub fn app(state: AppState) -> Router {
     Router::new()
         .merge(auth::routes())
+        .merge(sync::routes())
         .merge(issues::routes())
         .merge(notes::routes())
         .merge(projects::routes())
@@ -250,6 +298,8 @@ pub fn app(state: AppState) -> Router {
         .merge(transfer::routes())
         .merge(workflows::routes())
         .merge(billing::routes())
+        .route("/api/sidebar/projects", get(sidebar_projects))
+        .route("/assets/{*path}", get(ui_asset))
         .route("/readyz", get(ready))
         .route("/healthz", get(|| async { "ok" }))
         .route("/pricing", get(pricing))
@@ -258,10 +308,64 @@ pub fn app(state: AppState) -> Router {
         .route("/assets/app.css", get(asset_css))
         .route("/assets/mark.svg", get(asset_mark))
         .fallback(|| async { AppError::NotFound })
+        .layer(middleware::from_fn(sync::desktop_page_context))
         .layer(CompressionLayer::new().compress_when(
             DefaultPredicate::new().and(NotForContentType::const_new("application/zip")),
         ))
         .layer(middleware::from_fn_with_state(state.clone(), protect))
         .layer(middleware::from_fn(operations::observe))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod sidebar_tests {
+    use super::*;
+
+    #[sqlx::test]
+    async fn sidebar_is_limited_to_this_accounts_active_projects(pool: PgPool) {
+        let a: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO users(email) VALUES ('one@sidebar.invalid') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let b: uuid::Uuid = sqlx::query_scalar(
+            "INSERT INTO users(email) VALUES ('two@sidebar.invalid') RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        for n in 0..8 {
+            sqlx::query("INSERT INTO projects(owner_id,key,name) VALUES($1,$2,$3)")
+                .bind(a)
+                .bind(format!("P{n}"))
+                .bind(format!("Project {n}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        sqlx::query("INSERT INTO projects(owner_id,key,name,archived) VALUES($1,'ZZ','A archived',true),($2,'FF','A foreign',false)").bind(a).bind(b).execute(&pool).await.unwrap();
+        let axum::Json(visible) = sidebar_projects(
+            State(AppState::for_test(pool)),
+            auth::Auth {
+                user_id: a,
+                email: "one@sidebar.invalid".to_owned(),
+                csrf: "test".to_owned(),
+            },
+        )
+        .await
+        .unwrap();
+        let names: Vec<_> = visible.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Project 0",
+                "Project 1",
+                "Project 2",
+                "Project 3",
+                "Project 4",
+                "Project 5"
+            ]
+        );
+    }
 }

@@ -14,6 +14,9 @@ use uuid::Uuid;
 
 mod credentials;
 mod delivery;
+mod desktop;
+#[cfg(test)]
+mod desktop_tests;
 mod recovery;
 #[cfg(test)]
 mod tests;
@@ -28,6 +31,17 @@ use credentials::{
 };
 use delivery::{dev_links, mail_link};
 
+// This marker selects the native handoff UI. Authentication uses the session.
+pub(crate) fn is_desktop_client(headers: &HeaderMap) -> bool {
+    headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|ua| {
+            ua.split_ascii_whitespace()
+                .any(|product| product.starts_with("WorkingSetDesktop/"))
+        })
+}
+
 fn public_page(title: &str, body: Markup) -> Html<String> {
     Html(html! {
         (DOCTYPE)
@@ -36,13 +50,15 @@ fn public_page(title: &str, body: Markup) -> Html<String> {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 meta name="referrer" content="strict-origin";
-                title { (title) " · Workspace" }
+                title { (title) " · Working Set" }
                 link rel="stylesheet" href="/assets/app.css";
+                link rel="icon" type="image/svg+xml" href="/assets/mark.svg";
+                script defer src="/assets/workspace.js" {}
             }
             body.auth-page {
                 main.auth-shell {
                     div.auth-card {
-                        div.auth-brand { img src="/assets/mark.svg" width="26" height="24" alt=""; "Workspace" }
+                        a.auth-brand href="/welcome" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Working Set" }
                         h1 { (title) }
                         (body)
                     }
@@ -112,6 +128,9 @@ async fn login(
             button type="submit" {"Email me a sign-in link"}
         }
         p {a href="/recover" {"Recover your account"}}
+        @if is_desktop_client(&headers) {
+            p {a href="/desktop/start" {"Pair this desktop using your browser"}}
+        }
     }).into_response();
     if cleanup.is_some() {
         set_cookie(
@@ -329,11 +348,23 @@ async fn revoke(
 ) -> AppResult<Redirect> {
     auth.check_csrf(&form.csrf)?;
     let raw = session_cookie_raw(&headers, state.config.production).ok_or(AppError::Forbidden)?;
+    let mut tx = state.db.begin().await?;
+    desktop::lock_browser(&mut tx, auth.user_id, raw).await?;
+    // An explicit sign-out of other devices also cancels approvals that have
+    // not been exchanged for a session, including those made by this browser.
+    sqlx::query(
+        "DELETE FROM desktop_devices d USING user_sessions s
+                 WHERE d.approved_by=s.token_hash AND s.user_id=$1",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM user_sessions WHERE user_id=$1 AND token_hash<>$2")
         .bind(auth.user_id)
         .bind(digest(raw))
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
     Ok(Redirect::to("/settings?result=revoked"))
 }
 
@@ -342,9 +373,11 @@ async fn settings(
     State(state): State<AppState>,
     Query(query): Query<LoginQuery>,
 ) -> AppResult<Html<String>> {
-    let (plan, timezone, sessions): (String, String, i64) = sqlx::query_as(
+    let (plan, timezone, sessions, pairing): (String, String, i64, bool) = sqlx::query_as(
         "SELECT plan, timezone, (SELECT count(*) FROM user_sessions WHERE user_id=u.id
-         AND expires_at>now()) FROM users u WHERE id=$1",
+         AND expires_at>now()), EXISTS(SELECT 1 FROM desktop_devices d JOIN user_sessions s
+         ON s.token_hash=d.approved_by WHERE s.user_id=u.id AND d.expires_at>now() AND s.expires_at>now())
+         FROM users u WHERE id=$1",
     )
     .bind(auth.user_id)
     .fetch_one(&state.db)
@@ -391,7 +424,8 @@ async fn settings(
                 h2 {"Sessions"}
                 p {(sessions) @if sessions==1 {" active session, including this browser."} @else {" active sessions, including this browser."}}
                 form method="post" action="/logout" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of this browser"}}
-                @if sessions>1 {form method="post" action="/settings/sessions/revoke" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of other browsers"}}}
+                @if pairing {p {"A desktop sign-in is awaiting confirmation."}}
+                @if sessions>1 || pairing {form method="post" action="/settings/sessions/revoke" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of other devices"}}}
             }
             (recovery::settings(&auth))
             section.panel {
@@ -526,5 +560,6 @@ pub fn routes() -> Router<AppState> {
         .route("/settings/sessions/revoke", post(revoke))
         .route("/settings/delete", post(delete_account))
         .route("/settings/timezone", post(save_timezone))
+        .merge(desktop::routes())
         .merge(recovery::routes())
 }

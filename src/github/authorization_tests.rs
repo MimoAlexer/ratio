@@ -170,6 +170,69 @@ fn callback(state: &str) -> Callback {
     }
 }
 
+#[sqlx::test(migrations = "./migrations")]
+async fn desktop_handoff_confirms_the_same_browser_account_before_starting_oauth(db: PgPool) {
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use tower::ServiceExt;
+
+    let intended = actor(&db).await;
+    let other = actor(&db).await;
+    let app = crate::app(AppState::for_test(db.clone()));
+    let path = format!("/integrations/github/browser?owner={}", intended.user_id);
+    let visit = |session: Option<String>| {
+        let mut request = Request::get(&path);
+        if let Some(token) = session {
+            request = request.header(header::COOKIE, format!("workspace_session={token}"));
+        }
+        app.clone().oneshot(request.body(Body::empty()).unwrap())
+    };
+    let anonymous = visit(None).await.unwrap();
+    assert_eq!(anonymous.status(), StatusCode::SEE_OTHER);
+    let login = url::Url::parse("http://localhost/")
+        .unwrap()
+        .join(anonymous.headers()[header::LOCATION].to_str().unwrap())
+        .unwrap();
+    assert_eq!(login.path(), "/login");
+    assert_eq!(
+        login.query_pairs().find(|(k, _)| k == "next").unwrap().1,
+        path
+    );
+
+    for (person, token, status) in [
+        (&other, "a".repeat(64), StatusCode::FORBIDDEN),
+        (&intended, "b".repeat(64), StatusCode::OK),
+    ] {
+        sqlx::query("INSERT INTO user_sessions(token_hash,user_id) VALUES($1,$2)")
+            .bind(super::hash(&token))
+            .bind(person.user_id)
+            .execute(&db)
+            .await
+            .unwrap();
+        let response = visit(Some(token)).await.unwrap();
+        assert_eq!(response.status(), status);
+        let body = String::from_utf8(
+            to_bytes(response.into_body(), 1024 * 1024)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(body.contains(&person.email));
+        assert_eq!(
+            body.contains("action=\"/integrations/github/connect\""),
+            person.user_id == intended.user_id
+        );
+    }
+    let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM github_oauth_states")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(pending, 0, "a GET must never initiate authorization");
+}
+
 async fn connect(db: &PgPool, s: &AppState, mock: &Github, auth: &Auth) {
     let nonce = oauth_state(db, auth).await.unwrap();
     let result = authorize_callback(s, &mock.api, auth, callback(&nonce))

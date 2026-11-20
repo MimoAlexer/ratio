@@ -289,15 +289,45 @@ fn percentiles(sample: &Sample, scope: &Scope, working: &[NaiveDate]) -> [Option
 
 fn interval(first: NaiveDate, median: NaiveDate, upper: NaiveDate) -> Markup {
     let last = upper + Duration::days(6);
-    let span = (last - first).num_days().max(1) as f64;
-    let left = ((median - first).num_days() as f64 / span * 100.0).clamp(0., 100.);
-    html! { figure.chart {
-        svg width="100%" height="24" role="img" aria-label=(format!("Readiness window from the week of {median} through the week ending {last}")) {
-            line x1="0" x2="100%" y1="12" y2="12" stroke="currentColor" opacity=".45" {}
-            rect x=(format!("{left:.2}%")) y="3" width=(format!("{:.2}%",100.-left)) height="18" fill="var(--accent,currentColor)" opacity=".35" {}
-            line x1=(format!("{left:.2}%")) x2=(format!("{left:.2}%")) y1="2" y2="22" stroke="currentColor" stroke-width="2" {}
+    let span = (last - first).num_days() as f64;
+    let position = |day: NaiveDate| 2.0 + 96.0 * (day - first).num_days() as f64 / span;
+    let label_anchor = |x: f64| {
+        if x < 15.0 {
+            "start"
+        } else if x > 85.0 {
+            "end"
+        } else {
+            "middle"
         }
-        figcaption.muted { "Projection starts " (first) ". Shading runs from the median week through the 85th-percentile week." }
+    };
+    let p50 = position(median);
+    let p85 = position(upper);
+    let x50 = format!("{p50:.2}%");
+    let x85 = format!("{p85:.2}%");
+    html! { figure.chart {
+        svg width="100%" height="103" role="img" aria-label=(format!("Projected readiness: median week of {median}, 85th-percentile week of {upper}. The projection starts {first}.")) {
+            defs { pattern id="readiness-hatch" width="6" height="6" patternUnits="userSpaceOnUse" {
+                path d="M-1 1 1 -1 M0 6 6 0 M5 7 7 5" stroke="currentColor" fill="none" opacity=".35" {}
+            } }
+            rect x=(x50) y="32" width=(format!("{:.2}%", 98.0-p50)) height="16" fill="url(#readiness-hatch)" {}
+            line x1="2%" x2="98%" y1="40" y2="40" stroke="currentColor" opacity=".65" {}
+            @for n in 0..=(upper-first).num_weeks() {
+                @let x = format!("{:.2}%", position(first + Duration::weeks(n)));
+                line x1=(x) x2=(x) y1="38" y2="45" stroke="currentColor" opacity=".6" {}
+            }
+            line x1="98%" x2="98%" y1="32" y2="48" stroke="currentColor" {}
+            line x1=(x50) x2=(x50) y1="20" y2="40" stroke="currentColor" {}
+            text x=(x50) y="16" text-anchor=(label_anchor(p50)) font-size="12" fill="currentColor" { (if median==upper { "P50 / P85" } else { "P50" }) }
+            @if median != upper {
+                line x1=(x85) x2=(x85) y1="40" y2="57" stroke="currentColor" {}
+                text x=(x85) y="70" text-anchor=(label_anchor(p85)) font-size="12" fill="currentColor" { "P85" }
+            }
+            circle cx=(x85) cy="40" r="5" fill="var(--surface, Canvas)" stroke="currentColor" stroke-width="1.5" {}
+            circle cx=(x50) cy="40" r=(if median==upper { 2.5 } else { 4.0 }) fill="var(--accent, currentColor)" {}
+            text x="2%" y="95" font-size="12" fill="currentColor" { (first.format("%d %b %Y")) }
+            text x="98%" y="95" text-anchor="end" font-size="12" fill="currentColor" { (last.format("%d %b %Y")) }
+        }
+        figcaption.muted { "Hatching spans the median readiness week through the end of the 85th-percentile week." }
     } }
 }
 
@@ -537,6 +567,18 @@ mod tests {
             first_full_week(sunday.and_hms_opt(23, 59, 59).unwrap()),
             first() + Duration::weeks(1)
         );
+    }
+
+    #[test]
+    fn readiness_band_labels_coincident_and_separate_quantiles() {
+        let start = first();
+        let later = start + Duration::weeks(1);
+        let same_week = interval(start, start, start).into_string();
+        assert!(same_week.contains("P50 / P85"));
+        assert!(same_week.contains(&(start + Duration::days(6)).format("%d %b %Y").to_string()));
+        let separate = interval(start, start, later).into_string();
+        assert!(separate.contains(">P50</text>") && separate.contains(">P85</text>"));
+        assert!(separate.contains(&format!("85th-percentile week of {later}")));
     }
 
     #[test]

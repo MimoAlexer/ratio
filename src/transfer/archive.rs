@@ -402,7 +402,7 @@ fn read_manifest(bytes: &[u8], has_native_history: bool) -> AppResult<Option<Man
                 return Ok(None);
             }
             return Err(invalid(
-                "Invalid native manifest.json. Import a vault folder or a version 1 Workspace export.",
+                "Invalid native manifest.json. Import a vault folder or a version 1 Working Set export.",
             ));
         }
     };

@@ -138,7 +138,7 @@ async fn send(
         .json(&serde_json::json!({
             "from": mail.sender,
             "to": [recipient],
-            "subject": "Your weekly Workspace review",
+            "subject": "Your weekly Working Set review",
             "text": format!("{}/workflows/digest/{digest}", mail.origin)
         }))
         .send()
@@ -422,7 +422,7 @@ mod tests {
             assert_eq!(
                 body,
                 &json!({
-                    "from":"fixture@example.invalid","to":[address],"subject":"Your weekly Workspace review",
+                    "from":"fixture@example.invalid","to":[address],"subject":"Your weekly Working Set review",
                     "text":format!("https://workspace.example.org/workflows/digest/{digest}")
                 })
             );

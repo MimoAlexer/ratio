@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Working Set</title>
+  <rect width="64" height="64" rx="14" fill="#000"/>
+  <path fill="#fff" d="M8 20 24 12v8l-8 4v16l10-5V24l16-8v8l-8 4v12l14-7v-8l8-4v17L34 49l-8-4v-2l-10 5-8-4Z"/>
+</svg>

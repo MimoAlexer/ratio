@@ -125,7 +125,15 @@ SELECT l.owner_id,l.event_id,l.recorded_at FROM recovery_ledger l
 JOIN users u ON u.id=l.owner_id WHERE l.kind='identity'
 ON CONFLICT (user_id) DO UPDATE SET event_id=EXCLUDED.event_id,recovered_at=EXCLUDED.recovered_at;
 
-TRUNCATE login_challenges,user_sessions,login_rate_limits,account_recovery;
+TRUNCATE login_challenges,login_rate_limits,account_recovery;
+DO $$
+BEGIN
+  IF to_regclass('public.desktop_devices') IS NULL THEN
+    TRUNCATE user_sessions;
+  ELSE
+    TRUNCATE desktop_devices,user_sessions;
+  END IF;
+END $$;
 DELETE FROM github_oauth_states;
 DELETE FROM github_connections;
 -- Consent or delivery could have changed after the snapshot. Keep the in-app

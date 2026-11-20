@@ -52,6 +52,8 @@ fn view_form(auth: &Auth, project: Option<Uuid>) -> SaveView {
             critical: "open".into(),
             scope: "all".into(),
             layout: "board".into(),
+            sort_order: "newest".into(),
+            grouping: "priority".into(),
             search: "a & b".into(),
         },
     }
@@ -75,7 +77,9 @@ async fn submitted_view_filters_decode_and_encode_as_a_local_issue_query() {
     assert_eq!(pairs["critical"], "open");
     assert_eq!(pairs["scope"], "active");
     assert_eq!(pairs["view"], "list");
-    assert_eq!(pairs.len(), 4);
+    assert_eq!(pairs["sort"], "updated");
+    assert_eq!(pairs["group"], "status");
+    assert_eq!(pairs.len(), 6);
 }
 
 #[sqlx::test]
@@ -86,7 +90,7 @@ async fn saved_views_check_scope_ownership_and_effective_tier(db: PgPool) {
     let pa = project(&db, a.user_id).await;
     let pb = project(&db, b.user_id).await;
     let uri =
-        format!("/workflows?save=1&project={pa}&q=regression&view=board&critical=open&scope=all")
+        format!("/workflows?save=1&project={pa}&q=regression&view=board&critical=open&scope=all&sort=newest&group=priority")
             .parse()
             .unwrap();
     let query = Query::<Pages>::try_from_uri(&uri).unwrap();
@@ -97,6 +101,8 @@ async fn saved_views_check_scope_ownership_and_effective_tier(db: PgPool) {
     assert!(body.contains("<details open>"));
     assert!(body.contains("value=\"regression\""));
     assert!(body.contains("value=\"board\" selected"));
+    assert!(body.contains("value=\"newest\" selected"));
+    assert!(body.contains("value=\"priority\" selected"));
     assert!(body.contains(&format!("value=\"{pa}\" selected")));
     let save = |form| create_view(State(state.clone()), a.clone(), Form(form));
     assert!(matches!(
@@ -123,14 +129,35 @@ async fn saved_views_check_scope_ownership_and_effective_tier(db: PgPool) {
         open_view(State(state.clone()), b.clone(), Path(id)).await,
         Err(AppError::NotFound)
     ));
-    assert!(
-        location(
-            open_view(State(state.clone()), a.clone(), Path(id))
-                .await
-                .unwrap()
-        )
-        .contains(&pa.to_string())
+    let opened = location(
+        open_view(State(state.clone()), a.clone(), Path(id))
+            .await
+            .unwrap(),
     );
+    assert!(opened.contains(&pa.to_string()));
+    assert!(opened.contains("sort=newest") && opened.contains("group=priority"));
+    let mut board = view_form(&a, Some(pa));
+    board.name = "Board without grouping".into();
+    board.filters.grouping = "none".into();
+    let _ = save(board).await.unwrap();
+    let (board_id, grouping): (Uuid, String) = sqlx::query_as(
+        "SELECT id,grouping FROM workflow_views WHERE owner_id=$1 AND name='Board without grouping'",
+    )
+    .bind(a.user_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(grouping, "status");
+    let _ = delete_view(
+        State(state.clone()),
+        a.clone(),
+        Path(board_id),
+        Form(Confirm {
+            csrf: a.csrf.clone(),
+        }),
+    )
+    .await
+    .unwrap();
     let _ = create_view(State(state.clone()), b.clone(), Form(view_form(&b, None)))
         .await
         .unwrap();

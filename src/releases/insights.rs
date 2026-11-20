@@ -452,9 +452,10 @@ fn weekly_bands(rows: &[Observation<'_>]) -> Vec<Vec<(NaiveDate, [f64; 3])>> {
 
 fn mark(o: &Observation<'_>, x: f64, y: f64, dx: f64) -> Markup {
     let mut label = format!(
-        "{} · {} · {} days · completed {}",
+        "{} · {} · {} · {} days · completed {}",
         o.issue.key,
         o.issue.title,
+        o.issue.kind,
         display_days(o.days),
         o.finish_date
     );
@@ -471,11 +472,11 @@ fn mark(o: &Observation<'_>, x: f64, y: f64, dx: f64) -> Markup {
         ));
     }
     html! {
-        a href=(o.issue.history()) tabindex="0" aria-label=(label) {
+        a class="cycle-point" href=(o.issue.history()) tabindex="0" aria-label=(label) {
             title { (label) }
-            g transform=(format!("translate({dx:.3} 0)")) {
-                circle cx=(pct(x)) cy=(y) r="7" fill="transparent" {}
-                circle cx=(pct(x)) cy=(y) r="3.7" fill="currentColor" opacity="0.8" {}
+            g transform=(format!("translate({dx:.3} 0)")) color="var(--text, CanvasText)" {
+                circle cx=(pct(x)) cy=(y) r="9" fill="transparent" {}
+                use href=(format!("#cycle-{}", o.issue.kind)) x=(pct(x)) y=(y) {}
             }
         }
     }
@@ -544,17 +545,23 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
     html! {
         figure.chart-frame {
             svg width="100%" height="229" role="group" aria-label=(if grouped {
-                "Elapsed days from first start to latest completion, by work type. Select a dot to open its issue history."
-            } else { "Elapsed days from first start to latest completion by finish date. Select a dot to open its issue history." }) {
+                "Elapsed days from first start to latest completion by work type. Select a mark to open its issue history."
+            } else { "Elapsed days from first start to latest completion by finish date. Select a mark to open its issue history." }) {
+                defs {
+                    circle id="cycle-feature" r="4" fill="currentColor" {}
+                    path id="cycle-bug" d="M0 -5 5 0 0 5 -5 0Z" fill="currentColor" {}
+                    rect id="cycle-maintenance" x="-3.7" y="-3.7" width="7.4" height="7.4" fill="var(--canvas, Canvas)" stroke="currentColor" stroke-width="1.7" {}
+                    path id="cycle-security" d="M0 -5 4.6 3.5 -4.6 3.5Z" fill="var(--canvas, Canvas)" stroke="currentColor" stroke-width="1.7" {}
+                }
                 @for tick in 0..=4 {
                     @let days = step * tick as f64;
                     @if grouped {
                         @let x = pct(left + (right-left) * f64::from(tick) / 4.0);
-                        line x1=(x) x2=(x) y1=(top) y2=(bottom) stroke="currentColor" opacity="0.18" {}
+                        line x1=(x) x2=(x) y1=(top) y2=(bottom) stroke="currentColor" stroke-dasharray=(if tick==0 {"none"} else {"2 4"}) opacity="0.31" {}
                         text x=(x) y="211" text-anchor="middle" font-size="12" fill="currentColor" { (display_days(days)) "d" }
                     } @else {
                         @let y = y_days(days);
-                        line x1=(pct(left)) x2=(pct(right)) y1=(y) y2=(y) stroke="currentColor" opacity="0.18" {}
+                        line x1=(pct(left)) x2=(pct(right)) y1=(y) y2=(y) stroke="currentColor" stroke-dasharray=(if tick==0 {"none"} else {"2 4"}) opacity="0.31" {}
                         text x=(pct(left-1.5)) y=(y+4.0) text-anchor="end" font-size="12" fill="currentColor" { (display_days(days)) "d" }
                     }
                 }
@@ -581,15 +588,15 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
                             @let path = |i:usize| segment.iter().map(|p| {let (x,y)=coords(p,i); format!("{x:.3},{y:.3}")}).collect::<Vec<_>>().join(" ");
                             @let upper_rev = segment.iter().rev().map(|p| {let(x,y)=coords(p,2);format!("{x:.3},{y:.3}")}).collect::<Vec<_>>().join(" ");
                             svg x="0" y="0" width="100%" height="229" viewBox="0 0 100 229" preserveAspectRatio="none" aria-hidden="true" {
-                                polygon points=(format!("{} {upper_rev}", path(0))) fill="var(--accent, currentColor)" opacity="0.15" {}
-                                polyline points=(path(1)) stroke="var(--accent, currentColor)" stroke-width="2" vector-effect="non-scaling-stroke" fill="none" {}
+                                polygon points=(format!("{} {upper_rev}", path(0))) fill="currentColor" opacity="0.13" {}
+                                polyline points=(path(1)) stroke="var(--accent, currentColor)" stroke-width="1.6" stroke-dasharray="6 3" vector-effect="non-scaling-stroke" fill="none" {}
                             }
                         } @else {
                             @let (x, median)=coords(&segment[0],1);
                             @let (_, low)=coords(&segment[0],0);
                             @let (_, high)=coords(&segment[0],2);
-                            line x1=(pct(x)) x2=(pct(x)) y1=(low) y2=(high) stroke="var(--accent, currentColor)" stroke-width="8" opacity="0.25" {}
-                            line x1=(pct(x-1.0)) x2=(pct(x+1.0)) y1=(median) y2=(median) stroke="var(--accent, currentColor)" stroke-width="2" {}
+                            line x1=(pct(x)) x2=(pct(x)) y1=(low) y2=(high) stroke="currentColor" stroke-width="8" opacity="0.2" {}
+                            line x1=(pct(x-1.0)) x2=(pct(x+1.0)) y1=(median) y2=(median) stroke="var(--accent, currentColor)" stroke-width="1.6" {}
                         }
                     }
                 }
@@ -601,9 +608,17 @@ fn plot(rows: &[Observation<'_>], view: &str, first: NaiveDate, last: NaiveDate)
                 }
             }
             figcaption.chart-legend {
-                (if grouped { "Elapsed calendar days · One dot per completed issue" } else { "Completion date · One dot per completed issue" })
-                @if !bands.is_empty() { " · Weekly median and middle 50% for weeks with 4+ completions" }
-                @if has_overlaps { " · Overlapping dots are offset" }
+                @for (kind, label) in KINDS {
+                    @if rows.iter().any(|o| o.issue.kind == kind) {
+                        span {
+                            svg width="14" height="14" viewBox="-7 -7 14 14" aria-hidden="true" { use href=(format!("#cycle-{kind}")) {} }
+                            " " (label)
+                        }
+                    }
+                }
+                span { (if grouped { "Elapsed calendar days" } else { "Completion date" }) " · One mark per completed issue" }
+                @if !bands.is_empty() { span { "Weekly median and shaded middle 50% for weeks with 4+ completions" } }
+                @if has_overlaps { span { "Overlapping marks are offset" } }
             }
         }
     }
@@ -819,6 +834,8 @@ mod tests {
         let chart = plot(&selection.done, "time", date, date + Duration::days(17)).into_string();
         assert_eq!(chart.matches("tabindex=\"0\"").count(), 11);
         assert!(chart.contains("translate(-10.500 0)") && chart.contains("translate(10.500 0)"));
+        assert_eq!(chart.matches("href=\"#cycle-bug\"").count(), 12); // 11 observations and their legend.
+        assert!(!chart.contains("href=\"#cycle-security\""));
     }
 
     #[sqlx::test]

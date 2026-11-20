@@ -1,6 +1,14 @@
-# Solo tracker
+# Working Set
 
-A private issue tracker for one developer per workspace. Home brings back your last checkpoint and critical security work. Notes, milestone dependencies and release charts point back to the underlying records. The application uses Rust, Axum, Maud server-rendered HTML, SQLx and PostgreSQL. Standard links and forms support the core workflow with JavaScript disabled.
+A desktop issue tracker for one developer per workspace, backed by a shared account. Home brings back your last checkpoint and critical security work. Notes, milestone dependencies and release charts point back to the underlying records. The application uses Rust, Axum, Maud server-rendered HTML, SQLx and PostgreSQL. Standard links and forms support the core workflow with JavaScript disabled.
+
+## Desktop app
+
+Install Working Set on Windows or Linux from the [private GitHub releases](https://github.com/MimoAlexer/working-set/releases). Connect both computers to the same HTTPS server and approve each device using the same account. Each installation has its own persistent session. The desktop host is Rust using Tao with WebView2 on Windows and WebKitGTK on Linux. The issue workspace, backend and data model are shared with the web service.
+
+[Install and sign in](desktop/README.md) · [GitHub issues](https://github.com/MimoAlexer/working-set/issues) · [Design direction and attribution](docs/design/direction.md) · [Original plans](docs/planning/product-plan.md)
+
+![Working Set issue list in the Linux desktop app](docs/images/working-set-issues.png)
 
 ## Run locally
 

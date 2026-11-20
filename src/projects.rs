@@ -355,13 +355,80 @@ fn project_form(auth: &Auth, project: Option<&store::Project>) -> Markup {
     }
 }
 
-fn project_list(projects: &[store::Project], archived: bool) -> Markup {
+#[derive(FromRow)]
+struct DirectoryEntry {
+    id: Uuid,
+    name: String,
+    key: String,
+    archived: bool,
+    open_issues: i64,
+    completed_issues: i64,
+    milestone_id: Option<Uuid>,
+    milestone_title: Option<String>,
+    milestone_target: Option<chrono::NaiveDate>,
+}
+
+async fn directory(db: &PgPool, owner: Uuid) -> AppResult<Vec<DirectoryEntry>> {
+    Ok(sqlx::query_as(
+        "SELECT p.id, p.name, p.key, p.archived,
+                coalesce(i.open_issues, 0) AS open_issues,
+                coalesce(i.completed_issues, 0) AS completed_issues,
+                m.id AS milestone_id, m.title AS milestone_title, m.target_on AS milestone_target
+           FROM projects p
+           LEFT JOIN (
+               SELECT project_id,
+                      count(*) FILTER (WHERE status IN ('backlog','ready','in_progress')) AS open_issues,
+                      count(*) FILTER (WHERE status='done') AS completed_issues
+                 FROM issues WHERE owner_id=$1 AND NOT archived GROUP BY project_id
+           ) i ON i.project_id=p.id
+           LEFT JOIN LATERAL (
+               SELECT id, title, target_on FROM milestones
+                WHERE owner_id=p.owner_id AND project_id=p.id
+                  AND status<>'reached' AND target_on IS NOT NULL
+                ORDER BY target_on, id LIMIT 1
+           ) m ON true
+          WHERE p.owner_id=$1 ORDER BY p.archived, p.name, p.id",
+    )
+    .bind(owner)
+    .fetch_all(db)
+    .await?)
+}
+
+fn issue_progress(open: i64, completed: i64) -> Markup {
+    let total = open + completed;
+    if total == 0 {
+        return html! { span.project-no-work { "No tracked issues" } };
+    }
+    let description =
+        format!("{completed} of {total} issues completed. Excludes canceled and archived issues.");
     html! {
-        ul.issue-list {
-            @for project in projects.iter().filter(|p| p.archived == archived) {
-                li.row {
-                    a href=(format!("/projects/{}", project.id)) { (&project.name) }
-                    code.muted { (&project.key) }
+        div.project-progress title=(&description) {
+            progress value=(completed) max=(total) aria-label=(&description) {}
+            span { (completed) span.muted { " / " (total) } span.project-mobile-unit { " done" } }
+        }
+    }
+}
+
+fn project_list(projects: &[DirectoryEntry], archived: bool) -> Markup {
+    html! {
+        div.project-directory {
+            div.project-columns aria-hidden="true" { span { "Project" } span { "Issues completed" } span { "Next milestone" } }
+            ul.issue-list.project-rows {
+                @for p in projects.iter().filter(|p| p.archived == archived) {
+                    li.project-row {
+                        a.project-name href=(format!("/projects/{}", p.id)) {
+                            (ui::icon("projects")) span { strong { (&p.name) } code { (&p.key) } }
+                        }
+                        (issue_progress(p.open_issues, p.completed_issues))
+                        @if let (Some(id), Some(title), Some(date)) = (p.milestone_id, &p.milestone_title, p.milestone_target) {
+                            a.project-milestone href=(format!("/roadmap?project={}&milestone={id}#milestone-detail", p.id)) {
+                                span.project-mobile-label { "Next milestone" } span { (title) }
+                                time datetime=(date) { (date.format("%b %-d, %Y")) }
+                            }
+                        } @else {
+                            span.project-unscheduled { "No scheduled milestone" }
+                        }
+                    }
                 }
             }
         }
@@ -369,7 +436,7 @@ fn project_list(projects: &[store::Project], archived: bool) -> Markup {
 }
 
 async fn index(State(state): State<AppState>, auth: Auth) -> AppResult<Html<String>> {
-    let projects = store::projects(&state.db, auth.user_id).await?;
+    let projects = directory(&state.db, auth.user_id).await?;
     let plan: String = sqlx::query_scalar("SELECT plan FROM users WHERE id=$1")
         .bind(auth.user_id)
         .fetch_optional(&state.db)
@@ -382,13 +449,22 @@ async fn index(State(state): State<AppState>, auth: Auth) -> AppResult<Html<Stri
         "Projects",
         "projects",
         html! {
-            header.page-head { div { h1 { "Projects" } p.muted { (active) " of " (limit) " active project slots in use" } } }
-            @if active > 0 { section.panel { h2 { "Active projects" } (project_list(&projects, false)) } }
-            @if projects.len() > active { section.panel { h2 { "Archived projects" } (project_list(&projects, true)) } }
+            header.page-head.project-index-head {
+                div { h1 { "Projects" } p.muted { (active) " of " (limit) " active project slots in use" } }
+                @if (active as i64) < limit && !projects.is_empty() {
+                    a.button href="#new-project" { (ui::icon("plus")) "New project" }
+                }
+            }
+            @if active > 0 {
+                section.project-group { h2 { "Active projects" span.project-count { (active) } } (project_list(&projects, false)) }
+            }
+            @if projects.len() > active {
+                section.project-group { h2 { "Archived projects" span.project-count { (projects.len() - active) } } (project_list(&projects, true)) }
+            }
             @if (active as i64) < limit {
-                section.panel id="new-project" {
-                    h2 { @if projects.is_empty() { "Create your first project" } @else { "New project" } }
-                    (project_form(&auth, None))
+                details.project-form-disclosure open[projects.is_empty()] {
+                    summary { @if projects.is_empty() { "Create your first project" } @else { "Create a project" } }
+                    div id="new-project" { (project_form(&auth, None)) }
                 }
             } @else {
                 p.notice { "Archive an active project to free a slot, or " a href="/billing" { "review your plan" } "." }
@@ -397,13 +473,39 @@ async fn index(State(state): State<AppState>, auth: Auth) -> AppResult<Html<Stri
     ))
 }
 
+#[derive(FromRow)]
+struct QueueIssue {
+    id: Uuid,
+    number: i64,
+    title: String,
+    status: String,
+}
+
+async fn project_queue(db: &PgPool, owner: Uuid, project: Uuid) -> AppResult<Vec<QueueIssue>> {
+    Ok(sqlx::query_as(
+        "SELECT id, number, title, status FROM issues
+          WHERE owner_id=$1 AND project_id=$2 AND NOT archived
+            AND status IN ('in_progress', 'ready', 'backlog')
+          ORDER BY CASE status WHEN 'in_progress' THEN 0 WHEN 'ready' THEN 1 ELSE 2 END,
+                   CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+                   updated_at DESC, id LIMIT 6",
+    )
+    .bind(owner)
+    .bind(project)
+    .fetch_all(db)
+    .await?)
+}
+
 async fn overview(
     State(state): State<AppState>,
     auth: Auth,
     Path(id): Path<Uuid>,
 ) -> AppResult<Html<String>> {
     let project = store::project(&state.db, auth.user_id, id).await?;
-    let totals = counts(&state.db, auth.user_id, id).await?;
+    let (totals, queue) = tokio::try_join!(
+        counts(&state.db, auth.user_id, id),
+        project_queue(&state.db, auth.user_id, id)
+    )?;
     let issues = if project.archived {
         format!("/issues?project={id}&scope=archived")
     } else {
@@ -414,39 +516,71 @@ async fn overview(
         &project.name,
         "projects",
         html! {
-            header.page-head {
+            header.page-head.project-detail-head {
                 div {
-                    a.muted href="/projects" { "Projects" }
+                    a.project-back href="/projects" { "Projects" }
                     h1 { (&project.name) }
-                    code { (&project.key) }
-                    @if project.archived { " " span.status { "Archived · Read-only" } }
+                    div.project-id { code { (&project.key) } @if project.archived { " · Archived · Read-only" } }
                 }
                 div.actions {
                     @if !project.archived {
-                        a.button href=(format!("/issues?project={id}#new-issue")) { "New issue" }
+                        a.button href=(format!("/issues?project={id}#new-issue")) { (ui::icon("plus")) "New issue" }
                     }
                     a.button.secondary href=(format!("/transfer/export/{id}")) { "Export project" }
                 }
             }
-            nav.grid aria-label="Project views" {
-                section.metric {
-                    h2 { a href=(&issues) { "Issues" } }
-                    p { (totals.open_issues) " open · " (totals.completed_issues) " completed" }
-                    a href=(format!("{issues}&view=board")) { "Open issue board" }
-                }
-                @for (path, label, number, singular, plural) in [
-                    ("notes","Notes",totals.notes,"note","notes"),
-                    ("roadmap","Roadmap",totals.milestones,"milestone","milestones"),
-                    ("releases","Releases",totals.releases,"release","releases")
-                ] {
-                    section.metric {
-                        h2 { a href=(format!("/{path}?project={id}")) { (label) } }
-                        p { (number) " " @if number == 1 { (singular) } @else { (plural) } }
+            div.project-overview {
+                section.project-work aria-labelledby="project-issues-title" {
+                    header.project-section-head {
+                        h2 id="project-issues-title" { "Issues" }
+                        div.project-view-links { a href=(&issues) { "Issue list" } a href=(format!("{issues}&view=board")) { "Board" } }
+                    }
+                    div.project-work-progress {
+                        div { strong { (totals.completed_issues) " done" } span { " · " (totals.open_issues) " open" } }
+                        (issue_progress(totals.open_issues, totals.completed_issues))
+                    }
+                    @if queue.is_empty() {
+                        p.project-empty { "No open issues." }
+                    } @else {
+                        h3.project-queue-heading {
+                            "Open work"
+                            @if totals.open_issues > queue.len() as i64 {
+                                span.project-queue-count { (queue.len()) " of " (totals.open_issues) }
+                            }
+                        }
+                        ul.project-queue {
+                            @for item in &queue {
+                                li {
+                                    a href=(format!("/issues/{}", item.id)) {
+                                        code { (&project.key) "-" (item.number) } span { (&item.title) }
+                                    }
+                                    span.project-issue-state { @match item.status.as_str() {
+                                        "in_progress" => { "In progress" }
+                                        "ready" => { "Ready" }
+                                        _ => { "Backlog" }
+                                    } }
+                                }
+                            }
+                        }
                     }
                 }
-                section.metric { h2 { a href=(format!("/health?project={id}")) { "Project health" } } p { "Targets, blockers and critical findings" } }
+                nav.project-resources aria-label="Project views" {
+                    h2 { "Project views" }
+                    @for (path, label, number, singular, plural) in [
+                        ("notes","Notes",totals.notes,"note","notes"),
+                        ("roadmap","Roadmap",totals.milestones,"milestone","milestones"),
+                        ("releases","Releases",totals.releases,"release","releases")
+                    ] {
+                        a href=(format!("/{path}?project={id}")) {
+                            (ui::icon(path)) span { (label) }
+                            small { (number) " " @if number == 1 { (singular) } @else { (plural) } }
+                        }
+                    }
+                    a href=(format!("/insights?project={id}")) { (ui::icon("insights")) span { "Insights" } (ui::icon("arrow")) }
+                    a href=(format!("/health?project={id}")) { (ui::icon("health")) span { "Project health" } (ui::icon("arrow")) }
+                }
             }
-            section.panel {
+            section.project-settings {
                 h2 { "Project settings" }
                 @if project.archived {
                     p { "Reactivating this project uses an active slot. Resume paused repositories from " a href="/integrations" { "Integrations" } "." }
@@ -482,6 +616,52 @@ async fn overview(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[sqlx::test]
+    async fn directory_and_queue_use_the_current_work_in_the_owners_projects(db: PgPool) {
+        let owner = Uuid::new_v4();
+        let outsider = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users(id,email) VALUES($1,'one@example.test'),($2,'two@example.test')",
+        )
+        .bind(owner)
+        .bind(outsider)
+        .execute(&db)
+        .await
+        .unwrap();
+        let project = create_project(&db, owner, "Main", "MAIN").await.unwrap();
+        create_project(&db, outsider, "Private", "MAIN")
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO issues(owner_id,project_id,number,title,status,priority,archived)
+             VALUES($1,$2,1,'Later','backlog','urgent',false),($1,$2,2,'Now','in_progress','low',false),
+                   ($1,$2,3,'Shipped','done','normal',false),($1,$2,4,'Old','in_progress','urgent',true),
+                   ($1,$2,5,'Abandoned','canceled','high',false)",
+        )
+        .bind(owner).bind(project).execute(&db).await.unwrap();
+        sqlx::query(
+            "INSERT INTO milestones(owner_id,project_id,title,target_on,status)
+             VALUES($1,$2,'Released','2026-03-01','reached'),($1,$2,'Beta','2026-05-01','planned'),
+                   ($1,$2,'Prototype','2026-04-01','in_progress'),($1,$2,'Unscheduled',NULL,'planned')",
+        )
+        .bind(owner).bind(project).execute(&db).await.unwrap();
+
+        let rows = directory(&db, owner).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.id, project);
+        assert_eq!((row.open_issues, row.completed_issues), (2, 1));
+        assert_eq!(row.milestone_title.as_deref(), Some("Prototype"));
+        let queue = project_queue(&db, owner, project).await.unwrap();
+        assert_eq!(queue.iter().map(|i| i.number).collect::<Vec<_>>(), [2, 1]);
+        assert!(
+            project_queue(&db, outsider, project)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
 
     #[test]
     fn explicit_keys_are_trimmed_uppercased_and_validated() {

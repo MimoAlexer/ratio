@@ -1,0 +1,146 @@
+/* The project directory shares its column tracks across the header and all rows. */
+[data-view="projects"] { container: project-page / inline-size; }
+.project-index-head, .project-detail-head { align-items: center; }
+.project-index-head > div > p { margin-top: .25rem; }
+.project-index-head .button svg, .project-detail-head .button svg { width: 14px; height: 14px; }
+.project-group { margin-block: 1.4rem; }
+.project-group > h2, .project-section-head > h2, .project-resources > h2, .project-settings > h2 {
+  display: flex;
+  align-items: baseline;
+  gap: .65rem;
+  margin: 0 0 .75rem;
+  font: 600 1rem/1.35 var(--sans);
+  letter-spacing: -.018em;
+}
+.project-count {
+  color: var(--muted);
+  font: 400 .73rem var(--mono);
+}
+.project-columns, .project-directory .project-row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.1fr) minmax(8rem, .65fr) minmax(11rem, 1fr);
+  align-items: center;
+  gap: 1rem;
+  padding-inline: .6rem;
+}
+.project-columns {
+  padding-block: .45rem;
+  border-block: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--surface);
+  font-size: .75rem;
+  font-weight: 500;
+}
+.project-directory .project-rows, .project-queue { list-style: none; padding: 0; margin: 0; }
+.project-directory .project-row {
+  min-height: 3.5rem;
+  padding-block: .53rem;
+  border-bottom: 1px solid var(--line);
+}
+.project-row:focus-within, .project-row:hover { background: var(--surface); }
+.project-name, .project-milestone, .project-resources > a, .project-queue a {
+  min-width: 0;
+  color: var(--text);
+  text-decoration: none;
+}
+.project-name { display: flex; gap: .7rem; align-items: center; }
+.project-name > svg, .project-resources > a > svg { flex: none; width: 17px; height: 17px; color: var(--muted); }
+.project-name > span, .project-milestone { display: grid; gap: .14rem; }
+.project-name strong { font-size: .92rem; font-weight: 575; }
+.project-name code, .project-id code, .project-queue code {
+  color: var(--muted);
+  font: 400 .75rem/1.5 var(--mono);
+  background: transparent;
+}
+.project-mobile-label, .project-mobile-unit { display: none; }
+.project-milestone { font-size: .84rem; }
+.project-milestone time { color: var(--muted); font: 400 .75rem var(--mono); }
+.project-name:hover strong, .project-milestone:hover span, .project-queue a:hover span, .project-resources > a:hover span { text-decoration: underline; }
+.project-progress { display: flex; align-items: center; gap: .65rem; font: 400 .75rem var(--mono); }
+.project-progress progress {
+  appearance: none;
+  width: min(5rem, 45%);
+  height: 4px;
+  flex: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 2px;
+  color: var(--accent);
+  background: var(--line);
+}
+.project-progress progress::-webkit-progress-bar { background: var(--line); }
+.project-progress progress::-webkit-progress-value { background: var(--accent); }
+.project-progress progress::-moz-progress-bar { background: var(--accent); }
+.project-no-work, .project-unscheduled, .project-empty { color: var(--muted); font-size: .8rem; }
+.project-form-disclosure, .project-settings { max-width: 49rem; }
+.project-form-disclosure > summary, .project-settings summary { min-height: 2rem; }
+.project-form-disclosure > div, .project-settings details[open] { padding-bottom: .8rem; }
+.project-form-disclosure form, .project-settings form.stack { max-width: 33rem; }
+.project-detail-head .project-back { display: inline-block; margin-bottom: .35rem; color: var(--muted); font-size: .82rem; }
+.project-id { margin-top: .3rem; color: var(--muted); font-size: .82rem; }
+.project-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(12.5rem, .85fr);
+  gap: clamp(1.2rem, 2.7vw, 2.8rem);
+  margin: 1.6rem 0 2rem;
+}
+.project-work, .project-resources { min-width: 0; }
+.project-section-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .35rem 1rem;
+  padding-bottom: .65rem;
+  border-bottom: 1px solid var(--line);
+}
+.project-section-head > h2 { margin: 0; }
+.project-view-links { display: flex; align-items: center; gap: .8rem; }
+.project-view-links a { color: var(--muted); font-size: .8rem; text-decoration: none; }
+.project-view-links a:hover { color: var(--text); text-decoration: underline; }
+.project-work-progress { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding-block: .85rem; font-size: .87rem; }
+.project-work-progress > div:first-child > span { color: var(--muted); }
+.project-work-progress > .project-progress { min-width: 8rem; justify-content: flex-end; }
+.project-work-progress > .project-progress progress { width: 4.1rem; }
+.project-queue-heading {
+  margin: .4rem 0 .15rem;
+  color: var(--muted);
+  font-size: .73rem;
+  font-weight: 550;
+  letter-spacing: .01em;
+}
+.project-queue-count { margin-inline-start: .5rem; font: 400 .69rem var(--mono); }
+.project-queue li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: .65rem; border-block-end: 1px solid var(--line); }
+.project-queue a { display: grid; grid-template-columns: minmax(4.4rem, max-content) minmax(0, 1fr); align-items: baseline; gap: .65rem; padding-block: .7rem; font-size: .85rem; }
+.project-queue a span { font-weight: 510; }
+.project-issue-state { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.project-resources > h2 { margin-bottom: 0; padding-bottom: .65rem; border-bottom: 1px solid var(--line); }
+.project-resources > a {
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .55rem;
+  padding-block: .72rem;
+  border-bottom: 1px solid var(--line);
+  font-size: .85rem;
+}
+.project-resources > a small { color: var(--muted); font-size: .76rem; }
+.project-resources > a > svg:last-child { width: 14px; height: 14px; }
+.project-settings { padding-top: .8rem; }
+@container project-page (max-width: 38rem) {
+  .project-columns { display: none; }
+  .project-directory .project-rows { border-top: 1px solid var(--line); }
+  .project-directory .project-row { grid-template-columns: minmax(0, 1fr) auto; gap: .6rem .75rem; padding-block: .7rem; }
+  .project-milestone, .project-unscheduled { grid-column: 1/-1; padding-left: 1.75rem; }
+  .project-milestone { display: flex; flex-wrap: wrap; align-items: baseline; gap: .45rem; }
+  .project-row .project-mobile-unit { display: inline; color: var(--muted); }
+  .project-milestone .project-mobile-label { display: block; width: 100%; font-size: .75rem; color: var(--muted); }
+  .project-progress progress { width: 2.5rem; }
+  .project-form-disclosure, .project-settings { max-width: none; }
+  .project-overview { grid-template-columns: minmax(0, 1fr); }
+}
+@container project-page (max-width: 27rem) {
+  .project-queue a { display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; }
+  .project-queue code { font-size: .75rem; }
+  .project-queue .project-issue-state { align-self: center; }
+}

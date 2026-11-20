@@ -11,6 +11,69 @@
         // The preference still works for this page if browser storage is unavailable.
     }
 
+    const themeKey = "working-set.display";
+    function applyTheme(mono) {
+        document.documentElement.dataset.theme = mono ? "mono" : "graphite";
+        for (const button of document.querySelectorAll("[data-theme-toggle]")) {
+            button.hidden = false;
+            button.setAttribute("aria-pressed", String(mono));
+            button.title = mono ? "Use graphite theme" : "Use black and white theme";
+        }
+    }
+    let monochrome = false;
+    try { monochrome = localStorage.getItem(themeKey) === "mono"; } catch {}
+    applyTheme(monochrome);
+    for (const button of document.querySelectorAll("[data-theme-toggle]")) {
+        button.addEventListener("click", () => {
+            const mono = document.documentElement.dataset.theme !== "mono";
+            applyTheme(mono);
+            try { localStorage.setItem(themeKey, mono ? "mono" : "graphite"); } catch {}
+        });
+    }
+
+    if (!document.querySelector(".app-shell")) return;
+
+    async function loadProjectLinks() {
+        const slots = [...document.querySelectorAll("[data-sidebar-projects]")];
+        if (!slots.length) return;
+        try {
+            const response = await fetch("/api/sidebar/projects", {headers: {Accept:"application/json"}, credentials:"same-origin", cache:"no-store", redirect:"error"});
+            if (!response.ok || !response.headers.get("content-type")?.includes("application/json")) return;
+            const items = await response.json();
+            if (!Array.isArray(items)) return;
+            for (const slot of slots) {
+                const links = [];
+                for (const item of items.slice(0,6)) {
+                    if (!projectId.test(item.id) || typeof item.name !== "string") continue;
+                    const link = document.createElement("a");
+                    link.href = "/projects/" + item.id;
+                    link.textContent = item.name;
+                    link.title = item.name;
+                    if (currentProject() === item.id) link.setAttribute("aria-current","location");
+                    links.push(link);
+                }
+                slot.replaceChildren(...links);
+                slot.hidden = links.length === 0;
+            }
+        } catch { /* The Projects page is always available without enhancement. */ }
+    }
+    loadProjectLinks();
+
+    document.addEventListener("keydown", event => {
+        if (event.key !== "Escape") return;
+        const open = event.target.closest?.(".issue-menu[open],.mobile-menu[open]");
+        if (open) {
+            event.preventDefault();
+            open.open = false;
+            open.querySelector("summary")?.focus();
+        }
+    });
+    document.addEventListener("pointerdown", event => {
+        for (const disclosure of document.querySelectorAll(".issue-menu[open],.mobile-menu[open]")) {
+            if (!disclosure.contains(event.target)) disclosure.open = false;
+        }
+    });
+
     function currentProject() {
         const url = new URL(location.href);
         const fromPath = /^\/projects\/([^/]+)\/?$/.exec(url.pathname)?.[1];
@@ -34,6 +97,7 @@
         if (!selector) return;
         const field = document.querySelector(selector);
         if (field) {
+            for (let details = field.closest("details"); details; details = details.parentElement?.closest("details")) details.open = true;
             field.focus();
         } else if (key === "/issues#new-issue") {
             location.replace("/projects#new-project");

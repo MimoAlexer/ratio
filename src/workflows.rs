@@ -65,6 +65,17 @@ const SCOPES: &[(&str, &str)] = &[
     ("all", "All issues"),
 ];
 const LAYOUTS: &[(&str, &str)] = &[("list", "List"), ("board", "Board")];
+pub(crate) const VIEW_SORTS: &[(&str, &str)] = &[
+    ("updated", "Recently updated"),
+    ("priority", "Highest priority"),
+    ("newest", "Newest created"),
+    ("title", "Title A–Z"),
+];
+pub(crate) const VIEW_GROUPS: &[(&str, &str)] = &[
+    ("status", "Status"),
+    ("priority", "Priority"),
+    ("none", "None"),
+];
 const PAGE_SIZE: i64 = 20;
 
 fn paid(plan: &str) -> bool {
@@ -149,6 +160,10 @@ struct Filters {
     scope: String,
     #[serde(default = "default_layout", alias = "view")]
     layout: String,
+    #[serde(default = "default_sort", rename = "sort")]
+    sort_order: String,
+    #[serde(default = "default_group", rename = "group")]
+    grouping: String,
     #[serde(default, alias = "q")]
     search: String,
 }
@@ -158,16 +173,30 @@ fn default_scope() -> String {
 fn default_layout() -> String {
     "list".into()
 }
+fn default_sort() -> String {
+    "updated".into()
+}
+fn default_group() -> String {
+    "status".into()
+}
 
 impl Filters {
+    fn normalize_display(&mut self) {
+        if self.layout == "board" && self.grouping == "none" {
+            self.grouping = default_group();
+        }
+    }
+
     fn validate(&self) -> AppResult<()> {
         validate_issue_options(&self.status, &self.priority, &self.kind, true)?;
         if !valid_option(&self.critical, CRITICAL, true)
             || !valid_option(&self.scope, SCOPES, false)
             || !valid_option(&self.layout, LAYOUTS, false)
+            || !valid_option(&self.sort_order, VIEW_SORTS, false)
+            || !valid_option(&self.grouping, VIEW_GROUPS, false)
         {
             return Err(AppError::BadRequest(
-                "Choose a listed issue scope and layout.".into(),
+                "Choose a listed issue scope, layout, sort order and grouping.".into(),
             ));
         }
         if self.search.chars().count() > 250 || self.search.chars().any(char::is_control) {
@@ -190,6 +219,8 @@ impl Filters {
             ("critical", &self.critical),
             ("scope", &self.scope),
             ("view", &self.layout),
+            ("sort", &self.sort_order),
+            ("group", &self.grouping),
             ("q", &self.search),
         ] {
             if !value.is_empty() {
@@ -213,7 +244,7 @@ struct SaveView {
 async fn create_view(
     State(s): State<AppState>,
     auth: Auth,
-    Form(f): Form<SaveView>,
+    Form(mut f): Form<SaveView>,
 ) -> AppResult<Redirect> {
     auth.check_csrf(&f.csrf)?;
     let project = match f.project.as_str() {
@@ -226,6 +257,7 @@ async fn create_view(
     let mut tx = s.db.begin().await?;
     authorize_view(&plan_for_update(&mut tx, auth.user_id).await?, project)?;
     let name = validate_name(&f.name)?;
+    f.filters.normalize_display();
     f.filters.validate()?;
     if let Some(project_id) = project {
         let exists: bool =
@@ -241,11 +273,12 @@ async fn create_view(
     let search = f.filters.search.trim();
     store::check_storage(&mut tx, auth.user_id, (name.len() + search.len()) as i64).await?;
     let id: Option<Uuid> = sqlx::query_scalar(
-        "INSERT INTO workflow_views(owner_id,name,project_id,status,priority,kind,scope,layout,search,critical)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING RETURNING id",
+        "INSERT INTO workflow_views(owner_id,name,project_id,status,priority,kind,scope,layout,search,critical,sort_order,grouping)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING RETURNING id",
     ).bind(auth.user_id).bind(name).bind(project)
         .bind(&f.filters.status).bind(&f.filters.priority).bind(&f.filters.kind)
         .bind(&f.filters.scope).bind(&f.filters.layout).bind(search).bind(&f.filters.critical)
+        .bind(&f.filters.sort_order).bind(&f.filters.grouping)
         .fetch_optional(&mut *tx).await?;
     id.ok_or_else(|| AppError::Conflict("You already have a view with that name.".into()))?;
     tx.commit().await?;
@@ -502,6 +535,7 @@ async fn index(
             default_scope()
         };
     }
+    pages.filters.normalize_display();
     pages.filters.validate()?;
     let mut views: Vec<SavedView> = sqlx::query_as(
         "SELECT * FROM workflow_views WHERE owner_id=$1 ORDER BY lower(name), id LIMIT $2 OFFSET $3",
@@ -566,6 +600,8 @@ async fn index(
                             (select_field("Security","critical",CRITICAL,Some("All issues"),&pages.filters.critical))
                             (select_field("Include","scope",SCOPES,None,&pages.filters.scope))
                             (select_field("Layout","layout",LAYOUTS,None,&pages.filters.layout))
+                            (select_field("Sort by","sort",VIEW_SORTS,None,&pages.filters.sort_order))
+                            (select_field("Group by","group",VIEW_GROUPS,None,&pages.filters.grouping))
                             button type="submit" { "Save view" }
                         }
                     }

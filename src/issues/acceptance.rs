@@ -603,3 +603,57 @@ async fn a_next_action_entered_on_create_becomes_one_explicit_checkpoint(db: PgP
     assert!(app.resume(&owner).await?.contains(&id.to_string()));
     Ok(())
 }
+
+#[sqlx::test]
+async fn grouped_issue_pages_sort_across_results_and_keep_board_lanes_visible(
+    db: PgPool,
+) -> Result<()> {
+    let app = TestApp::listen(db).await?;
+    let tenant = Tenant::seed(&app).await?;
+    let inbox = app.read(&tenant, "/issues?status=backlog").await?;
+    assert!(inbox.contains("<h1>Inbox</h1>") && inbox.contains("Inbox is clear"));
+    let creation = inbox.split_once("id=\"new-issue\"").unwrap().1;
+    assert!(creation.contains("value=\"backlog\" selected"));
+    sqlx::query(
+        "INSERT INTO issues(owner_id,project_id,number,title,status,priority)
+         SELECT $1,$2,n,'Work item ' || lpad(n::text,2,'0'),
+             CASE n WHEN 52 THEN 'in_progress' WHEN 53 THEN 'backlog' ELSE 'ready' END,
+             CASE n WHEN 53 THEN 'urgent' ELSE 'normal' END
+         FROM generate_series(1,53) n",
+    )
+    .bind(tenant.owner)
+    .bind(tenant.project)
+    .execute(&app.db)
+    .await?;
+
+    let grouped = app.read(&tenant, "/issues?group=status&sort=title").await?;
+    assert!(grouped.find("Work item 52").unwrap() < grouped.find("Work item 01").unwrap());
+    assert!(!grouped.contains("Work item 53"));
+    let second = app
+        .read(&tenant, "/issues?group=status&sort=title&p=2")
+        .await?;
+    assert!(second.find("Work item 50").unwrap() < second.find("Work item 53").unwrap());
+    assert!(!second.contains("Work item 49"));
+    let flat = app
+        .read(&tenant, "/issues?group=none&sort=priority")
+        .await?;
+    assert!(
+        flat.split_once("class=\"issue-title\">")
+            .unwrap()
+            .1
+            .starts_with("Work item 53</span>")
+    );
+    assert!(flat.contains("data-group=\"none\""));
+    let board = app
+        .read(&tenant, "/issues?view=board&group=status&sort=title")
+        .await?;
+    for lane in ["Work item 01", "Work item 52", "Work item 53"] {
+        assert!(board.contains(lane));
+    }
+    assert!(board.contains("name=\"sort\" value=\"title\""));
+    assert_eq!(
+        app.get(&tenant, "/issues?sort=invalid").await?.status(),
+        StatusCode::BAD_REQUEST
+    );
+    Ok(())
+}

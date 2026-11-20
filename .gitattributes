@@ -1,0 +1,4 @@
+# Preserve upstream license text verbatim, including the font licenses in the archived preview.
+/.agents/skills/unslop/LICENSE -whitespace
+/assets/fonts/LICENSE.txt -whitespace
+/docs/planning/solo-graphs.html -whitespace

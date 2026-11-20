@@ -56,7 +56,7 @@ pub(super) async fn index(
                 @if projects.iter().any(|p|!p.archived) {
                     form class="stack" method="post" action="/transfer/preview" enctype="multipart/form-data" {(csrf(&auth))
                         label class="field" {"Destination project" select name="project" required { @for p in projects.iter().filter(|p|!p.archived) {option value=(p.id) selected[filter.project==Some(p.id)] {(p.name)}}}}
-                        label class="field" {"Import format" select name="format" {option value="vault" {"Markdown vault or Workspace export (.zip)"} option value="linear" {"One Linear project (.csv)"}}}
+                        label class="field" {"Import format" select name="format" {option value="vault" {"Markdown vault or Working Set export (.zip)"} option value="linear" {"One Linear project (.csv)"}}}
                         label class="field" {"Folder inside ZIP (optional)" input type="text" name="folder" placeholder="e.g. My Vault/Projects" maxlength="1024";}
                         label class="field" {"File" input type="file" name="file" accept=".zip,.csv" required;}
                         p class="muted" {"ZIP files can contain up to 2,000 entries and 64 MiB of expanded data. Supported images are PNG, JPEG, GIF and WebP, up to " (limits.image_bytes/1_000_000) " MB per image. Linear CSV accepts up to 2,000 rows and 8 MiB. The preview lists changes and unresolved references before you import."}

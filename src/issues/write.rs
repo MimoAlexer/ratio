@@ -518,41 +518,153 @@ pub(super) async fn update(
         }
         Err(AppError::Conflict(reason)) if action == "edit" || action == "checkpoint" => {
             tx.rollback().await?;
-            let fields = [
-                ("Title", form.title.as_deref()),
-                ("Description", form.body.as_deref()),
-                ("Next action", form.next_action.as_deref()),
-                ("Labels", form.labels.as_deref()),
-                ("Status", form.status.as_deref()),
-                ("Priority", form.priority.as_deref()),
-                ("Kind", form.kind.as_deref()),
-                ("Manual severity", form.severity.as_deref()),
-                (
-                    "Finding closed",
-                    form.severity
-                        .as_ref()
-                        .map(|_| form.finding_closed.as_deref().unwrap_or("false")),
-                ),
-            ];
-            let body = maud::html! {
-                h1 { "Review your submitted changes" }
-                p.notice { (reason) }
-                p { a href=(format!("/issues/{issue}")) target="_blank" rel="noopener" {
-                    "Open the current issue in a new tab"
-                } }
-                section.panel.stack {
-                    h2 { "Your draft" }
-                    @for (name, value) in fields {
-                        @if let Some(value) = value {
-                            label { (name) textarea readonly rows=(if name == "Description" { 5 } else { 2 }) { (value) } }
-                        }
-                    }
-                }
-            };
+            let current: Option<SavedIssue> = sqlx::query_as(
+                "SELECT i.*, p.key AS project_key, p.archived AS project_archived
+                 FROM issues i JOIN projects p ON (p.owner_id,p.id)=(i.owner_id,i.project_id)
+                 WHERE i.owner_id=$1 AND i.id=$2",
+            )
+            .bind(auth.user_id)
+            .bind(issue)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or_else(|_| {
+                tracing::warn!("Could not load saved issue for conflict review");
+                None
+            });
+            let body = conflict_review(&auth, issue, &action, &reason, &form, current.as_ref());
             let page = crate::ui::page(&auth, "Review submitted changes", "issues", body);
             Ok((StatusCode::CONFLICT, page).into_response())
         }
         Err(err) => Err(err),
+    }
+}
+
+#[derive(FromRow)]
+struct SavedIssue {
+    #[sqlx(flatten)]
+    issue: super::Issue,
+    project_key: String,
+    project_archived: bool,
+}
+
+fn conflict_review(
+    auth: &Auth,
+    id: Uuid,
+    action: &str,
+    reason: &str,
+    form: &WriteForm,
+    saved: Option<&SavedIssue>,
+) -> maud::Markup {
+    use maud::html;
+    let retry = saved.filter(|s| {
+        !s.project_archived
+            && !s.issue.archived
+            && (action == "edit" || !matches!(s.issue.status.as_str(), "done" | "canceled"))
+    });
+    let closed = form
+        .finding_closed
+        .as_deref()
+        .or_else(|| form.severity.as_ref().map(|_| "false"));
+    let choices = [
+        ("status", "Status", form.status.as_deref(), super::STATUSES),
+        (
+            "priority",
+            "Priority",
+            form.priority.as_deref(),
+            super::PRIORITIES,
+        ),
+        ("kind", "Type", form.kind.as_deref(), super::KINDS),
+        (
+            "severity",
+            "Manual severity",
+            form.severity.as_deref(),
+            super::SEVERITIES,
+        ),
+        (
+            "finding_closed",
+            "Finding closed",
+            closed,
+            &["true", "false"][..],
+        ),
+    ];
+    html! {
+        header.page-head { h1 { "Review your submitted changes" } }
+        p.notice { (reason) }
+        @if let Some(saved) = saved {
+            @let current = &saved.issue;
+            details.panel {
+                summary { "Compare saved version · " (saved.project_key) "-" (current.number) " · Revision " (current.revision) }
+                h2 { (&current.title) }
+                @if saved.project_archived || current.archived { p.muted { "Archived · Read-only" } }
+                dl.stack {
+                    @for (name, value) in [
+                        ("Description", current.body.as_str()),
+                        ("Next action", current.next_action.as_str()),
+                        ("Labels", &current.labels.join(", ")),
+                        ("Status", super::label(&current.status)),
+                        ("Priority", super::label(&current.priority)),
+                        ("Type", super::label(&current.kind)),
+                        ("Manual severity", super::label(&current.manual_severity)),
+                        ("Finding closed", if current.finding_closed { "Yes" } else { "No" }),
+                    ] {
+                        div { dt { (name) } dd.prose { @if value.is_empty() { "—" } @else { (value) } } }
+                    }
+                }
+            }
+        } @else {
+            p { "The saved version is unavailable. You can copy your draft below." }
+        }
+        section.panel {
+            h2 { "Your draft" }
+            form.stack method="post" action=(format!("/issues/{id}/{action}")) {
+                @if let Some(saved) = retry {
+                    (crate::ui::csrf(auth))
+                    input type="hidden" name="revision" value=(saved.issue.revision);
+                    input type="hidden" name="command_id" value=(Uuid::new_v4());
+                }
+                @for (name, caption, submitted, rows) in [
+                    ("title", "Title", form.title.as_deref(), 1),
+                    ("body", "Description", form.body.as_deref(), 5),
+                    ("next_action", "Next action", form.next_action.as_deref(), 2),
+                    ("labels", "Labels", form.labels.as_deref(), 1),
+                ] {
+                    @if let Some(value) = submitted {
+                        label { (caption)
+                            @if retry.is_some() && rows == 1 && !value.contains(['\n', '\r']) {
+                                input type="text" name=(name) value=(value);
+                            } @else {
+                                textarea name=(name) readonly[retry.is_none()] rows=(rows) { "\n" (value) }
+                            }
+                        }
+                    }
+                }
+                @for (name, caption, submitted, options) in choices {
+                    @if let Some(raw) = submitted {
+                        @let value = match (name, raw) {
+                            ("finding_closed", "on") => "true",
+                            ("finding_closed", "off") => "false",
+                            _ => raw,
+                        };
+                        label { (caption)
+                            @if retry.is_some() {
+                                select name=(name) {
+                                    @if !options.contains(&value) { option value=(value) selected { (value) } }
+                                    @for option in options { option value=(option) selected[*option == value] {
+                                        @match *option {
+                                            "true" => { "Yes" }, "false" => { "No" }, choice => { (super::label(choice)) }
+                                        }
+                                    } }
+                                }
+                            } @else { textarea readonly rows="1" { "\n" (value) } }
+                        }
+                    }
+                }
+                @if retry.is_some() {
+                    button.primary type="submit" { "Save reviewed changes" }
+                }
+            }
+            @if saved.is_some() { p { a href=(format!("/issues/{id}")) { "Return to saved issue" } } }
+        }
     }
 }
 
@@ -863,6 +975,167 @@ mod tests {
             fingerprint(&form("first", "ready")).unwrap(),
             fingerprint(&form("first", "done")).unwrap()
         );
+    }
+
+    #[sqlx::test]
+    async fn conflict_review_compares_owned_revision_and_rechecks_reviewed_retry(
+        db: sqlx::PgPool,
+    ) -> anyhow::Result<()> {
+        use anyhow::Context;
+        let owner: Uuid = sqlx::query_scalar(
+            "INSERT INTO users(email) VALUES('compare@example.invalid') RETURNING id",
+        )
+        .fetch_one(&db)
+        .await?;
+        let project: Uuid = sqlx::query_scalar(
+            "INSERT INTO projects(owner_id,key,name) VALUES($1,'CMP','Comparison') RETURNING id",
+        )
+        .bind(owner)
+        .fetch_one(&db)
+        .await?;
+        let state = AppState::for_test(db.clone());
+        let auth = Auth {
+            user_id: owner,
+            email: "compare@example.invalid".into(),
+            csrf: "a".repeat(64),
+        };
+        let mut tx = db.begin().await?;
+        let create = Uuid::new_v4();
+        let issue = create_in(
+            &mut tx,
+            owner,
+            create,
+            NewIssue {
+                project,
+                title: "Saved title <ours>".into(),
+                body: "Saved body".into(),
+                ..draft()
+            },
+        )
+        .await?;
+        tx.commit().await?;
+        let submitted = |command: Uuid, revision: i64| {
+            serde_json::from_value::<WriteForm>(serde_json::json!({
+            "csrf":auth.csrf, "command_id":command,"revision":revision,"title":"Draft <mine>", "body":"\nDraft body", "priority":"high"
+        })).unwrap()
+        };
+        let edit = |id, form| {
+            update(
+                State(state.clone()),
+                auth.clone(),
+                Path((id, "edit".into())),
+                Form(form),
+            )
+        };
+        let body = |response: Response| async move {
+            Ok::<_, anyhow::Error>(String::from_utf8(
+                axum::body::to_bytes(response.into_body(), 200_000)
+                    .await?
+                    .to_vec(),
+            )?)
+        };
+        let page = edit(issue, submitted(Uuid::new_v4(), 0)).await?;
+        assert_eq!(page.status(), StatusCode::CONFLICT);
+        let html = body(page).await?;
+        let saved = html
+            .split_once("Compare saved version")
+            .context("comparison disclosure")?
+            .1
+            .split_once("</details>")
+            .context("end of comparison")?
+            .0;
+        assert!(
+            saved.contains("CMP-1")
+                && saved.contains("Revision 1")
+                && saved.contains("Saved title &lt;ours&gt;")
+                && saved.contains("Saved body")
+        );
+        let draft_html = html.split_once("Your draft").context("preserved draft")?.1;
+        assert!(draft_html.contains("Draft &lt;mine&gt;") && draft_html.contains("\n\nDraft body"));
+        assert!(
+            draft_html.contains("Save reviewed changes")
+                && draft_html.contains("name=\"revision\" value=\"1\"")
+        );
+        let retry_id = draft_html
+            .split_once("name=\"command_id\" value=\"")
+            .context("review command")?
+            .1
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()?;
+
+        // A new edit arriving during comparison must leave the reviewed draft intact again.
+        let change = serde_json::from_value(
+            serde_json::json!({"csrf":auth.csrf,"command_id":Uuid::new_v4(),"revision":1,"title":"Another saved title"}),
+        )?;
+        assert_eq!(edit(issue, change).await?.status(), StatusCode::SEE_OTHER);
+        let second = edit(issue, submitted(retry_id, 1)).await?;
+        assert_eq!(second.status(), StatusCode::CONFLICT);
+        let second = body(second).await?;
+        assert!(
+            second.contains("Revision 2")
+                && second.contains("Another saved title")
+                && second.contains("Draft &lt;mine&gt;")
+        );
+        assert_eq!(
+            edit(issue, submitted(Uuid::new_v4(), 2)).await?.status(),
+            StatusCode::SEE_OTHER
+        );
+        let result: (String, i64) =
+            sqlx::query_as("SELECT title,revision FROM issues WHERE owner_id=$1 AND id=$2")
+                .bind(owner)
+                .bind(issue)
+                .fetch_one(&db)
+                .await?;
+        assert_eq!(result, ("Draft <mine>".into(), 3));
+
+        sqlx::query("UPDATE projects SET archived=true WHERE owner_id=$1 AND id=$2")
+            .bind(owner)
+            .bind(project)
+            .execute(&db)
+            .await?;
+        let archived = body(edit(issue, submitted(Uuid::new_v4(), 3)).await?).await?;
+        assert!(
+            archived.contains("Archived · Read-only")
+                && archived.contains("readonly")
+                && !archived.contains("Save reviewed changes")
+        );
+
+        // An owned command receipt can conflict before the target issue is resolved.
+        let other: Uuid = sqlx::query_scalar(
+            "INSERT INTO users(email) VALUES('outside@example.invalid') RETURNING id",
+        )
+        .fetch_one(&db)
+        .await?;
+        let their_project: Uuid = sqlx::query_scalar(
+            "INSERT INTO projects(owner_id,key,name) VALUES($1,'OTH','Other') RETURNING id",
+        )
+        .bind(other)
+        .fetch_one(&db)
+        .await?;
+        let mut tx = db.begin().await?;
+        let foreign = create_in(
+            &mut tx,
+            other,
+            Uuid::new_v4(),
+            NewIssue {
+                project: their_project,
+                title: "Other private title".into(),
+                ..draft()
+            },
+        )
+        .await?;
+        tx.commit().await?;
+        let unknown = body(edit(foreign, submitted(create, 3)).await?).await?;
+        assert!(
+            unknown.contains("saved version is unavailable")
+                && unknown.contains("Draft &lt;mine&gt;")
+        );
+        assert!(
+            !unknown.contains("Other private title") && !unknown.contains("Save reviewed changes")
+        );
+        Ok(())
     }
 
     #[sqlx::test]
