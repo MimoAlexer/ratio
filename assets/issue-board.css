@@ -1,105 +1,94 @@
 .issue-board-space { container: board-space / inline-size; min-width: 0; }
 .issue-board-space .issue-board {
+  --lane-gap: 20px;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(192px, 1fr);
-  gap: var(--s3, 12px);
+  gap: var(--lane-gap);
   align-items: start;
-  padding: var(--s4, 16px) 2px var(--s3, 12px);
   margin: 0;
+  padding: 16px 0 20px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scroll-snap-type: inline proximity;
-  scrollbar-color: var(--control-line) var(--canvas);
+  scrollbar-color: var(--control-line) transparent;
 }
-.issue-board[data-lanes="1"] { grid-auto-columns: min(100%, 340px); }
-.issue-board .issue-lane {
-  min-width: 0;
-  scroll-snap-align: start;
-  scroll-margin-top: var(--s4, 16px);
-}
-.issue-board .issue-lane:focus-visible { outline-offset: -2px; }
+.issue-board-space .issue-board[data-lanes="1"] { grid-auto-columns: min(100%, 360px); }
+.issue-board .issue-lane { min-width: 0; scroll-snap-align: start; }
+.issue-board .issue-lane:focus-visible, .issue-board:focus-visible { outline-offset: -2px; }
 .lane-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--s1, 4px); min-height: var(--row, 36px);
-  padding: 0 var(--s2, 8px);
-  background: var(--surface); border-block: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  min-height: 36px; margin-bottom: 14px; padding-inline: 2px;
 }
 .lane-head h2 {
-  display: flex; align-items: center; gap: var(--s2, 8px);
-  margin: 0; font: 600 14px/1.35 var(--sans); letter-spacing: -.015em;
+  display: flex; align-items: center; gap: 7px; min-width: 0;
+  margin: 0; color: var(--muted); font: 550 13px/1.35 var(--sans);
 }
-.lane-head .issue-group-count { color: var(--faint); font: 12px/1 var(--mono); }
-.lane-jumps { display: none; }
+.lane-head .issue-group-count { color: var(--faint); font: 11px/1.4 var(--mono); }
+.lane-jumps { display: none; flex: none; }
 .lane-jumps a {
-  display: grid; place-items: center; min-width: var(--control, 32px); min-height: var(--control, 32px);
-  border-radius: var(--radius, 4px); color: var(--muted);
+  display: grid; place-items: center; min-width: 30px; min-height: 32px;
+  border-radius: var(--radius); color: var(--muted);
 }
-.lane-jumps a:hover { background: var(--raised); color: var(--text); }
+.lane-jumps a:hover { color: var(--text); background: var(--raised); }
 .lane-prev svg { transform: rotate(180deg); }
+
+/* Titles and references share the lane canvas. Only saved records carry a bookmark. */
 .issue-board .issue-board-item {
-  position: relative; margin: 0; padding: var(--s3, 12px) var(--s2, 8px) var(--s1, 4px);
-  border: 0; border-bottom: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: stretch; min-width: 0;
+  margin: 0; padding: 0 2px;
 }
-.issue-board-item[data-checkpoint]::before {
-  content: ""; position: absolute; inset-inline-start: 0; inset-block-start: var(--s3, 12px);
-  width: 2px; height: 16px; background: var(--accent);
-}
-.issue-board-item .issue-board-meta, .issue-board-item .issue-priority, .issue-board-item .board-state {
-  display: flex; align-items: center; gap: var(--s1, 4px); min-width: 0;
-}
-.issue-board-item .issue-board-meta { justify-content: space-between; gap: var(--s2, 8px); }
-.issue-board-meta .issue-ref {
-  color: var(--muted); font: 12px/1.4 var(--mono);
-  overflow-wrap: anywhere;
-}
-.issue-board-meta > :last-child { flex: none; color: var(--muted); font: 12px/1.4 var(--sans); }
-.issue-board-item h3 {
-  margin: var(--s1, 4px) 0; font: 570 15px/1.4 var(--sans); letter-spacing: -.014em;
-  overflow-wrap: anywhere;
-}
+.issue-board-item + .issue-board-item { margin-top: 24px; }
+.issue-board-item h3 { order: -1; margin: 0 0 4px; font: 560 15px/1.4 var(--sans); letter-spacing: -.017em; overflow-wrap: anywhere; }
 .issue-board-item h3 a { color: var(--text); text-decoration: none; }
-.issue-board-item h3 a:hover, .issue-board-item h3 a:focus-visible { text-decoration: underline; }
-.issue-board-item .tags { display: flex; flex-wrap: wrap; gap: 2px 6px; margin-block: var(--s1, 4px); }
-.issue-board-item :is(.tag, .badge) {
-  padding: 0; border: 0; background: transparent;
-  color: var(--muted); font: 12px/1.4 var(--sans);
+.issue-board-item h3 a:hover, .issue-board-item h3 a:focus-visible { text-decoration: underline; text-underline-offset: .18em; }
+.issue-board-item :is(.issue-board-meta,.issue-priority,.board-state) {
+  display: flex; align-items: center; min-width: 0; gap: 4px;
+}
+.issue-board-item .issue-board-meta { flex-wrap: wrap; gap: 2px 12px; color: var(--muted); font: 12px/1.5 var(--sans); }
+.issue-board-meta .issue-ref { color: var(--faint); font: 11px/1.5 var(--mono); overflow-wrap: anywhere; }
+.issue-board-item[data-checkpoint] .issue-ref::before {
+  display: inline-block; content: ""; width: 7px; height: 9px; margin-inline-end: 5px;
+  background: currentColor; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%);
+}
+.issue-board-item :is(.issue-state-mark,.issue-priority-mark) { width: 12px; height: 12px; }
+.issue-board-item .tags { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-block: 4px 0; }
+.issue-board-item :is(.tag,.badge) {
+  max-width: 100%; padding: 0; border: 0; background: transparent; color: var(--muted);
+  font: 12px/1.4 var(--sans); overflow-wrap: anywhere;
 }
 .issue-board-item .tag::before { content: "#"; }
 .issue-board-item[data-open-finding="critical"] .badge { color: var(--risk); }
 .issue-board-item .issue-move { border: 0; margin: 0; padding: 0; }
-.issue-move > summary, .issue-board-kind {
-  min-height: var(--control, 32px); color: var(--muted); font: 12px/1.4 var(--sans);
-}
+.issue-move > summary, .issue-board-kind { min-height: 28px; color: var(--faint); font: 12px/1.4 var(--sans); }
 .issue-move > summary {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s1, 4px);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   width: 100%; margin: 0; padding: 0; list-style: none;
 }
 .issue-move > summary::-webkit-details-marker { display: none; }
-.issue-move-label { display: inline-flex; align-items: center; gap: var(--s1, 4px); }
+.issue-move-label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .issue-move-label svg { width: 12px; height: 12px; }
-.issue-move > summary:hover .issue-move-label { text-decoration: underline; color: var(--text); }
+.issue-move > summary:is(:hover,:focus-visible) .issue-move-label { text-decoration: underline; color: var(--text); }
 .issue-move[open] .issue-move-label svg { transform: rotate(180deg); }
-.issue-move .actions {
-  display: grid; gap: var(--s2, 8px); align-items: end;
-  padding-block: var(--s2, 8px); margin: 0; border-top: 1px solid var(--line);
-}
+.issue-move .actions { display: grid; gap: 8px; align-items: end; padding-block: 4px 8px; margin: 0; }
 .issue-move .actions label { margin: 0; }
 .issue-move .actions button { justify-self: start; }
 .issue-board-kind { display: flex; align-items: center; margin: 0; }
-.issue-board .issue-lane-empty { margin: var(--s3, 12px) var(--s2, 8px); color: var(--faint); font-size: 12px; }
+.issue-board .issue-lane-empty { margin: 0 2px; color: var(--faint); font-size: 12px; }
 
-/* Show adjacent-lane links only when the full set no longer fits. */
-@container board-space (max-width: 1011px) {
+/* The lane links complement horizontal scrolling when the complete board does not fit. */
+@container board-space (width < 1040px) {
   .issue-board[data-lanes="5"] .lane-jumps { display: flex; }
 }
-@container board-space (max-width: 807px) {
+@container board-space (width < 828px) {
   .issue-board[data-lanes="4"] .lane-jumps { display: flex; }
 }
 @container board-space (max-width: 520px) {
-  .issue-board-space .issue-board { grid-auto-columns: calc(100% - 36px); gap: var(--s2, 8px); }
+  .issue-board-space .issue-board { --lane-gap: 16px; grid-auto-columns: calc(100% - 44px); }
   .issue-board-space .issue-board[data-lanes="1"] { grid-auto-columns: 100%; }
-  .issue-board .issue-board-item { padding-inline: var(--s3, 12px); }
+  .lane-head { margin-bottom: 12px; }
+}
+@media (any-pointer: coarse) {
   .lane-jumps a, .issue-move > summary { min-height: 44px; }
   .lane-jumps a { min-width: 44px; }
 }

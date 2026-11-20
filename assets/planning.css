@@ -29,8 +29,8 @@
   font-weight: 550;
 }
 .cycle-filter-action .ui-icon { width: 14px; height: 14px; }
-.cycle-filter > summary:hover .cycle-filter-action,
-.cycle-filter[open] .cycle-filter-action { background: var(--raised); }
+.cycle-filter > summary:hover .cycle-filter-action { background: var(--hover); }
+.cycle-filter[open] .cycle-filter-action { border-color: var(--fg-2); }
 .cycle-filter .toolbar { margin: var(--s3, 12px) 0 var(--s1, 4px); }
 .cycle-study { padding-block: var(--s4, 16px); }
 .cycle-heading {
@@ -66,9 +66,10 @@
 .cycle-chart .cycle-ring { visibility: hidden; pointer-events: none; }
 .cycle-chart .cycle-point:is(.is-current, :hover, :focus-visible) .cycle-ring {
   visibility: visible;
-  stroke: var(--accent);
+  stroke: var(--fg);
   stroke-width: 1.5px;
 }
+.cycle-chart .cycle-point:focus-visible .cycle-ring { stroke-width: 2.5px; }
 .cycle-chart .cycle-point:is(:hover, :focus-visible) .cycle-hit { stroke: none; }
 .cycle-chart .cycle-point:focus-visible { outline: none; }
 .cycle-chart .chart-legend { margin: 0; gap: 3px var(--s3, 12px); }
@@ -116,7 +117,7 @@
 .cycle-timing dl { display: grid; grid-template-columns: auto 1fr; gap: 3px var(--s3, 12px); margin: 0 0 var(--s2, 8px); }
 .cycle-timing dd { margin: 0; font: 12px/1.6 var(--mono); text-transform: none; }
 .cycle-timing dt, .cycle-timing dd { color: var(--muted); }
-.cycle-table tbody tr:hover { background: var(--surface); }
+.cycle-table tbody tr:is(:hover, :focus-within) { background: var(--hover); }
 @media (max-width: 1150px) {
   .cycle-instrument { grid-template-columns: minmax(0, 1fr) minmax(205px, 28%); gap: var(--s4, 16px); }
   .cycle-readout { padding-left: var(--s3, 12px); }
@@ -171,7 +172,7 @@
   }
   .cycle-timing[open] > summary::after { transform: rotate(225deg); }
   .cycle-timing[open] > dl { margin-block: var(--s2, 8px) 0; }
-  .cycle-timing > summary:is(:hover, :focus-visible) { background: var(--raised); }
+  .cycle-timing > summary:is(:hover, :focus-visible) { text-decoration: underline; }
   .cycle-timing > summary:focus-visible, .cycle-source-link:focus-visible {
     outline-offset: -2px;
     border-radius: var(--radius, 4px);

@@ -1,32 +1,30 @@
-# Ratio 0.2.1 desktop qualification
+# Ratio 0.3.0 desktop qualification
 
-The 0.2.1 desktop launcher uses a recessed URL field, a raised Connect button and neutral keyboard-focus rings. Connected workspace screens come from the Ratio server. Install the 0.2.1 server to receive those visual updates on an existing client. [Release and checksums](https://github.com/MimoAlexer/ratio/releases/tag/v0.2.1)
+The connection screen and workspace put **Desktop controls** behind a single button. **F10** opens the same native menu from the keyboard. The updated workspace comes from the 0.3.0 server.
 
 | Installer | Bytes | SHA-256 |
 | --- | ---: | --- |
-| `Ratio-0.2.1-windows-x64-setup.exe` | 1,343,188 | `e6d2969993ca3063b53a84a2527526e621003040af29cdf657d0955c0cd2d0c8` |
-| `ratio_0.2.1_amd64.deb` | 659,760 | `a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2` |
+| `Ratio-0.3.0-windows-x64-setup.exe` | 1,343,608 | `ac1d225bc8e19d424d90ee335aeb648adc37090ea349c712b070a6f9cfa60280` |
+| `ratio_0.3.0_amd64.deb` | 660,384 | `4b534a35e8e8556be54e0ba7d8f0bce897d9912ba2a1ed54473b96d005cd55ed` |
 
-## Connection and profiles
+## Linux
 
-First launch focuses Workspace URL. When a saved server is unreachable, Retry connection receives focus. A rejected address stays editable. Both appearance modes use equal red, green and blue channel values for the launcher surfaces, text, borders and focus ring. Input boundaries measure 3.68∶1 in dark mode and 3.65∶1 in light mode. Focus rings measure 11.37∶1 and 7.26∶1 against the canvas.
+The Ubuntu 22.04 build passed all 21 desktop tests. The package requires GTK 3, WebKitGTK 4.1, bubblewrap and glibc 2.34 or later. Packaging the same executable twice produced identical bytes.
 
-The packaged Linux launcher was checked in light and dark modes at 1440, 1280 and 520 pixels wide. At each size, the verification covered initial URL focus, Connect button focus, invalid-address recovery and the offline Retry state.
+On Debian 12 with X11, the connected WebKit document grew from 795 to 820 pixels high in the same window. The accessibility tree on the Linux host exposed no menu bar. Pressing physical F10 inside the document opened a native menu with Back, Forward, Reload, Connection settings and Quit. The launcher button, the desktop issue list at 1440 pixels and issue detail at 520 pixels all exposed the same five commands. Choosing Quit exited the process.
 
-On the packaged client, Orca 50.3 spoke the HTTPS correction after a pasted remote HTTP address was submitted and repeated it on Tab to Connect. Editing cleared the invalid state while the field kept focus. On connection refusal, Orca read Retry connection and the complete recovery message.
+Ubuntu 22.04 (X11 and Wayland) and Debian 12 (X11) installed the published 0.2.1 package and upgraded it in place. All 14 files in the Ubuntu test profile matched immediately before and after upgrade. Subsequent launches restored the saved origin, HTTP-only cookie, local storage and IndexedDB. A separate fresh profile had none of the previous browser state.
 
-A separate end-to-end check paired the published 0.2.0 Linux client with the read-only Luma sample, quit it, and launched the 0.2.1 package with the same profile. It reopened the remembered server and the authenticated issue list without a second approval. A clean 0.2.1 installation recovered from an unreachable server, connected to the live service, and forgot the saved address on request.
+The packaged launcher passed 24 checks across light and dark modes at three widths. Orca announced the complete recovery message when a new connection failed and when a saved server was unreachable. It also spoke the URL correction after submission and when focus moved to Connect.
 
-The published Windows installer was also downloaded by GitHub, verified against the release checksum, and exercised on three native Windows Server 2025 workers. Fresh installation, upgrade from 0.1.0 and upgrade from 0.2.0 each passed. [Published installer verification](https://github.com/MimoAlexer/ratio/actions/runs/44815758573)
+An independent profile check paired the published 0.2.1 Linux client with a disposable workspace, opened its issue list, then quit. The 0.3.0 package used the same default profile and reopened the remembered server directly on the signed-in issue list. The server still had the original browser and desktop sessions.
 
-## Platform checks
+## Windows
 
-| Environment | Qualification |
-| --- | --- |
-| Ubuntu 22.04 and Debian 12 | APT clean installation, direct upgrades from Ratio 0.2.0, Ratio 0.1.1 and Working Set 0.1.0, and purge in isolated distribution userspaces on a shared Linux kernel. Checks covered the installed executable, desktop entry, icon and original saved profile data. |
-| Windows x64 installer under Wine | Clean install, direct upgrades from all three published predecessors, and uninstall. Tests checked the installed PE, Start menu shortcut, registration, user profile and unrelated files. Without WebView2 the silent installer returned status 3. |
-| Linux and Windows release executables | All 20 desktop tests passed on both targets. Repackaging each frozen executable produced identical installer bytes. Explorer metadata reports 0.2.1.0 and all ten embedded icon images matched the application artwork. |
+The x64 installer runs with the current user’s privileges. Its bundled WebView2 loader, Start menu icon and executable version `0.3.0.0` were verified from the package. The installer is unsigned and requires the Microsoft Edge WebView2 Evergreen Runtime. Packaging the same executable twice produced identical bytes.
 
-The Linux package requires GTK 3, WebKitGTK 4.1, bubblewrap and glibc 2.34 or newer. The Windows installer is unsigned and requires Microsoft Edge WebView2 Evergreen. The published-installer workflow launches the downloaded package on Windows and locates the Connect button through Windows UI Automation. [Native Windows release checks](https://github.com/MimoAlexer/ratio/actions/workflows/verify-published-desktop.yml)
+Wine ran all 21 Windows-target desktop tests. Fresh installation, an upgrade from the published 0.2.1 installer, a repeated install and uninstall all passed. The upgrade reopened the saved origin and preserved the existing profile, including a test session database and local storage. Unattended setup returned exit code 3 when the runtime registration was absent.
 
-Release 0.2.0 and its Linux, Wine and native Windows results are archived. [0.2.0 installers](https://github.com/MimoAlexer/ratio/releases/tag/v0.2.0) · [0.2.0 qualification](https://github.com/MimoAlexer/ratio/blob/a455ef1c01104ca93fa97aff6e34a1177d8a07c6/docs/desktop-verification.md)
+The published-installer workflow downloads the release asset, verifies its SHA-256 and runs fresh, legacy and 0.2.1 upgrade scenarios on separate Windows workers. Each run checks the Connect button in WebView2, confirms that the window has no attached menu bar, opens the popup with F10 and selects Quit. [Native Windows release checks](https://github.com/MimoAlexer/ratio/actions/workflows/verify-published-desktop.yml)
+
+[0.2.1 installer qualification](https://github.com/MimoAlexer/ratio/blob/3a5e7366d32b10d49e5480ce65c608dc825f7f81/docs/desktop-verification.md)

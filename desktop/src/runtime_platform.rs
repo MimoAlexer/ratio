@@ -1,6 +1,6 @@
 use crate::runtime::{Command, Event};
 use muda::{
-    Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu,
+    Menu, MenuEvent, MenuItem, PredefinedMenuItem,
     accelerator::{Accelerator, Code, Modifiers},
 };
 use tao::{
@@ -84,41 +84,25 @@ pub fn menu(window: &Window, proxy: &EventLoopProxy<Event>) -> Result<Menu, Stri
     let item = |id, title, modifiers, code| {
         MenuItem::with_id(id, title, true, Some(Accelerator::new(modifiers, code)))
     };
-    let navigation = Submenu::with_items(
-        "&Navigate",
-        true,
-        &[
-            &item("back", "&Back", Modifiers::ALT, Code::ArrowLeft),
-            &item("forward", "&Forward", Modifiers::ALT, Code::ArrowRight),
-            &item("reload", "&Reload", Modifiers::CONTROL, Code::KeyR),
-        ],
-    )
+    let menu = Menu::with_items(&[
+        &item("back", "&Back", Modifiers::ALT, Code::ArrowLeft),
+        &item("forward", "&Forward", Modifiers::ALT, Code::ArrowRight),
+        &item("reload", "&Reload", Modifiers::CONTROL, Code::KeyR),
+        &PredefinedMenuItem::separator(),
+        &item(
+            "settings",
+            "&Connection settings…",
+            Modifiers::CONTROL,
+            Code::Comma,
+        ),
+        &item("quit", "&Quit", Modifiers::CONTROL, Code::KeyQ),
+    ])
     .map_err(|e| e.to_string())?;
-    let workspace = Submenu::with_items(
-        "&Workspace",
-        true,
-        &[
-            &item(
-                "settings",
-                "&Connection settings…",
-                Modifiers::CONTROL,
-                Code::Comma,
-            ),
-            &PredefinedMenuItem::separator(),
-            &item("quit", "&Quit", Modifiers::CONTROL, Code::KeyQ),
-        ],
-    )
-    .map_err(|e| e.to_string())?;
-    let menu = Menu::with_items(&[&workspace, &navigation]).map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
-    {
-        use tao::platform::unix::WindowExtUnix;
-        menu.init_for_gtk_window(window.gtk_window(), window.default_vbox())
-            .map_err(|e| e.to_string())?;
-    }
+    setup_gtk_controls(&menu, window, proxy);
     #[cfg(target_os = "windows")]
-    win::attach_menu(&menu, window)?;
+    win::setup_controls(&menu, window, proxy)?;
 
     let proxy = proxy.clone();
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
@@ -133,6 +117,79 @@ pub fn menu(window: &Window, proxy: &EventLoopProxy<Event>) -> Result<Menu, Stri
         let _ = proxy.send_event(Event::Command(command));
     }));
     Ok(menu)
+}
+
+#[cfg(target_os = "linux")]
+fn setup_gtk_controls(menu: &Menu, window: &Window, proxy: &EventLoopProxy<Event>) {
+    use gtk::prelude::*;
+    use muda::ContextMenu;
+    use tao::platform::unix::WindowExtUnix;
+
+    let popup = menu.gtk_context_menu();
+    let window = window.gtk_window();
+    popup.set_attach_widget(Some(window));
+    let group = gtk::AccelGroup::new();
+    window.add_accel_group(&group);
+    for (item, widget) in menu.items().iter().zip(popup.children()) {
+        let shortcut = match item.id().0.as_str() {
+            "back" => "<Alt>Left",
+            "forward" => "<Alt>Right",
+            "reload" => "<Control>r",
+            "settings" => "<Control>comma",
+            "quit" => "<Control>q",
+            _ => continue,
+        };
+        let (key, modifiers) = gtk::accelerator_parse(shortcut);
+        widget.add_accelerator("activate", &group, key, modifiers, gtk::AccelFlags::VISIBLE);
+    }
+    let proxy = proxy.clone();
+    let (key, modifiers) = gtk::accelerator_parse("F10");
+    group.connect_accel_group(
+        key,
+        modifiers,
+        gtk::AccelFlags::empty(),
+        move |_, _, _, _| {
+            let _ = proxy.send_event(Event::Command(Command::Controls));
+            true
+        },
+    );
+}
+
+#[cfg(target_os = "linux")]
+pub fn show_controls(menu: &Menu, window: &Window) {
+    use gtk::{gdk, prelude::*};
+    use muda::ContextMenu;
+    use tao::platform::unix::WindowExtUnix;
+
+    let Some(surface) = window.gtk_window().window() else {
+        return;
+    };
+    let pointer = surface
+        .display()
+        .default_seat()
+        .and_then(|seat| seat.pointer());
+    let (x, y) = pointer
+        .as_ref()
+        .and_then(|device| {
+            let (_, x, y, _) = surface.device_position(device);
+            ((0..surface.width()).contains(&x) && (0..surface.height()).contains(&y))
+                .then_some((x, y))
+        })
+        .unwrap_or((12, 12));
+    let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
+    event.set_device(pointer.as_ref());
+    menu.gtk_context_menu().popup_at_rect(
+        &surface,
+        &gdk::Rectangle::new(x, y, 1, 1),
+        gdk::Gravity::NorthWest,
+        gdk::Gravity::NorthWest,
+        Some(&event),
+    );
+}
+
+#[cfg(target_os = "windows")]
+pub fn show_controls(menu: &Menu, window: &Window) {
+    win::show_controls(menu, window);
 }
 
 #[cfg(target_os = "linux")]
@@ -235,7 +292,8 @@ pub use win::{confirm, error, mount, watch_failures};
 #[cfg(target_os = "windows")]
 mod win {
     use super::*;
-    use std::cell::Cell;
+    use muda::ContextMenu;
+    use std::cell::OnceCell;
     use tao::platform::windows::{EventLoopBuilderExtWindows, WindowExtWindows};
     use webview2_com::{
         AcceleratorKeyPressedEventHandler, LaunchingExternalUriSchemeEventHandler,
@@ -245,17 +303,29 @@ mod win {
     use windows::{
         Win32::{
             Foundation::{HWND, LPARAM, WPARAM},
-            UI::WindowsAndMessaging::{
-                GA_ROOT, GetAncestor, HACCEL, MSG, TranslateAcceleratorW, WM_KEYDOWN, WM_SYSKEYDOWN,
+            UI::{
+                Input::KeyboardAndMouse::{
+                    GetKeyState, VK_CONTROL, VK_F10, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+                },
+                WindowsAndMessaging::{
+                    GA_ROOT, GetAncestor, HACCEL, MSG, TranslateAcceleratorW, WM_KEYDOWN,
+                    WM_SYSKEYDOWN,
+                },
             },
         },
         core::{BOOL, HSTRING, Interface, PWSTR},
     };
     use wry::WebViewExtWindows;
 
-    // The app has one top-level window and a fixed menu for its whole event-loop lifetime.
+    // The menu is fixed for the lifetime of Ratio's single top-level window.
+    struct Shortcuts {
+        owner: HWND,
+        table: HACCEL,
+        proxy: EventLoopProxy<Event>,
+    }
+
     thread_local! {
-        static ACCELERATORS: Cell<Option<(HWND, HACCEL)>> = const { Cell::new(None) };
+        static SHORTCUTS: OnceCell<Shortcuts> = const { OnceCell::new() };
     }
 
     pub(super) fn configure_events(builder: &mut EventLoopBuilder<Event>) {
@@ -267,24 +337,67 @@ mod win {
     }
 
     fn translate(message: &MSG) -> bool {
-        let Some((owner, table)) = ACCELERATORS.get() else {
-            return false;
-        };
-        if !matches!(message.message, WM_KEYDOWN | WM_SYSKEYDOWN)
-            || message.hwnd.is_invalid()
-            || unsafe { GetAncestor(message.hwnd, GA_ROOT) } != owner
-        {
+        if !matches!(message.message, WM_KEYDOWN | WM_SYSKEYDOWN) || message.hwnd.is_invalid() {
             return false;
         }
-        unsafe { TranslateAcceleratorW(owner, table, message) != 0 }
+        SHORTCUTS.with(|slot| {
+            let Some(shortcuts) = slot.get() else {
+                return false;
+            };
+            if unsafe { GetAncestor(message.hwnd, GA_ROOT) } != shortcuts.owner {
+                return false;
+            }
+            if message.wParam.0 == usize::from(VK_F10.0)
+                && [VK_SHIFT, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN]
+                    .iter()
+                    .all(|key| unsafe { GetKeyState(i32::from(key.0)) } >= 0)
+            {
+                // Holding F10 should open one popup, even if the key repeats.
+                if message.lParam.0 & (1 << 30) == 0 {
+                    let _ = shortcuts
+                        .proxy
+                        .send_event(Event::Command(Command::Controls));
+                }
+                return true;
+            }
+            unsafe { TranslateAcceleratorW(shortcuts.owner, shortcuts.table, message) != 0 }
+        })
     }
 
-    pub(super) fn attach_menu(menu: &Menu, window: &Window) -> Result<(), String> {
+    pub(super) fn setup_controls(
+        menu: &Menu,
+        window: &Window,
+        proxy: &EventLoopProxy<Event>,
+    ) -> Result<(), String> {
         let handle = window.hwnd();
-        // Tao owns the HWND and the caller retains this menu alongside its window.
-        unsafe { menu.init_for_hwnd(handle) }.map_err(|e| e.to_string())?;
-        ACCELERATORS.set(Some((HWND(handle as _), HACCEL(menu.haccel() as _))));
-        Ok(())
+        // Only attach the WM_COMMAND handler for accelerators. The popup is owned
+        // by the retained Menu and Tao owns this live HWND.
+        unsafe { menu.attach_menu_subclass_for_hwnd(handle) };
+        SHORTCUTS.with(|slot| {
+            slot.set(Shortcuts {
+                owner: HWND(handle as _),
+                table: HACCEL(menu.haccel() as _),
+                proxy: proxy.clone(),
+            })
+            .map_err(|_| "Ratio desktop shortcuts are already configured.".to_owned())
+        })
+    }
+
+    pub(super) fn show_controls(menu: &Menu, window: &Window) {
+        let size = window.inner_size();
+        let on_window = window
+            .cursor_position()
+            .ok()
+            .zip(window.inner_position().ok())
+            .is_some_and(|(cursor, origin)| {
+                let x = cursor.x - f64::from(origin.x);
+                let y = cursor.y - f64::from(origin.y);
+                (0.0..f64::from(size.width)).contains(&x)
+                    && (0.0..f64::from(size.height)).contains(&y)
+            });
+        let fallback = (!on_window).then(|| muda::dpi::LogicalPosition::new(12, 12).into());
+        // The popup tracks synchronously while the Tao window and menu are alive.
+        unsafe { menu.show_context_menu_for_hwnd(window.hwnd(), fallback) };
     }
 
     pub fn mount(builder: WebViewBuilder<'_>, window: &Window) -> Result<WebView, String> {

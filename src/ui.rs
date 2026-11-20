@@ -78,6 +78,9 @@ pub(crate) fn icon(name: &str) -> Markup {
         "resume" => "M5 4v16M10 5l10 7-10 7z",
         "flag" => "M5 21V3m0 1c4-3 9 3 14 0v9c-5 3-10-3-14 0",
         "pause" => "M6 4h3.5v16H6zM14.5 4H18v16h-3.5z",
+        "controls" => {
+            "M5 12h.01M12 12h.01M19 12h.01M6.1 12a1.1 1.1 0 1 1-2.2 0 1.1 1.1 0 1 1 2.2 0Zm7 0a1.1 1.1 0 1 1-2.2 0 1.1 1.1 0 1 1 2.2 0Zm7 0a1.1 1.1 0 1 1-2.2 0 1.1 1.1 0 1 1 2.2 0Z"
+        }
         "menu" => "M3 6h18M3 12h18M3 18h18",
         "chevron" => "m8 10 4 4 4-4",
         "help" => {
@@ -221,33 +224,19 @@ pub fn page_in_project(
     workspace_page(auth, title, active, body, project, false)
 }
 
-fn location(
-    group: &str,
-    section: &str,
-    path: &str,
-    at_index: bool,
-    project: Option<Uuid>,
-) -> Markup {
-    let group_label = html! { (icon("shell")) span { (group) } };
-    if at_index {
-        return html! { div.location { (group_label) } };
-    }
+fn parent_section(section: &str, path: &str, project: Option<Uuid>) -> Markup {
     let parent = match (path, project) {
         (
             "/issues" | "/notes" | "/releases" | "/roadmap" | "/health" | "/insights" | "/transfer",
             Some(id),
-        ) => {
-            format!("{path}?project={id}")
-        }
+        ) => format!("{path}?project={id}"),
         _ => path.to_owned(),
     };
-    html! {
-        nav.location aria-label="Workspace location" {
-            (group_label)
-            span.location-divider aria-hidden="true" { "/" }
-            a.location-current href=(parent) { (section) }
-        }
-    }
+    html! {a.section-return href=(parent) {(icon("arrow")) (section)}}
+}
+
+pub(crate) fn desktop_controls() -> Markup {
+    html! {@if crate::sync::supports_desktop_controls(){a.desktop-controls href="/desktop/controls" title="Desktop controls (F10)" aria-label="Desktop controls" aria-haspopup="menu"{(icon("controls"))}}}
 }
 
 fn search_control(search: &str) -> Markup {
@@ -278,7 +267,7 @@ fn workspace_page(
             .find(|(key, _, _)| *key == active)
             .map(|(_, path, label)| (*group, *path, *label))
     });
-    let (group, path, section) = route.unwrap_or(("Workspace", "/", title));
+    let (_, path, section) = route.unwrap_or(("Workspace", "/", title));
     let sample = auth.user_id == crate::sample::DEMO_OWNER;
     Html(html! {
         (DOCTYPE)
@@ -294,7 +283,7 @@ fn workspace_page(
                 script defer src="/assets/commands.js" {}
                 @if matches!(active, "issues" | "inbox") { script defer src="/assets/issue-workbench.js" {} }
             }
-            body {
+            body.workspace-stage {
                 a.skip-link href="#main" { "Skip to content" }
                 div.app-shell {
                     aside.sidebar {
@@ -302,14 +291,15 @@ fn workspace_page(
                             (brand("/"))
                             @if sample { span.demo-label title="Workspace with sample data" { "Sample" } }
                             (search_control(&search))
+                            (desktop_controls())
                         }
                         (navigation(auth, active))
                     }
                     div.workspace-window data-issue-index[at_index && matches!(active, "issues" | "inbox")] {
                         header.window-bar {
-                            (location(group, section, path, at_index, project))
                             div.mobile-brand {
                                 (brand("/"))
+                                (desktop_controls())
                                 @if sample { span.demo-label title="Workspace with sample data" { "Sample" } }
                             }
                             div.window-tools {
@@ -321,7 +311,7 @@ fn workspace_page(
                             }
                         }
                         main.main id="main" tabindex="-1" {
-                            div.page-content data-command-project=[project] data-view=(if active == "inbox" { "issues" } else { active }) { (body) }
+                            div.page-content data-command-project=[project] data-view=(if active == "inbox" { "issues" } else { active }) { @if !at_index { (parent_section(section,path,project)) } (body) }
                         }
                     }
                 }
@@ -337,7 +327,7 @@ pub fn public_page(title: &str, body: Markup) -> Html<String> {
             html lang="en" {
                 head { (head(title)) link rel="stylesheet" href="/assets/support.css"; script defer src="/assets/workspace.js" {} }
                 body.public-page {
-                    header.public-brandbar { (brand("/welcome")) }
+                    header.public-brandbar { (brand("/welcome")) (desktop_controls()) }
                     main.page-content { (body) }
                 }
             }

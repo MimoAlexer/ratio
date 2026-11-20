@@ -60,18 +60,17 @@
 }
 .review-axis-unobserved { fill: var(--fg-3, var(--faint)); }
 .review-grid { stroke: var(--line); }
-.review-scope-line, .review-done-line { stroke-width: 1.6px; }
-.review-scope-line { stroke: var(--fg-2, var(--muted)); }
-.review-done-line { stroke: var(--accent); stroke-dasharray: 4 4; }
+.review-scope-line { stroke: var(--fg-2); stroke-width: 1.5px; }
+.review-done-line { stroke: var(--fg); stroke-width: 2px; stroke-dasharray: 4 4; }
 .review-scope-mark { stroke: var(--fg-2, var(--muted)); stroke-width: 1.5px; fill: var(--canvas); }
-.review-done-mark, .review-shipped-mark { fill: var(--accent); }
+.review-done-mark, .review-shipped-mark { fill: var(--fg); }
 .review-shipped-mark { transform-box: fill-box; transform-origin: center; transform: translateX(-50%) rotate(45deg); }
 .review-hit { fill: transparent; }
 .review-point:is(:hover,:focus-visible) .review-hit { stroke: var(--fg, var(--text)); stroke-width: 1.5px; }
 .review-legend { gap: var(--s2, 8px) var(--s4, 16px); min-height: 28px; }
 .review-legend span, .review-legend .review-key-shipped { display: inline-flex; align-items: center; gap: 6px; }
 .review-legend i { position: relative; width: 18px; height: 0; border-top: 2px solid var(--fg-2,var(--muted)); }
-.review-legend .review-key-done { border-top: 2px dashed var(--accent); }
+.review-legend .review-key-done { border-top: 2px dashed var(--fg); }
 .review-legend i::after {
   content: "";
   position: absolute;
@@ -82,10 +81,10 @@
   border: 1px solid var(--fg-2, var(--muted));
   background: var(--canvas);
 }
-.review-legend .review-key-done::after { border-radius: 50%; background: var(--accent); border-color: var(--accent); }
+.review-legend .review-key-done::after { border-radius: 50%; background: var(--fg); border-color: var(--fg); }
 .review-key-shipped::before {
   content: ""; width: 7px; height: 7px;
-  background: var(--accent); border: 1px solid var(--accent); transform: rotate(45deg);
+  background: var(--fg); transform: rotate(45deg);
 }
 .release-review table { margin: 0; }
 .release-review .review-waterfall { display: table; width: 100%; font-variant-numeric: tabular-nums; table-layout: auto; }
@@ -101,7 +100,7 @@
 .review-waterfall :is(th,td):last-child { padding-inline-end: 0; }
 .review-waterfall thead th { height: 25px; border-top: 0; background: transparent; color: var(--fg-3,var(--faint)); }
 .review-waterfall tbody tr { position: relative; }
-.review-waterfall tbody tr:is(:hover,:focus-within) { background: var(--surface); }
+.review-waterfall tbody tr:is(:hover,:focus-within) { background: var(--hover); }
 .review-waterfall tbody th a {
   display: block;
   width: max-content;
@@ -117,12 +116,20 @@
 .review-track i {
   position: absolute;
   inset-block: 1px;
-  inset-inline-start: min(var(--bar-start), calc(100% - 2px));
-  width: max(2px, var(--bar-range));
-  background: var(--accent);
+  inset-inline-start: var(--bar-start);
+  width: var(--bar-range);
+  overflow: hidden;
+  background: var(--fg);
 }
-.review-track .review-total { background: var(--fg-2, var(--muted)); }
-.review-track .review-drop { border: 1px solid var(--fg-2, var(--muted)); background: transparent; }
+.review-track :is(.review-total, .review-drop) { background: transparent; }
+.review-track .review-total::before, .review-track .review-drop::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--fg-2);
+}
+.review-track .review-total::before { border-width: 0 2px; }
+.review-track .review-total::after { content: ""; position: absolute; inset: 50% 0 auto; border-top: 1px solid var(--fg-2); }
 .review-evidence { margin-top: var(--s4, 16px); border-top: 1px solid var(--line); }
 .review-evidence details { padding-block: 0; }
 .review-evidence summary {
@@ -137,10 +144,10 @@
 .review-selection, .review-evidence h4 { scroll-margin-block: var(--s4, 16px); }
 .review-selection { padding: var(--s3, 12px) var(--s4, 16px); }
 .review-selection:target, .review-evidence h4:target {
-  border-inline-start: 2px solid var(--accent);
+  border-inline-start: 2px solid var(--fg);
   padding-inline-start: var(--s3, 12px);
 }
-.review-selection:focus-visible { outline: 0; background: var(--surface); border-inline-start: 2px solid var(--accent); }
+.review-selection:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
 .review-issue-list { margin-block-start: var(--s1, 4px); }
 .review-issue-list > li { padding: 0; }
 .review-issue-link code { color: var(--fg-3, var(--faint)); font-size: 12px; white-space: nowrap; }

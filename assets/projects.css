@@ -25,12 +25,12 @@
 .project-directory { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .project-directory th, .project-directory td { text-align: start; padding: var(--s2) var(--s3); vertical-align: middle; border-bottom: 1px solid var(--subtle-line); }
 .project-directory :is(th,td):first-child { padding-inline-start: 0; }
-.project-directory thead th { color: var(--fg-3); background: transparent; font: 500 .75rem/1.4 var(--sans); }
+.project-directory thead th { border-block-start: 0; border-block-end: 1px solid var(--line); color: var(--fg-3); background: transparent; font: 500 .75rem/1.4 var(--sans); }
 .project-directory thead th:first-child { width: 24%; }
 .project-directory thead th:nth-child(2) { width: 32%; }
 .project-directory thead th:nth-child(3) { width: 20%; }
 .project-directory tbody :is(td, th) { vertical-align: top; background: transparent; }
-.project-row:where(:hover, :focus-within) { background: var(--surface); }
+.project-row:where(:hover, :focus-within) { background: var(--hover); }
 .project-name, .project-milestone, .project-current-link { display: inline-flex; align-items: center; min-height: var(--row); color: var(--fg); text-decoration: none; max-width: 100%; overflow-wrap: anywhere; }
 .project-name { gap: var(--s3); align-items: flex-start; }
 .project-name > svg { margin-top: 2px; flex: none; width: 20px; height: 20px; color: var(--fg-3); }
@@ -42,10 +42,10 @@
 .project-milestone time, .project-current-link code { color: var(--fg-3); font: 400 .75rem/1.4 var(--mono); }
 .project-progress { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); color: var(--fg-2); font-size: .8rem; font-variant-numeric: tabular-nums; }
 .project-directory-progress > .project-progress { min-height: var(--s5); align-content: center; }
-.project-progress progress { appearance: none; flex: none; width: 3.4rem; height: 4px; overflow: hidden; border: 0; border-radius: 2px; color: var(--accent); background: var(--line); }
+.project-progress progress { appearance: none; flex: none; width: 3.4rem; height: 4px; overflow: hidden; border: 0; border-radius: 2px; color: var(--fg-2); background: var(--line); }
 .project-progress progress::-webkit-progress-bar { background: var(--line); }
-.project-progress progress::-webkit-progress-value { background: var(--accent); }
-.project-progress progress::-moz-progress-bar { background: var(--accent); }
+.project-progress progress::-webkit-progress-value { background: var(--fg-2); }
+.project-progress progress::-moz-progress-bar { background: var(--fg-2); }
 .project-no-work, .project-capacity { color: var(--fg-3); font-size: var(--fs-control); }
 .project-capacity { margin-block: var(--s4); padding-block: 0; border: none; }
 .project-capacity summary, .project-settings summary { min-height: var(--control); align-content: center; }
@@ -79,29 +79,29 @@
 .project-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: var(--control); margin-bottom: var(--s3); }
 .project-text-link, .project-brief dt a { display: inline-flex; align-items: center; gap: 4px; min-height: var(--control); color: var(--fg-2); text-decoration: none; font-size: var(--fs-control); }
 .project-text-link svg, .project-brief dt svg { width: 13px; height: 13px; }
-.project-current { padding: var(--s4) var(--s5); border-inline-start: 2px solid var(--accent); background: var(--surface); }
+.project-current { padding-block: var(--s1) var(--s4); border-block-end: 1px solid var(--line); }
 .project-current-issue { display: block; width: fit-content; max-width: 100%; min-height: var(--row); color: var(--fg); text-decoration: none; }
 .project-current-issue > .project-issue-line { margin: 0; }
-.project-current h3 { margin: 5px 0 0; overflow-wrap: anywhere; font-size: 1.06rem; font-weight: 575; line-height: 1.4; letter-spacing: -.016em; }
+.project-current h3 { margin: var(--s1) 0 0; overflow-wrap: anywhere; font-size: 1.125rem; font-weight: var(--weight-heading); line-height: 1.4; letter-spacing: -.02em; }
 .project-next-action { margin-top: var(--s4); }
 .project-next-action h4 { margin: 0; color: var(--fg-3); font-size: var(--fs-meta); font-weight: 500; }
 .project-next-action p { max-width: 66ch; margin: 3px 0 0; color: var(--fg-2); overflow-wrap: anywhere; white-space: pre-line; }
 .project-queue { list-style: none; padding: 0; margin: var(--s2) 0 0; }
 .project-queue li { padding: 0; margin: 0; border-bottom: 1px solid var(--subtle-line); }
 .project-queue a { display: grid; grid-template-columns: minmax(4.25rem, max-content) minmax(0, 1fr) auto; align-items: baseline; align-content: center; min-height: var(--row); padding-block: 6px; gap: var(--s2); overflow-wrap: anywhere; color: var(--fg); text-decoration: none; font-size: var(--fs-body); }
-.project-queue a:hover { background: var(--surface); }
+.project-queue a:is(:hover, :focus-visible) { background: var(--hover); }
 .project-issue-state { color: var(--fg-3); font-size: var(--fs-meta); }
 .project-all { margin-top: var(--s2); }
 .project-brief { border-inline-start: 1px solid var(--line); padding-inline-start: var(--s6); }
 .project-brief-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 var(--s2); min-height: var(--control); }
 .project-brief dl { margin: 0; }
-.project-brief dl > div { padding-block: var(--s3); border-block-end: 1px solid var(--subtle-line); }
+.project-brief dl > div { padding-block: var(--s3); }
 .project-brief dt { color: var(--fg-3); font-size: var(--fs-meta); font-weight: 500; }
 .project-brief dt a { min-height: auto; color: var(--fg-2); }
 .project-brief dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .project-brief .project-milestone { min-height: auto; }
 .project-signal-list { display: grid; gap: 2px; color: var(--fg-2); font-size: var(--fs-control); }
-.project-settings { margin-block-start: var(--s7); padding-block: var(--s2); border-block: 1px solid var(--line); }
+.project-settings { margin-block-start: var(--s7); padding-block: var(--s2); border: 0; border-block-start: 1px solid var(--line); }
 .project-settings-content { padding-block: var(--s2) var(--s4); }
 .project-settings-content .project-form { margin-block: var(--s3); }
 .project-back:hover, .project-current-issue:hover h3, .project-name:hover strong, .project-milestone:hover > span, .project-current-link:hover > span, .project-text-link:hover, .project-brief dt a:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -139,9 +139,9 @@
   .project-queue .project-issue-state { grid-column: 2; grid-row: 1; }
   .project-brief dl { gap: 0 var(--s3); }
 }
-.project-field-error { margin: 0; color: var(--risk); font-size: var(--fs-control); }
-.project-form input[aria-invalid="true"] { border-color: var(--risk); }
-.project-signal-list .project-flag { display: inline-flex; align-items: center; gap: 4px; width: fit-content; min-height: 1.5rem; color: var(--risk); font-weight: 550; text-decoration: none; }
+.project-field-error { margin: 0; color: var(--fg); font-size: var(--fs-control); font-weight: var(--weight-label); }
+.project-form input[aria-invalid="true"] { border: 2px solid var(--fg-2); }
+.project-signal-list .project-flag { display: inline-flex; align-items: center; gap: 4px; width: fit-content; min-height: 1.5rem; color: var(--fg); font-weight: var(--weight-heading); text-decoration: none; }
 .project-flag > svg { width: 13px; height: 13px; }
 .project-signal-list .project-flag:hover { text-decoration: underline; }
 @media (min-width: 761px) {

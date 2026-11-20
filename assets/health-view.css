@@ -17,7 +17,7 @@
 .health-assessment { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: var(--s1, 4px) var(--s3, 12px); }
 .health-assessment h2, .health-assessment h3 { margin: 0; font-size: 1rem; }
 .health-assessment > span { color: var(--fg-3, var(--faint)); font-size: 12px; }
-.health-attention-required { padding-inline-start: var(--s3, 12px); border-inline-start: 2px solid var(--risk); }
+.health-attention-required { padding-inline-start: var(--s3, 12px); border-inline-start: 2px solid var(--fg); }
 .health-assessment > p, .health-subject { grid-column: 1 / -1; margin: 0; max-width: 66ch; }
 .health-assessment > p { color: var(--fg-2, var(--muted)); font-size: 13px; }
 .health-subject { padding-top: var(--s1, 4px); font-size: 16px; font-weight: 560; }
@@ -42,14 +42,14 @@
 }
 .health-register-head { padding-block: var(--s2, 8px); color: var(--fg-3, var(--faint)); font-size: 12px; border-bottom: 1px solid var(--line); }
 .health-record { padding: 0; border: 0; border-bottom: 1px solid var(--subtle-line); }
-.health-record > summary { position: relative; width: 100%; min-height: var(--row, 36px); padding-block: var(--s2, 8px); margin: 0; border-radius: var(--radius, 4px); font-weight: 400; list-style: none; }
+.health-record > summary { position: relative; width: 100%; min-height: var(--row, 36px); padding-block: var(--s2, 8px); margin: 0; font-weight: 400; list-style: none; }
 .health-record > summary::-webkit-details-marker { display: none; }
 .health-record > summary::before {
   content: ""; position: absolute; left: 3px; top: 50%; width: 6px; height: 6px;
   border-right: 1.5px solid var(--fg-3, var(--faint)); border-bottom: 1.5px solid var(--fg-3, var(--faint)); transform: translateY(-50%) rotate(-45deg);
 }
-.health-record[open] > summary::before { transform: translateY(-65%) rotate(45deg); }
-.health-record > summary:hover, .health-record > summary:focus-visible { background: var(--raised); }
+.health-record[open] > summary::before { border-color: var(--fg); transform: translateY(-65%) rotate(45deg); }
+.health-record > summary:is(:hover, :focus-visible) { background: var(--hover); }
 .health-record-name { display: grid; gap: 2px; }
 .health-record-name strong { font-size: 14px; font-weight: 560; }
 .health-record-body { padding: var(--s1, 4px) 0 var(--s3, 12px) var(--s5, 20px); }

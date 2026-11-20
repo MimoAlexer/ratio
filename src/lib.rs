@@ -220,6 +220,15 @@ async fn landing(State(s): State<AppState>) -> Html<String> {
         },
     )
 }
+async fn desktop_controls_help() -> Html<String> {
+    ui::public_page(
+        "Desktop controls",
+        html! {div.public-workflow{
+            h1{"Desktop controls"}p.reading{"In the desktop app, press F10 or choose the three-dot control beside Ratio to open Back, Forward, Reload, Connection settings and Quit."}
+            a.action-secondary href="/" {"Return to workspace"}
+        }},
+    )
+}
 async fn pricing() -> Html<String> {
     ui::public_page(
         "Plans",
@@ -332,6 +341,7 @@ pub fn app(state: AppState) -> Router {
         .route("/assets/{*path}", get(ui_asset))
         .route("/readyz", get(ready))
         .route("/healthz", get(|| async { "ok" }))
+        .route("/desktop/controls", get(desktop_controls_help))
         .route("/pricing", get(pricing))
         .route("/welcome", get(landing))
         .fallback(|| async { AppError::NotFound })
@@ -473,5 +483,68 @@ mod navigation_tests {
                 assert!(body.contains("href=\"/issues\""));
             }
         }
+    }
+    #[tokio::test]
+    async fn desktop_controls_are_exposed_only_to_popup_capable_clients() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgresql://user@localhost/test")
+            .unwrap();
+        let state = AppState::for_test(pool);
+        let router = Router::new()
+            .route("/welcome", get(landing))
+            .route("/desktop/controls", get(desktop_controls_help))
+            .layer(middleware::from_fn(sync::desktop_page_context))
+            .with_state(state);
+        for (ua, expected) in [
+            ("Mozilla/5.0", false),
+            ("Mozilla/5.0 RatioDesktop/0.2.1", false),
+            ("Mozilla/5.0 RatioDesktop/0.3.0", true),
+            ("RatioDesktop/1.0.0", true),
+        ] {
+            let resp = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/welcome")
+                        .header(header::USER_AGENT, ua)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            let body = String::from_utf8(
+                resp.into_body()
+                    .collect()
+                    .await
+                    .unwrap()
+                    .to_bytes()
+                    .to_vec(),
+            )
+            .unwrap();
+            assert_eq!(body.contains("href=\"/desktop/controls\""), expected);
+        }
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri("/desktop/controls")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(
+            String::from_utf8(
+                resp.into_body()
+                    .collect()
+                    .await
+                    .unwrap()
+                    .to_bytes()
+                    .to_vec()
+            )
+            .unwrap()
+            .contains("F10")
+        );
     }
 }

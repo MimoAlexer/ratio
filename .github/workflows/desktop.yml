@@ -24,7 +24,7 @@ jobs:
       - name: Install GTK3 and WebKitGTK 4.1 build and smoke-test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev dpkg-dev desktop-file-utils dbus-x11 xvfb xauth xdotool
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev libdbus-1-dev dpkg-dev desktop-file-utils dbus-x11 xvfb xauth python3-gi gir1.2-atspi-2.0 at-spi2-core
           rustup show active-toolchain
       - name: Test and build the Linux client
         run: |
@@ -37,13 +37,18 @@ jobs:
           legacy=working-set_0.1.0_amd64.deb
           gh release download v0.1.0 --repo "$GITHUB_REPOSITORY" --pattern "$legacy" --dir "$RUNNER_TEMP"
           (cd "$RUNNER_TEMP" && echo "31a30dd49bdb4509d98ae2b49e0e95551a36fb3edc14b63f86f12daf98545ee1  $legacy" | sha256sum --check)
-          previous=ratio_0.2.0_amd64.deb
-          gh release download v0.2.0 --repo "$GITHUB_REPOSITORY" --pattern "$previous" --dir "$RUNNER_TEMP"
-          (cd "$RUNNER_TEMP" && echo "9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b  $previous" | sha256sum --check)
+          for version in 0.2.0 0.2.1; do
+            gh release download "v$version" --repo "$GITHUB_REPOSITORY" --pattern "ratio_${version}_amd64.deb" --dir "$RUNNER_TEMP"
+          done
+          (cd "$RUNNER_TEMP" && sha256sum --check <<'SUMS'
+          9f213f0bbf4b9cf33ed85ab4c093e888564ebd5652b10236f050247d3722f73b  ratio_0.2.0_amd64.deb
+          a0464b3a7c11ded6049bef304ea6dcd51ffbba845d4e2895993d2f2808e140c2  ratio_0.2.1_amd64.deb
+          SUMS
+          )
       - name: Test fresh install and upgrade on Ubuntu
         run: |
           packaging/linux/build.sh target/release/ratio dist
-          for scenario in fresh working-set-upgrade ratio-upgrade; do
+          for scenario in fresh working-set-upgrade 0.2.0 0.2.1; do
             export XDG_DATA_HOME="$RUNNER_TEMP/ratio-$scenario"
             profile="$XDG_DATA_HOME/Ratio"
             if [[ "$scenario" == working-set-upgrade ]]; then
@@ -51,9 +56,9 @@ jobs:
               test -x /usr/bin/working-set
               test -f /usr/share/applications/working-set.desktop
               profile="$XDG_DATA_HOME/Working Set"
-            elif [[ "$scenario" == ratio-upgrade ]]; then
-              sudo apt-get install -y "$RUNNER_TEMP/ratio_0.2.0_amd64.deb"
-              test "$(ratio --version)" = 'Ratio 0.2.0'
+            elif [[ "$scenario" != fresh ]]; then
+              sudo apt-get install -y "$RUNNER_TEMP/ratio_${scenario}_amd64.deb"
+              test "$(ratio --version)" = "Ratio $scenario"
             fi
             if [[ "$scenario" != fresh ]]; then
               mkdir -p "$profile"
@@ -66,12 +71,7 @@ jobs:
             test ! -e /usr/bin/working-set
             test ! -e /usr/share/applications/working-set.desktop
             test ! -e /usr/share/icons/hicolor/256x256/apps/working-set.png
-            xvfb-run -a dbus-run-session -- bash -eu -c '
-              ratio &
-              pid=$!
-              trap "kill $pid 2>/dev/null || true" EXIT
-              timeout 90 xdotool search --all --onlyvisible --sync --pid "$pid" --name "Ratio.*Connection"
-            '
+            timeout 90 xvfb-run -a dbus-run-session -- /usr/bin/python3 packaging/linux/smoke-controls.py
             test -d "$profile/launcher"
             if [[ "$scenario" == fresh ]]; then echo retained > "$profile/installer-ci-sentinel"; fi
             sudo apt-get remove -y ratio
@@ -152,7 +152,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        fixture: [working-set, ratio]
+        fixture: [working-set, '0.2.0', '0.2.1']
     runs-on: windows-2025
     timeout-minutes: 12
     steps:
@@ -174,13 +174,14 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "LEGACY_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
       - name: Fetch the published Ratio upgrade fixture
-        if: matrix.fixture == 'ratio'
+        if: matrix.fixture != 'working-set'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          FIXTURE_VERSION: ${{ matrix.fixture }}
         run: |
-          $name = 'Ratio-0.2.0-windows-x64-setup.exe'
-          gh release download v0.2.0 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
+          $name = "Ratio-$env:FIXTURE_VERSION-windows-x64-setup.exe"
+          gh release download "v$env:FIXTURE_VERSION" --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           "PREVIOUS_RATIO_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
       - name: Test the upgrade on a clean Windows worker

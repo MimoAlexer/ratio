@@ -60,7 +60,7 @@ fn public_page(title: &str, body: Markup) -> Html<String> {
             body.auth-page {
                 main.auth-shell {
                     div.auth-card {
-                        div.auth-brandbar { a.auth-brand href="/welcome" aria-label="Ratio home" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Ratio" } }
+                        div.auth-brandbar { a.auth-brand href="/welcome" aria-label="Ratio home" { img src="/assets/mark.svg" width="26" height="26" alt=""; "Ratio" } (crate::ui::desktop_controls()) }
                         h1 { (title) }
                         (body)
                     }

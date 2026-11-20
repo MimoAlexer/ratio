@@ -73,7 +73,6 @@ pub(super) async fn render(
         aside.issue-preview id="issue-preview" tabindex="-1" aria-labelledby="preview-title" data-issue=(item.id) {
             div.preview-top {
                 span.preview-context {
-                    (ledger_icon("inspect"))
                     a href=(format!("/projects/{}", item.project_id)) { (&item.project_name) }
                     span.preview-divider aria-hidden="true" { "/" }
                     code { (&key) }
@@ -98,9 +97,6 @@ pub(super) async fn render(
                             span { (label(&item.kind)) }
                             @if item.archived || item.project_archived { span { "Archived" } }
                         }
-                        @if !has_action && !p.description.trim().is_empty() {
-                            p.preview-description { (excerpt(&p.description, 300)) }
-                        }
                     }
                     @if has_action {
                         section.preview-action {
@@ -112,10 +108,11 @@ pub(super) async fn render(
                             }
                             p { (excerpt(&p.next_action, 350)) }
                         }
-                        @if !p.description.trim().is_empty() {
-                            section.preview-description { h3 { "Description" } p { (excerpt(&p.description, 300)) } }
-                        }
-                    } @else if !item.archived && !item.project_archived && matches!(item.status.as_str(), "ready" | "backlog" | "in_progress") {
+                    }
+                    @if !p.description.trim().is_empty() {
+                        section.preview-description { h3 { "Description" } p { (excerpt(&p.description, 300)) } }
+                    }
+                    @if !has_action && !item.archived && !item.project_archived && matches!(item.status.as_str(), "ready" | "backlog" | "in_progress") {
                         a.preview-add-action href=(format!("{detail}#next-action-title")) { (ui::icon("plus")) "Add a next action" }
                     }
                     @if let (Some(id), Some(title), Some(anchor)) = (p.note_id, p.note_title, p.note_anchor) {
@@ -125,18 +122,18 @@ pub(super) async fn render(
                             @if let Some(source) = p.note_excerpt.filter(|s| !s.trim().is_empty()) { p { (excerpt(&source, 180)) } }
                         }
                     }
-                }
-                @if !p.recent.is_empty() {
-                    details.preview-activity open {
-                        summary { (ledger_icon("chevron")) "Recent activity" span { (p.recent.len()) } }
-                        ol { @for event in &p.recent.0 {
-                            li { div {
-                                span { (event_title(&event.action)) }
-                                @if let Some(old) = &event.old_status && old != &event.new_status {
-                                    small { (label(old)) " → " (label(&event.new_status)) }
-                                }
-                            } (day(event.occurred_at)) }
-                        } }
+                    @if !p.recent.is_empty() {
+                        details.preview-activity open {
+                            summary { "Recent activity" (ledger_icon("chevron")) }
+                            ol { @for event in &p.recent.0 {
+                                li { div {
+                                    span { (event_title(&event.action)) }
+                                    @if let Some(old) = &event.old_status && old != &event.new_status {
+                                        small { (label(old)) " → " (label(&event.new_status)) }
+                                    }
+                                } (day(event.occurred_at)) }
+                            } }
+                        }
                     }
                 }
             }

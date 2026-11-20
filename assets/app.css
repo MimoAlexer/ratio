@@ -3,27 +3,38 @@
 /* Ratio's shared foundation. Route stylesheets load after these defaults. */
 :root {
   color-scheme: dark;
-  --canvas: #181819;
-  --sidebar: #131314;
-  --surface: #1b1b1d;
-  --raised: #242426;
-  --hover: #29292c;
-  --selected: #27272a;
-  --fg: #ededf0;
-  --fg-2: #c0c0c5;
-  --fg-3: #9a9aa1;
+  /* The shell, document and current selection are the only opaque chrome materials. */
+  --shell: #101010;
+  --canvas: #171717;
+  --raised: #252525;
+  --sidebar: var(--shell);
+  --surface: var(--canvas);
+  --selected: var(--raised);
+  --hover: rgb(255 255 255 / .055);
+  --fg: #eeeeee;
+  --muted-ink: #aaaaaa;
+  --fg-2: var(--muted-ink);
+  --fg-3: var(--muted-ink);
   --text: var(--fg);
-  --muted: var(--fg-2);
-  --faint: var(--fg-3);
-  --line: #343438;
-  --subtle-line: #272729;
-  --control-line: #78787f;
-  --accent: #c6c6d0;
-  --accent-surface: #28282d;
-  --link: #d5d5dd;
-  --risk: #e5aaa8;
-  --button-bg: #e6e6e8;
-  --button-text: #202022;
+  --muted: var(--muted-ink);
+  --faint: var(--muted-ink);
+  --line: rgb(255 255 255 / .11);
+  --subtle-line: rgb(255 255 255 / .075);
+  --control-line: #797979;
+  --accent: #d7d7d7;
+  --accent-surface: var(--selected);
+  --link: var(--fg);
+  --risk: var(--fg);
+  --button-bg: #e8e8e8;
+  --button-text: #191919;
+  /* The strongest transition belongs to the backdrop, outside the text-bearing window. */
+  --atmosphere:
+    linear-gradient(90deg, rgb(0 0 0 / .24) 0, transparent min(13vw,210px), transparent max(87vw,calc(100% - 210px)), rgb(0 0 0 / .24) 100%),
+    linear-gradient(180deg, #0b0b0b 0%, #0c0c0c 15%, #171717 35%, #393939 58%, #4d4d4d 76%, #484848 100%);
+  --surface-sheen: radial-gradient(ellipse 440px 250px at 0 0, rgb(255 255 255 / .063), transparent 83%);
+  --stage-x: clamp(10px, max(calc(12vw - 95px), calc(50vw - 660px)), 156px);
+  --stage-top: clamp(7px, 1.3vh, 16px);
+  --stage-foot: clamp(10px, 2.1vh, 22px);
   --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
   --fs-meta: .75rem;
@@ -47,41 +58,24 @@
   --radius: 5px;
   --radius-panel: 8px;
   /* Two opposing edges separate a cut-in pane from its surrounding frame. */
-  --shell: #111112;
-  --rim: #303033;
-  --edge-light: #39393d;
-  --edge-dark: #0d0d0e;
-  --bevel-outline: inset 0 1px 0 rgb(255 255 255 / .038), 0 0 0 1px var(--edge-dark), 0 1px 3px rgb(0 0 0 / .28);
-  --bevel-control: inset 0 1px 0 rgb(255 255 255 / .065), 0 1px 0 rgb(0 0 0 / .28);
-  --shell-inset: 8px;
+  --rim: #303030;
+  --edge-light: #3b3b3b;
+  --edge-dark: #0c0c0c;
+  --bevel-outline: inset 0 1px 0 rgb(255 255 255 / .033), 0 0 0 1px var(--edge-dark);
+  --bevel-control: inset 0 1px 0 rgb(255 255 255 / .065);
+  --shell-inset: 6px;
   --speed: 110ms;
   --gutter: clamp(20px, 2.05vw, 32px);
-  --sidebar-width: clamp(196px, 17.8vw, 240px);
+  --sidebar-width: clamp(182px, 15.5vw, 232px);
   --bar-height: 44px;
 }
 :root[data-theme="mono"] {
-  --shell: #111;
-  --rim: #303030;
-  --edge-light: #393939;
-  --edge-dark: #0d0d0d;
-  --canvas: #171717;
-  --sidebar: #101010;
-  --surface: #1e1e1e;
-  --raised: #252525;
-  --hover: #2b2b2b;
-  --selected: #343434;
-  --fg: #efefef;
-  --fg-2: #c0c0c0;
-  --fg-3: #9d9d9d;
-  --line: #3c3c3c;
-  --subtle-line: #2c2c2c;
-  --control-line: #7c7c7c;
-  --accent: #d7d7d7;
-  --accent-surface: #343434;
-  --link: #d6d6d6;
-  --risk: #dadada;
-  --button-bg: #e6e6e6;
-  --button-text: #191919;
+  --fg: #fafafa;
+  --muted-ink: #bdbdbd;
+  --accent: #fff;
+  --control-line: #858585;
+  --line: rgb(255 255 255 / .16);
+  --subtle-line: rgb(255 255 255 / .10);
 }
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -136,14 +130,28 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 .skip-link:focus { transform: translateY(0); }
 .ui-icon { display: inline-block; flex: none; width: 16px; height: 16px; vertical-align: middle; }
 
-/* The permanent rail keeps everyday destinations in a single reading column. */
+/* One continuous field outside the window. The content stays dark and quiet. */
+.workspace-stage, .auth-page, .public-page {
+  min-height: 100vh; min-height: 100dvh;
+  background-color: #0a0a0a; background-image: var(--atmosphere);
+  background-position:center; background-size:100vw 100vh; background-size:100vw 100dvh;
+  background-repeat:no-repeat; background-attachment:fixed;
+}
+.workspace-stage { padding:var(--stage-top) var(--stage-x) var(--stage-foot); }
+
 .app-shell {
   display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  min-height: 100vh; min-height: 100dvh; background: var(--shell);
+  min-height: calc(100vh - var(--stage-top) - var(--stage-foot));
+  min-height: calc(100dvh - var(--stage-top) - var(--stage-foot));
+  background: var(--surface-sheen),var(--shell);
+  border: 1px solid rgb(255 255 255 / .088); border-block-end-color:rgb(0 0 0 / .58);
+  border-radius: 12px; box-shadow: 0 1px 3px rgb(0 0 0 / .34);
 }
 .sidebar {
-  position: sticky; top: 0; align-self: start; height: 100vh; height: 100dvh;
-  min-width: 0; display: flex; flex-direction: column; background: var(--sidebar);
+  position: sticky; top: calc(var(--stage-top) + 1px); align-self:start;
+  height:calc(100vh - var(--stage-top) - var(--stage-foot) - 2px);
+  height:calc(100dvh - var(--stage-top) - var(--stage-foot) - 2px);
+  min-width: 0; display: flex; flex-direction: column; background: transparent;
   border-inline-end: 0;
 }
 .brandbar, .public-brandbar {
@@ -175,7 +183,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: var(--s5) 0; }
 .nav-link .ui-icon { width: 16px; height: 16px; color: var(--fg-3); }
 .nav-link:hover, .project-links a:hover { background: var(--raised); color: var(--fg); }
 .nav-link[aria-current="page"] {
-  color: var(--fg); background: var(--selected); font-weight: 555;
+  color: var(--fg); background: var(--hover); font-weight: 555;
   border-radius: 6px; box-shadow: inset 0 1px 0 rgb(255 255 255 / .035);
 }
 .nav-link[aria-current="page"] .ui-icon { color: var(--fg); }
@@ -283,7 +291,7 @@ a.location-current:hover { text-decoration: underline; }
   .workspace-window {
     margin: var(--shell-inset) var(--shell-inset) var(--shell-inset) 0;
     border: 1px solid var(--rim); border-block-start-color: var(--edge-light);
-    border-radius: 9px; background: var(--canvas);
+    border-radius: 8px; background: var(--surface-sheen),var(--canvas);
     box-shadow: var(--bevel-outline); overflow: clip;
   }
   .workspace-window .window-bar {
@@ -299,15 +307,33 @@ a.location-current:hover { text-decoration: underline; }
 }
 @media (min-width:761px) and (min-height:541px) {
   .workspace-window {
-    position: sticky; top:var(--shell-inset); height:calc(100vh - 2 * var(--shell-inset));
-    height:calc(100dvh - 2 * var(--shell-inset)); display:flex; flex-direction:column;
+    position: sticky; top:calc(var(--stage-top) + var(--shell-inset) + 1px);
+    height:calc(100vh - var(--stage-top) - var(--stage-foot) - 2px - 2 * var(--shell-inset));
+    height:calc(100dvh - var(--stage-top) - var(--stage-foot) - 2px - 2 * var(--shell-inset)); display:flex; flex-direction:column;
   }
   .workspace-window > .main { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--line) var(--canvas); }
 }
 @media (max-width:760px) {
-  .workspace-window { background:var(--canvas); }
+  .workspace-window { background:var(--surface-sheen),var(--canvas); min-height:calc(100dvh - var(--stage-top) - var(--stage-foot) - 2px);border-radius:9px; }
+  .workspace-stage { --stage-x:5px;--stage-top:4px;--stage-foot:7px; }
+  .app-shell {border-radius:10px}
+  .workspace-window .window-bar {border-radius:9px 9px 0 0}
   .workspace-window .window-bar { border-block-end:1px solid var(--rim); box-shadow: inset 0 1px 0 rgb(255 255 255 / .04); }
 }
+.desktop-controls {
+  display:inline-grid; place-items:center; width:32px; height:32px; color:var(--muted);
+  background:none; border:0; border-radius:var(--radius); text-decoration:none; flex:none;
+}
+.desktop-controls:hover {color:var(--fg);background:var(--hover)}
+.brandbar .desktop-controls {width:25px;height:28px}
+.auth-brandbar,.public-brandbar {display:flex;align-items:center;justify-content:space-between}
+.mobile-brand .desktop-controls {min-width:44px;min-height:44px}
+.page-content > .section-return {display:inline-flex;align-items:center;gap:6px;margin-bottom:var(--s3);color:var(--fg-2);font-size:var(--fs-control);text-decoration:none}
+.section-return .ui-icon {width:13px;height:13px;transform:rotate(180deg)}
+.page-content:has(:is(.breadcrumbs,.issue-detail .issue-breadcrumbs,.project-crumbs,.note-trail,.graph-back)) > .section-return {display:none}
+@media (min-width:761px){.workspace-window .window-bar {display:none}}
+@media (max-width:760px){.brandbar .desktop-controls {display:none}}
+@media print{.workspace-stage{padding:0;background:none}.app-shell{border:0;box-shadow:none}}
 /* Content and record primitives. The feature owns its column template. */
 .page-content {
   width: 100%; max-width: 1560px; min-width: 0; margin-inline: auto;

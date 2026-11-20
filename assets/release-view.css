@@ -17,7 +17,8 @@
   color: var(--text);
   text-decoration: none;
 }
-.release-group .release-record:is(:hover, :focus-visible) { background: var(--raised); }
+.release-group .release-record:is(:hover, :focus-visible) { background: var(--hover); }
+.release-record:is(:hover, :focus-visible) .release-name { text-decoration: underline; text-underline-offset: .18em; }
 .release-record-icon, .release-forward { display: inline-grid; place-items: center; color: var(--fg-3, var(--faint)); }
 .release-record .ui-icon, .release-related .ui-icon { width: 14px; height: 14px; }
 .release-identity { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--s2); }
@@ -32,7 +33,7 @@
 .release-projects nav, .release-related, .release-context, .release-metadata { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
 .release-projects nav { padding-block-end: var(--s3); }
 .release-projects nav a { min-height: var(--control); display: inline-flex; align-items: center; }
-.release-projects nav a[aria-current] { color: var(--text); font-weight: 620; }
+.release-projects nav a[aria-current] { color: var(--text); font-weight: 620; text-decoration-thickness: 2px; }
 .release-new, .release-forecast { max-width: 58rem; }
 .release-new form, .release-scope form.stack { max-width: 37rem; }
 .release-additional .grid { margin: var(--s2) 0 var(--s3); }
@@ -41,8 +42,7 @@
 .release-context a, .release-history, .release-related a { color: var(--fg-2, var(--muted)); }
 .release-context a:hover, .release-history:hover, .release-related a:hover { color: var(--text); }
 .release-detail-head .release-metadata { margin: var(--s1) 0 0; }
-.release-stage { display: inline-flex; align-items: center; gap: 6px; }
-.release-stage::before { content: ""; width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; }
+.release-stage { color: var(--fg-2); font-weight: var(--weight-label); }
 .release-preview .release-snapshot { display: grid; grid-template-columns: minmax(12rem, .7fr) minmax(15rem, 1fr); gap: var(--s6); align-items: center; }
 .release-snapshot h2 { margin: 0 0 var(--s1); }
 .release-preview p, .release-current p { margin: 0; }
@@ -52,7 +52,12 @@
 .release-current-issue { display: flex; align-items: baseline; gap: var(--s2); width: fit-content; color: var(--text); text-decoration: none; }
 .release-current-issue:is(:hover,:focus-visible) { text-decoration: underline; }
 .release-publish { padding: 0; border: 0; margin-top: var(--s4); }
-.release-publish > summary { display: list-item; list-style-position: inside; width: fit-content; padding: 5px 11px; border-radius: var(--radius); background: var(--button-bg); color: var(--button-text); font-size: 13px; min-height: var(--control); }
+.release-publish > summary {
+  display: list-item; list-style-position: inside; width: fit-content; min-height: var(--control);
+  padding: 5px 11px; border: 1px solid var(--control-line); border-radius: var(--radius);
+  color: var(--fg); font-size: 13px; font-weight: var(--weight-label);
+}
+.release-publish > summary:hover { background: var(--hover); }
 .release-publish > summary::marker { color: inherit; }
 .release-publish[open] > summary { margin-bottom: var(--s4); }
 .release-shipment { max-width: 54rem; }

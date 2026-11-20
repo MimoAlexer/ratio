@@ -28,10 +28,7 @@
 .graph-options small { display: block; margin-top: var(--s1); color: var(--fg-3, var(--faint)); }
 .relationship-jump { display: inline-flex; align-items: center; min-height: var(--control); font-size: 13px; }
 .relationships .graph-drawing { min-inline-size: 0; overflow: visible; }
-.graph-viewport { max-block-size: min(56vh, 40rem); overflow: auto; overscroll-behavior: contain; }
-.graph-viewport, .relationships .map-graph {
-  background-color: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-panel);
-}
+.graph-viewport { max-block-size: min(56vh, 40rem); overflow: auto; overscroll-behavior: contain; border-block: 1px solid var(--line); }
 .relationships .relationship-graph {
   display: block; margin: 0; color: var(--fg, var(--text)); font-family: var(--sans);
 }
@@ -39,9 +36,11 @@
 .relationships .lane-graph { width: 680px; min-width: 680px; max-width: none; }
 .relationship-graph a { color: var(--fg-2, var(--muted)); }
 .relationship-graph a:is(:hover, :focus-visible) { color: var(--fg, var(--text)); }
-.relationship-graph a:is(:hover, :focus-visible) > rect { fill: var(--raised); }
+.relationship-graph a:is(:hover, :focus-visible) > rect { fill: var(--hover); }
+.relationship-graph a:has(> rect):focus-visible { outline: none; }
 .relationship-graph a:focus-visible > rect { stroke: var(--accent); stroke-width: 2; }
-.relationship-graph .map-wire { stroke: var(--control-line); stroke-width: 1.25; }
+.relationship-graph .map-wire { fill: none; stroke: var(--fg-3); stroke-width: 1.5; }
+.relationship-graph .map-branch { stroke-width: 1; stroke-dasharray: 3 2; }
 .map-focus, .map-peer {
   height: 100%; width: 100%; display: flex; flex-direction: column; justify-content: center; gap: 2px;
   font: 550 14px/1.25 var(--sans); color: var(--fg, var(--text)); overflow: hidden;
@@ -69,7 +68,7 @@
 .relationship-target { color: var(--fg, var(--text)); font-size: 14px; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; }
 .relationship-target:hover { text-decoration: underline; }
 .relationship-explore { min-width: var(--control); justify-content: center; padding-inline: var(--s1); font-size: 12px; }
-.relationship-explore:is(:hover, :focus-visible) { background: var(--raised); border-radius: var(--radius); }
+.relationship-explore:is(:hover, :focus-visible) { background: var(--hover); border-radius: var(--radius); }
 .relationships .relationship-list blockquote { margin: var(--s2) 0 var(--s1) 26px; color: var(--fg-2, var(--muted)); max-inline-size: 66ch; }
 .graph-pages { justify-content: start; margin-block-start: var(--s4); }
 @container (max-width: 36rem) {

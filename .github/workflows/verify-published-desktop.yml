@@ -7,7 +7,7 @@ on:
       tag:
         description: Published Ratio release tag
         required: true
-        default: v0.2.1
+        default: v0.3.0
         type: string
 permissions:
   contents: read
@@ -29,7 +29,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a release tag such as v0.2.1' }
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Expected a release tag such as v0.3.0' }
           $version = $env:RELEASE_TAG.Substring(1)
           $exe = "Ratio-$version-windows-x64-setup.exe"
           $dir = Join-Path $env:RUNNER_TEMP 'published-ratio'
@@ -58,7 +58,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          $previousVersion = if ($env:RELEASE_TAG -eq 'v0.2.0') { '0.1.1' } else { '0.2.0' }
+          $previousVersion = switch ($env:RELEASE_TAG) {
+            'v0.2.0' { '0.1.1' }
+            'v0.2.1' { '0.2.0' }
+            default { '0.2.1' }
+          }
           $name = "Ratio-$previousVersion-windows-x64-setup.exe"
           gh release download "v$previousVersion" --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -8,18 +8,19 @@
   <style>
     :root {
       color-scheme: dark;
-      --canvas: #151515;
-      --field: #101010;
-      --ink: #eeeeee;
-      --secondary: #bfbfbf;
-      --muted: #9c9c9c;
-      --line: #373737;
-      --control-line: #6d6d6d;
-      --edge-dark: #080808;
-      --edge-light: #272727;
-      --focus: #ccc;
+      --canvas: #171717;
+      --canvas-light: linear-gradient(180deg, #0a0a0a 0%, #111 24%, #222 46%, #3a3a3a 69%, #484848 100%);
+      --field: #131313;
+      --ink: #f0f0f0;
+      --secondary: #c5c5c5;
+      --muted: #a6a6a6;
+      --line: rgb(240 240 240 / 14%);
+      --control-line: #7c7c7c;
+      --edge-dark: rgb(0 0 0 / 32%);
+      --edge-light: rgb(255 255 255 / 6%);
+      --focus: #dadada;
       --button: #e4e4e4;
-      --button-hover: #f2f2f2;
+      --button-hover: #f3f3f3;
       --button-text: #191919;
       --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
       --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
@@ -31,12 +32,13 @@
     @media (prefers-color-scheme: light) {
       :root {
         color-scheme: light;
-        --canvas: #fafafa;
+        --canvas: #e8e8e8;
+        --canvas-light: linear-gradient(180deg, #d7d7d7 0%, #dedede 24%, #e6e6e6 46%, #f0f0f0 69%, #f7f7f7 100%);
         --field: #f6f6f6;
         --ink: #1c1c1c;
         --secondary: #515151;
         --muted: #626262;
-        --line: #d7d7d7;
+        --line: rgb(0 0 0 / 16%);
         --control-line: #808080;
         --edge-dark: #cbcbcb;
         --edge-light: #fff;
@@ -48,18 +50,27 @@
     }
     *, *::before, *::after { box-sizing: border-box; }
     [hidden] { display: none !important; }
-    body { margin: 0; min-height: 100vh; color: var(--ink); background: var(--canvas); font-size: .875rem; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--ink); font-size: .875rem;
+      background: var(--canvas) var(--canvas-light) no-repeat;
+    }
     main {
       width: min(100%, 29rem); margin-inline: auto;
       padding: clamp(52px, 18vh, 160px) 24px 32px;
     }
     .brand {
       display: flex; align-items: center; gap: 8px;
-      margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--line);
+      margin-bottom: 24px; padding-bottom: 13px; border-bottom: 1px solid var(--line);
       font-size: 1.125rem; line-height: 1; font-weight: 650; letter-spacing: -.045em;
     }
     .mark, .mark svg { width: 27px; height: 27px; display: block; }
-    h1 { margin: 0; font-size: 1.5rem; font-weight: 620; line-height: 1.25; letter-spacing: -.035em; }
+    .desktop-controls {
+      display: grid; place-items: center; width: 36px; height: 36px; margin-inline-start: auto;
+      border: 0; border-radius: var(--radius); padding: 0; background: transparent; color: var(--secondary);
+    }
+    .desktop-controls:hover, .desktop-controls:focus-visible { background: var(--line); color: var(--ink); }
+    .desktop-controls svg { width: 19px; height: 19px; fill: currentColor; }
+    h1 { margin: 0; font-size: 1.625rem; font-weight: 620; line-height: 1.25; letter-spacing: -.035em; }
     .intro { margin: 8px 0 20px; color: var(--secondary); }
     form { margin: 0; }
     label { display: block; margin-bottom: 6px; font-size: .8125rem; font-weight: 600; }
@@ -103,16 +114,27 @@
     code { color: var(--ink); font: 400 .95em/1.5 var(--mono); }
     @media (max-width: 600px), (pointer: coarse) {
       :root { --control: 44px; }
+      .desktop-controls { width: 44px; height: 44px; }
       .text-button, summary { min-height: 44px; padding-block: 12px; }
     }
     @media (max-width: 520px), (max-height: 600px) {
       main { padding-block-start: clamp(28px, 9vh, 76px); }
     }
+    @media (forced-colors: active) {
+      body { background: Canvas; }
+      .desktop-controls { color: ButtonText; }
+    }
   </style>
 </head>
 <body>
   <main>
-    <header class="brand"><span class="mark" aria-hidden="true">{{MARK}}</span>Ratio</header>
+    <header class="brand">
+      <span class="mark" aria-hidden="true">{{MARK}}</span>Ratio
+      <button type="button" id="desktop-controls" class="desktop-controls" aria-label="Desktop controls"
+              aria-haspopup="menu" aria-keyshortcuts="F10" title="Desktop controls (F10)">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </header>
     <h1>Workspace connection</h1>
     <p class="intro">Use the address where you open Ratio in your browser.</p>
     <form id="connection">
@@ -163,9 +185,10 @@
         showMessage("Open the Ratio desktop app to connect.");
         return;
       }
-      showMessage(progress);
+      if (progress) showMessage(progress);
       window.ipc.postMessage(JSON.stringify(message));
     }
+    document.getElementById("desktop-controls").addEventListener("click", () => send({action: "controls"}));
     field.addEventListener("input", () => {
       updateAction();
       showMessage(field.value.trim() === savedOrigin ? startingMessage : "");
@@ -187,8 +210,16 @@
       if (!demo.hidden && demo.dataset.origin) send({action: "connect", origin: demo.dataset.origin}, "Opening local demo…");
     });
     updateAction();
-    const firstControl = savedOrigin && startingMessage ? form.querySelector("button") : field;
-    firstControl.focus();
+    if (savedOrigin && startingMessage) {
+      // Let the loaded page reach assistive technology before moving focus to Retry.
+      window.addEventListener("load", () => {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (document.activeElement === document.body) form.querySelector(".submit").focus();
+        }));
+      }, {once: true});
+    } else {
+      field.focus();
+    }
   </script>
 </body>
 </html>

@@ -9,3 +9,5 @@ RATIO_BASE_URL=http://127.0.0.1:3000 npm test
 ```
 
 The four viewport sizes cover desktop, laptop, phone and short landscape. The test submits a filtered query with Enter in both JS modes, verifies that the issue-search GET is used, checks the matched record, and exercises the enhanced command dialog. Set `CHROME_BIN` to use a system Chromium executable.
+
+With Chromium installed, run `npm run test:launcher` to check the bundled desktop connection form offline. It verifies the keyboard and pointer paths to Desktop controls, preserves validation and recovery messages, and checks the messages sent on Retry and Enter.

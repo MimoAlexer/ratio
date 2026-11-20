@@ -21,6 +21,7 @@ use crate::{AppResult, AppState, auth::Auth};
 
 tokio::task_local! {
     static PAGE_REVISION: Cell<Option<(Uuid, i64)>>;
+    static HAS_DESKTOP_CONTROLS: bool;
 }
 
 pub(crate) async fn desktop_page_context(req: Request, next: Next) -> Response {
@@ -33,11 +34,35 @@ pub(crate) async fn desktop_page_context(req: Request, next: Next) -> Response {
             .get("sec-fetch-dest")
             .is_none_or(|destination| destination == "document" || destination == "iframe")
         && crate::auth::is_desktop_client(req.headers());
-    if desktop_read {
-        PAGE_REVISION.scope(Cell::new(None), next.run(req)).await
-    } else {
-        next.run(req).await
-    }
+    // This UA hint controls the presentation of a harmless navigation link only.
+    // The desktop rejects cross-origin control requests. Credentials never enter this path.
+    let controls = req
+        .headers()
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|ua| {
+            ua.split_ascii_whitespace()
+                .filter_map(|p| p.strip_prefix("RatioDesktop/"))
+                .any(|v| {
+                    let mut parts = v.split('.');
+                    matches!(
+                        (
+                            parts.next().and_then(|s| s.parse::<u16>().ok()),
+                            parts.next().and_then(|s| s.parse::<u16>().ok())
+                        ),
+                        (Some(1..), Some(_)) | (Some(0), Some(3..))
+                    )
+                })
+        });
+    HAS_DESKTOP_CONTROLS
+        .scope(controls, async {
+            if desktop_read {
+                PAGE_REVISION.scope(Cell::new(None), next.run(req)).await
+            } else {
+                next.run(req).await
+            }
+        })
+        .await
 }
 
 async fn revision(db: &PgPool, owner: Uuid) -> AppResult<i64> {
@@ -47,6 +72,10 @@ async fn revision(db: &PgPool, owner: Uuid) -> AppResult<i64> {
     .bind(owner)
     .fetch_one(db)
     .await?)
+}
+
+pub(crate) fn supports_desktop_controls() -> bool {
+    HAS_DESKTOP_CONTROLS.try_with(|v| *v).unwrap_or(false)
 }
 
 pub(crate) async fn capture_baseline(db: &PgPool, owner: Uuid) -> AppResult<()> {

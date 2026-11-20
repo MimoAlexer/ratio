@@ -147,10 +147,10 @@ fn compact_diagram(focus: &Node, edges: &[Edge]) -> Markup {
             @for (i, edge) in edges.iter().enumerate() {
                 @let top = 8 + i as i32 * row_height;
                 @let y = top + row_height/2;
-                line.map-wire x1="37%" y1=(y) x2="43%" y2=(y) {}
+                line.map-wire.map-branch x1="37%" y1=(y) x2="43%" y2=(y) {}
                 a data-relationship-edge="true" href=(&edge.href) aria-label=(format!("{} · {} · {}{}", edge.relation, edge.peer.entity.name(), edge.peer.title, edge.section.as_ref().map(|s|format!(" § {s}")).unwrap_or_default())) {
                     title { (&edge.relation) " · " (&edge.peer.title) @if let Some(section)=&edge.section { " § " (section) } }
-                    rect class="map-hit" x="41%" y=(top+3) width="59%" height=(row_height-6) rx="3" fill="transparent" {}
+                    rect class="map-hit" x="41%" y=(top+3) width="58.5%" height=(row_height-6) rx="3" fill="transparent" {}
                     g data-graph-node="true" {
                         use x="43%" y=(y-10) width="20" height="20" href=(format!("#graph-symbol-{}",edge.peer.entity.route())) {}
                     }
@@ -193,7 +193,7 @@ fn lane_diagram(focus: &Node, edges: &[Edge]) -> Markup {
     html! {
         svg class="relationship-graph lane-graph" width="680" height=(height) viewBox=(format!("0 0 680 {height}")) role="group" aria-label=(format!("Local graph of {}",focus.title)) {
             title { (focus.title) " and its direct relationships" }
-            path d=(format!("M25 35 V{last_edge_y}")) fill="none" stroke="currentColor" stroke-opacity=".45" {}
+            path.map-wire d=(format!("M25 35 V{last_edge_y}")) {}
             g data-graph-node="true" {
                 (glyph(focus.entity,25,22))
                 text x="48" y="26" fill="currentColor" font-size="15" font-weight="600" { (shortened(&focus.title,48)) }
@@ -201,7 +201,7 @@ fn lane_diagram(focus: &Node, edges: &[Edge]) -> Markup {
             @for (top, group) in groups {
                 @let peer = &group[0].peer;
                 @let bottom = top + group.len() as i32 * 32;
-                path d=(format!("M78 {top} H64 V{bottom}")) fill="none" stroke="currentColor" stroke-opacity=".55" {}
+                path.map-wire d=(format!("M78 {top} H64 V{bottom}")) {}
                 a href=(peer.url()) aria-label=(format!("Open {} · {}",peer.entity.name(),peer.title)) {
                     @if entity_key(peer) != entity_key(focus) {
                         g data-graph-node="true" { (glyph(peer.entity,90,top)) }
@@ -216,11 +216,11 @@ fn lane_diagram(focus: &Node, edges: &[Edge]) -> Markup {
                     a data-relationship-edge="true" href=(&edge.href) aria-label=(format!("{} · {}{}",edge.relation,peer.title,edge.section.as_ref().map(|s|format!(" § {s}")).unwrap_or_default())) {
                         title { (&edge.relation) " · " (&peer.title) @if let Some(section)=&edge.section { " § " (section) } }
                         rect x="24" y=(row-14) width="652" height="30" fill="transparent" {}
-                        path d=(format!("M25 {row} H64")) stroke="currentColor" stroke-opacity=".65" fill="none" {}
+                        path.map-wire.map-branch d=(format!("M25 {row} H64")) {}
                         circle cx="64" cy=(row) r="2.5" fill="currentColor" {}
                         text x="111" y=(row+5) font-size="13" fill="currentColor" { (&edge.relation) }
                         @if let Some(section)=&edge.section {
-                            text x="300" y=(row+5) font-size="13" fill="currentColor" opacity=".8" { "§ " (shortened(section,39)) }
+                            text x="300" y=(row+5) font-size="13" fill="currentColor" { "§ " (shortened(section,39)) }
                         }
                     }
                 }

@@ -29,8 +29,9 @@ const LAUNCHER_DOCUMENT: &str = "https://ratio.localhost/";
 #[cfg(not(target_os = "windows"))]
 const LAUNCHER_DOCUMENT: &str = LAUNCHER;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum Command {
+    Controls,
     Back,
     Forward,
     Reload,
@@ -44,6 +45,7 @@ pub(crate) enum Event {
     Launcher(u64, String),
     Open(u64, Url),
     Navigate(u64, String),
+    Controls(u64),
     Failed(u64),
 }
 
@@ -52,6 +54,7 @@ pub(crate) enum Event {
 enum LauncherCommand {
     Connect { origin: String },
     Forget,
+    Controls,
 }
 
 struct Page {
@@ -63,7 +66,7 @@ struct Page {
 
 struct Desktop {
     page: Option<Page>,
-    _menu: muda::Menu,
+    menu: muda::Menu,
     window: Window,
     proxy: EventLoopProxy<Event>,
     profile: PathBuf,
@@ -124,7 +127,7 @@ pub(crate) fn run(options: Options) -> Result<(), String> {
     let mut app = Desktop {
         page: None,
         window,
-        _menu: menu,
+        menu,
         proxy,
         profile,
         origin,
@@ -241,6 +244,7 @@ impl Desktop {
         };
 
         let navigation = origin.clone();
+        let controls_proxy = self.proxy.clone();
         let ask_on_navigation = ask_external.clone();
         let popup_origin = origin.clone();
         let popup_proxy = self.proxy.clone();
@@ -250,6 +254,10 @@ impl Desktop {
             .with_back_forward_navigation_gestures(true)
             .with_permission_handler(|_| PermissionResponse::Deny)
             .with_navigation_handler(move |candidate| {
+                if is_controls_url(&navigation, &candidate) {
+                    let _ = controls_proxy.send_event(Event::Controls(epoch));
+                    return false;
+                }
                 if navigation.same_origin(&candidate) {
                     return true;
                 }
@@ -291,6 +299,7 @@ impl Desktop {
     fn handle(&mut self, event: Event) -> Result<(), String> {
         match event {
             Event::Command(command) => self.command(command),
+            Event::Controls(epoch) if epoch == self.epoch => self.command(Command::Controls),
             Event::Launcher(epoch, body) if epoch == self.epoch => self.launcher_command(&body),
             Event::Failed(epoch) if epoch == self.epoch => {
                 self.launcher(Some("Ratio could not reach this server. Check the address and your network, then connect again."))
@@ -311,6 +320,10 @@ impl Desktop {
     }
 
     fn command(&mut self, command: Command) -> Result<(), String> {
+        if matches!(command, Command::Controls) {
+            runtime_platform::show_controls(&self.menu, &self.window);
+            return Ok(());
+        }
         if matches!(command, Command::Settings) {
             return self.launcher(None);
         }
@@ -341,6 +354,7 @@ impl Desktop {
             return Ok(());
         };
         match command {
+            LauncherCommand::Controls => self.command(Command::Controls),
             LauncherCommand::Connect { origin } => {
                 let origin = match ServerOrigin::parse(&origin) {
                     Ok(origin) => origin,
@@ -393,6 +407,11 @@ impl Desktop {
             );
         }
     }
+}
+
+// This URL can display the menu. Only choosing a native menu item runs a command.
+fn is_controls_url(origin: &ServerOrigin, candidate: &str) -> bool {
+    candidate.strip_prefix(origin.as_str()) == Some("/desktop/controls")
 }
 
 fn external_url(candidate: &str) -> Option<Url> {
@@ -454,6 +473,25 @@ fn workspace_browser_action(url: &Url) -> Option<BrowserAction> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn controls_open_only_on_the_configured_workspaces_exact_url() {
+        let origin = ServerOrigin::parse("https://work.example:8443").unwrap();
+        let controls = "https://work.example:8443/desktop/controls";
+        assert!(is_controls_url(&origin, controls));
+        for candidate in [
+            format!("{controls}?"),
+            format!("{controls}#"),
+            format!("{controls}/"),
+            controls.replace(":8443", ""),
+            controls.replace("work.example", "other.example"),
+            controls.replace("work.example", "name@work.example"),
+            controls.replace("/desktop", "/api/../desktop"),
+            controls.replace("/controls", "/%63ontrols"),
+        ] {
+            assert!(!is_controls_url(&origin, &candidate), "{candidate}");
+        }
+    }
 
     #[test]
     fn browser_handoff_accepts_only_https_without_credentials() {

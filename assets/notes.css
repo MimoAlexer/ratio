@@ -18,14 +18,16 @@
 .note-scope[open] > summary { margin: 0; }
 .note-scope nav { position: absolute; z-index: 2; top: calc(100% + var(--s1)); inset-inline-start: 0; width: max-content; min-width: 11rem; max-width: min(calc(100vw - 40px), 20rem); max-height: min(48vh, 19rem); overflow: auto; display: grid; gap: 2px; padding: var(--s1); border: 1px solid var(--control-line); border-radius: var(--radius-panel); background: var(--raised); }
 .note-scope nav a { display: block; padding: var(--s2); color: var(--muted); text-decoration: none; border-radius: var(--radius); }
-.note-scope nav a[aria-current], .note-scope nav a:hover { color: var(--text); background: var(--selected); }
+.note-scope nav a:hover { color: var(--text); background: var(--hover); }
+.note-scope nav a[aria-current] { color: var(--text); font-weight: var(--weight-heading); }
+.note-scope nav a[aria-current]::after { content: "✓"; margin-inline-start: var(--s2); }
 .note-ledger-head, .note-ledger .note-record { display: grid; grid-template-columns: minmax(0,2.5fr) minmax(7rem,1fr) minmax(7rem,.65fr); column-gap: var(--s4); align-items: center; padding-inline: var(--s3); }
 .note-ledger-head { min-height: var(--row); border-block: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .note-ledger-head > :last-child { display: flex; align-items: center; justify-content: end; gap: var(--s1); }
 .note-ledger-head .ui-icon { width: 12px; }
 .note-ledger.record-list { list-style: none; padding: 0; margin: 0; }
 .note-ledger .note-record { width: 100%; min-height: 54px; padding-block: var(--s2); text-decoration: none; color: var(--text); border-bottom: 1px solid var(--subtle-line); }
-.note-ledger .note-record:is(:hover,:focus-visible) { background: var(--surface); }
+.note-ledger .note-record:is(:hover,:focus-visible) { background: var(--hover); }
 .note-ledger a:focus-visible { outline-offset: -2px; }
 .note-file { min-width: 0; display: flex; align-items: start; gap: var(--s3); }
 .note-file .ui-icon { margin-top: 3px; color: var(--faint); }
@@ -79,7 +81,7 @@
 .note-options summary.action-secondary { display: grid; place-items: center; min-width: var(--control); min-height: var(--control); margin: 0; padding: 0 var(--s2); list-style: none; font: 600 17px/1 var(--sans); letter-spacing: .08em; }
 .note-options summary::-webkit-details-marker { display: none; }
 .note-options > div { position: absolute; z-index: 2; top: calc(100% + var(--s1)); inset-inline-end: 0; width: max-content; min-width: 9rem; padding: var(--s1); background: var(--raised); border: 1px solid var(--control-line); border-radius: var(--radius-panel); }
-.note-options a { display: flex; align-items: center; min-height: var(--control); padding-inline: var(--s2); border-radius: var(--radius); color: var(--risk); text-decoration: none; }
+.note-options a { display: flex; align-items: center; min-height: var(--control); padding-inline: var(--s2); border-radius: var(--radius); color: var(--fg); text-decoration: none; }
 .note-options a:hover { background: var(--hover); }
 .note-writing { width: min(100%, 49rem); }
 .note-draft-buttons { display: inline-flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
@@ -89,17 +91,9 @@
 .note-file-fields { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: var(--s3); }
 .note-file-fields > .field { margin: 0; }
 .note-file-fields .note-path-field input { font-family: var(--mono); font-size: 12px; }
-.note-source-field {
-  border: 1px solid var(--rim);
-  border-radius: var(--radius-panel);
-  background: var(--surface);
-  box-shadow: var(--bevel-outline);
-}
 .note-source-tools {
   display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: var(--s2);
-  min-height: var(--control); padding: var(--s1) var(--s4);
-  border-bottom: 1px solid var(--line); border-radius: inherit; border-end-start-radius: 0; border-end-end-radius: 0;
-  background: var(--raised); box-shadow: inset 0 1px var(--edge-light);
+  min-height: var(--control);
 }
 .note-link-tools { margin: 0; border: 0; padding: 0; }
 .note-link-tools > summary { margin: 0; margin-inline-start: auto; color: var(--muted); min-height: var(--control); font-size: 13px; }
@@ -111,8 +105,8 @@
 .note-link-options [aria-invalid="true"] { border-color: var(--risk); }
 .note-editor textarea[name="body"] {
   display: block; width: 100%; min-height: 13rem; height: clamp(15rem,34vh,24rem); padding: var(--s3) var(--s4);
-  border: 0; border-radius: 0 0 var(--radius-panel) var(--radius-panel);
-  background: var(--surface); box-shadow: inset 0 1px var(--edge-dark);
+  border: 1px solid var(--control-line); border-radius: var(--radius);
+  background: transparent; box-shadow: none;
   font-family: var(--mono); line-height: 1.65;
 }
 .note-editor textarea[name="body"]:focus-visible { outline-offset: -2px; }

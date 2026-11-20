@@ -41,6 +41,52 @@ function Install-Application([string]$setup) {
     if ($result.ExitCode -ne 0) { throw "Installer $setup exited with $($result.ExitCode)" }
 }
 
+function Assert-DesktopControls($app, $connectButton) {
+    if (!('RatioWindowSmoke' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class RatioWindowSmoke {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetMenu(IntPtr window);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string className, string title);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    public static bool HasPopup(int processId) {
+        IntPtr popup = FindWindow("#32768", null);
+        uint owner;
+        return popup != IntPtr.Zero && GetWindowThreadProcessId(popup, out owner) != 0
+            && owner == (uint)processId;
+    }
+}
+'@
+    }
+    if ([RatioWindowSmoke]::GetMenu($app.MainWindowHandle) -ne [IntPtr]::Zero) {
+        throw 'The Ratio window still has an attached Win32 menu bar.'
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    if (!$shell.AppActivate($app.Id)) { throw 'Could not activate the Ratio window for keyboard input.' }
+    $connectButton.SetFocus()
+    $shell.SendKeys('{F10}')
+    $end = (Get-Date).AddSeconds(10)
+    while (![RatioWindowSmoke]::HasPopup($app.Id) -and (Get-Date) -lt $end) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (![RatioWindowSmoke]::HasPopup($app.Id)) {
+        throw 'F10 did not open the native controls popup while WebView2 had focus.'
+    }
+    $shell.SendKeys('q')
+    if (!$app.WaitForExit(10000) -or $app.ExitCode -ne 0) {
+        throw 'Selecting Quit from the native popup did not exit Ratio cleanly.'
+    }
+    Write-Host 'Verified a menu-free window, WebView2 F10 and the native Quit action.'
+}
+
 function Assert-ConnectionWindow {
     $app = Start-Process $appExe -PassThru
     try {
@@ -65,6 +111,9 @@ function Assert-ConnectionWindow {
         } until ($button -or (Get-Date) -gt $end)
         if (!$button -or $button.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button) {
             throw 'The connection form did not expose its Connect button to Windows UI Automation.'
+        }
+        if ([version](Get-ItemProperty -LiteralPath $key).DisplayVersion -ge [version]'0.3.0') {
+            Assert-DesktopControls $app $button
         }
     } finally {
         if (!$app.HasExited) {
@@ -101,6 +150,7 @@ if ($PreviousRatioInstaller) {
     $publishedVersions = @{
         'ddc157fe6e6787f21a2e93735a933a6441ec169061fc61b29a5ab12a02026057' = '0.1.1'
         '699086b5326a2156b5cd85026bed0f9f5c8f802a5e6823241b35e58de5e3a152' = '0.2.0'
+        'e6d2969993ca3063b53a84a2527526e621003040af29cdf657d0955c0cd2d0c8' = '0.2.1'
     }
     $previousVersion = $publishedVersions[(Get-FileHash $previous).Hash]
     if (!$previousVersion) { throw 'Unknown previous Ratio installer checksum.' }

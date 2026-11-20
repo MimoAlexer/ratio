@@ -337,9 +337,10 @@ pub(super) async fn list(
                     }
                     @if inbox { p.issue-subheading { "Backlog issues awaiting triage." } }
                 }
+                @if !projects.is_empty() || !f.q.is_empty() { (filter_bar(&f, &projects, project)) }
                 div.view-actions {
                     @if !projects.is_empty() {
-                        a.issue-saved href="/workflows#views" { (ledger_icon("bookmark")) span { "Saved views" } }
+                        a.issue-saved href="/workflows#views" title="Saved views" { (ledger_icon("bookmark")) span { "Saved views" } }
                     }
                     @if can_create { (new_issue(&auth, &projects, project, if inbox { "backlog" } else { "ready" })) }
                 }
@@ -350,7 +351,7 @@ pub(super) async fn list(
                         label { "Search issues" input type="search" name="q" maxlength="250"; }
                         button type="submit" { "Search" }
                     }
-                } @else { (filter_bar(&f, &projects, project)) }
+                }
                 @if !projects.is_empty() { (applied_filters(&f, selected, inbox)) }
                 @if items.is_empty() {
                     (empty_issues(&f, selected, &projects, can_create, inbox_clear, page))
@@ -680,14 +681,6 @@ fn issue_results(auth: &Auth, f: &Filters, items: &[ListItem], selected: Option<
     html! {
         section.issue-ledger data-group=(&f.group) aria-label="Issue list"
             data-mixed-projects=[items.first().filter(|first| items.iter().any(|i| i.project_id != first.project_id)).map(|_| "true")] {
-            div.issue-queue-head {
-                span { (ledger_icon("list")) "Issue queue" }
-                small { @match f.group.as_str() {
-                    "priority" => { "By priority" }
-                    "status" => { "By status" }
-                    _ => { "Ungrouped" }
-                } }
-            }
             div.issue-column-head aria-hidden="true" {
                 span { "ID" } span { "Issue" } span.issue-priority { "Priority" } span.issue-project { "Project" } span.issue-kind { "Type" } span.issue-date { "Updated" }
                 span.issue-preview-col { "Preview" }
@@ -1100,18 +1093,6 @@ pub(super) async fn detail(
 
                 div.issue-detail-grid {
                     div.issue-reading {
-                        @if !issue.body.is_empty() {
-                            section.issue-description aria-labelledby="description-title" {
-                                h2 id="description-title" { "Description" }
-                                @if issue.body.len() > 1600 || issue.body.lines().take(10).count() >= 10 {
-                                    p.description-preview { (issue.body.chars().take(300).collect::<String>()) }
-                                    details.issue-long-description {
-                                        summary { span.more-description { "Read full description" } span.less-description { "Collapse description" } }
-                                        div.prose.reading { (&issue.body) }
-                                    }
-                                } @else { div.prose.reading { (&issue.body) } }
-                            }
-                        }
                         @if !issue.next_action.is_empty() || (can_write && open) {
                             section.issue-checkpoint.has-checkpoint[!issue.next_action.is_empty()] aria-labelledby="next-action-title" {
                                 div.checkpoint-heading {
@@ -1131,6 +1112,18 @@ pub(super) async fn detail(
                                         }
                                     }
                                 }
+                            }
+                        }
+                        @if !issue.body.is_empty() {
+                            section.issue-description aria-labelledby="description-title" {
+                                h2 id="description-title" { "Description" }
+                                @if issue.body.len() > 1600 || issue.body.lines().take(10).count() >= 10 {
+                                    p.description-preview { (issue.body.chars().take(300).collect::<String>()) }
+                                    details.issue-long-description {
+                                        summary { span.more-description { "Read full description" } span.less-description { "Collapse description" } }
+                                        div.prose.reading { (&issue.body) }
+                                    }
+                                } @else { div.prose.reading { (&issue.body) } }
                             }
                         }
                         @if let Some((note, title, anchor)) = &source {
