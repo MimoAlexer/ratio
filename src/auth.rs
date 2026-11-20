@@ -1,0 +1,530 @@
+use crate::{AppError, AppResult, AppState};
+use axum::{
+    Form, Router,
+    extract::{ConnectInfo, Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Redirect, Response},
+    routing::{get, post},
+};
+use maud::{DOCTYPE, Markup, html};
+use reqwest::Url;
+use serde::Deserialize;
+use std::{env, net::SocketAddr};
+use uuid::Uuid;
+
+mod credentials;
+mod delivery;
+mod recovery;
+#[cfg(test)]
+mod tests;
+
+pub use credentials::Auth;
+#[cfg(test)]
+use credentials::session;
+use credentials::{
+    budget, check_nonce, cleanup_cookie_name, cleanup_owner, cookie, digest, form_nonce,
+    lock_email, new_session, nonce_name, normalized_email, purge_expired, put_nonce, put_session,
+    redeem, safe_next, session_cookie_raw, session_name, set_cookie, token, valid_token,
+};
+use delivery::{dev_links, mail_link};
+
+fn public_page(title: &str, body: Markup) -> Html<String> {
+    Html(html! {
+        (DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                meta name="viewport" content="width=device-width, initial-scale=1";
+                meta name="referrer" content="strict-origin";
+                title { (title) " · Workspace" }
+                link rel="stylesheet" href="/assets/app.css";
+            }
+            body.auth-page {
+                main.auth-shell {
+                    div.auth-card {
+                        div.auth-brand { img src="/assets/mark.svg" width="26" height="24" alt=""; "Workspace" }
+                        h1 { (title) }
+                        (body)
+                    }
+                }
+            }
+        }
+    }.into_string())
+}
+
+#[derive(Deserialize, Default)]
+struct LoginQuery {
+    demo: Option<bool>,
+    next: Option<String>,
+    result: Option<String>,
+}
+#[derive(Deserialize)]
+struct LoginForm {
+    email: String,
+    csrf: String,
+    #[serde(default)]
+    next: String,
+}
+#[derive(Deserialize)]
+struct ChallengeQuery {
+    #[serde(default)]
+    token: String,
+}
+#[derive(Deserialize)]
+struct VerifyForm {
+    token: String,
+    csrf: String,
+}
+#[derive(Deserialize)]
+struct CsrfForm {
+    csrf: String,
+}
+#[derive(Deserialize)]
+struct DeleteForm {
+    csrf: String,
+    email: String,
+}
+
+async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<LoginQuery>,
+) -> Response {
+    let nonce = form_nonce(&headers, state.config.production);
+    let next = safe_next(query.next.as_deref().unwrap_or("/"));
+    let cleanup = cleanup_owner(&headers, state.config.production);
+    let mut response = public_page(
+        "Sign in to your workspace",
+        html! {
+        @if let Some(owner)=cleanup {
+            script src="/assets/note-editor.js" data-clear-note-drafts=(owner) defer {}
+        }
+        @match query.result.as_deref().filter(|_|cleanup.is_some()){
+            Some("deleted")=>{p role="status" {"Your workspace was deleted."}}
+            Some("signed-out")=>{p role="status" {"You’re signed out."}}
+            _=>{}
+        }
+        p {"Use your email address to open or create a private workspace."}
+        form method="post" action="/login" {
+            input type="hidden" name="csrf" value=(nonce);
+            input type="hidden" name="next" value=(next);
+            label.field { "Email address" input name="email" type="email" autocomplete="email" maxlength="254" value=[(query.demo == Some(true) && !state.config.production).then_some(crate::sample::DEMO_EMAIL)] required; }
+            button type="submit" {"Email me a sign-in link"}
+        }
+        p {a href="/recover" {"Recover your account"}}
+    }).into_response();
+    if cleanup.is_some() {
+        set_cookie(
+            &mut response,
+            cleanup_cookie_name(state.config.production),
+            "",
+            0,
+            state.config.production,
+        );
+    }
+    put_nonce(&mut response, state.config.production, &nonce);
+    response
+}
+
+async fn request_link(
+    State(state): State<AppState>,
+    peer: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Form(form): Form<LoginForm>,
+) -> AppResult<Response> {
+    check_nonce(&headers, state.config.production, &form.csrf)?;
+    let email = normalized_email(&form.email)
+        .ok_or_else(|| AppError::BadRequest("Enter a valid email address.".into()))?;
+    let local = dev_links(&state, &headers, Some(peer.0));
+    let raw = token();
+    let mut tx = state.db.begin().await?;
+    purge_expired(&mut tx).await?;
+    let allowed = budget(&mut tx, "issue/all", 300).await?
+        && budget(&mut tx, &format!("issue/peer/{}", peer.0.ip()), 120).await?
+        && budget(&mut tx, &format!("issue/email/{email}"), 5).await?;
+    let issued = if allowed {
+        lock_email(&mut tx, &email).await?;
+        sqlx::query(
+            "INSERT INTO login_challenges(token_hash,email,return_to) SELECT $1,$2,$3
+             WHERE NOT EXISTS(SELECT 1 FROM users WHERE email=$2 AND NOT identity_current)",
+        )
+        .bind(digest(&raw))
+        .bind(&email)
+        .bind(safe_next(&form.next))
+        .execute(&mut *tx)
+        .await?
+        .rows_affected()
+            == 1
+    } else {
+        false
+    };
+    tx.commit().await?;
+    let mut response = Redirect::to("/login/check").into_response();
+    if local {
+        set_cookie(
+            &mut response,
+            "workspace_dev_preview",
+            if issued { &raw } else { "" },
+            if issued { 900 } else { 0 },
+            false,
+        );
+    } else if issued {
+        let url = format!(
+            "{}/login/confirm?token={raw}",
+            state.config.base_url.trim_end_matches('/')
+        );
+        if let Err(err) = mail_link(&state, &email, &url).await {
+            sqlx::query("DELETE FROM login_challenges WHERE token_hash=$1")
+                .bind(digest(&raw))
+                .execute(&state.db)
+                .await?;
+            return Err(err);
+        }
+    }
+    Ok(response)
+}
+
+async fn check_inbox(
+    State(state): State<AppState>,
+    peer: ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> Html<String> {
+    let preview = dev_links(&state, &headers, Some(peer.0))
+        .then(|| cookie(&headers, "workspace_dev_preview"))
+        .flatten();
+    public_page(
+        "Check your email",
+        html! {
+            p {"If a link can be sent to that address, it will arrive shortly. Sign-in links expire after 15 minutes."}
+            @if let Some(raw)=preview {
+                p { "Local development email preview" }
+                p {a href=(format!("/login/confirm?token={raw}")) {"Open local sign-in link"}}
+            }
+            a href="/login" {"Use another email address"}
+        },
+    )
+}
+
+fn invalid_link() -> Response {
+    (
+        StatusCode::GONE,
+        public_page(
+            "This link has expired",
+            html! {
+                p {"Request a new link if this one has expired or was already used."}
+                a href="/login" {"Request a new sign-in link"}
+            },
+        ),
+    )
+        .into_response()
+}
+
+async fn confirm(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ChallengeQuery>,
+) -> AppResult<Response> {
+    if !valid_token(&query.token) {
+        return Ok(invalid_link());
+    }
+    let email: Option<String> = sqlx::query_scalar(
+        "SELECT email FROM login_challenges WHERE token_hash=$1 AND expires_at>now()",
+    )
+    .bind(digest(&query.token))
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(email) = email else {
+        return Ok(invalid_link());
+    };
+    let nonce = form_nonce(&headers, state.config.production);
+    let mut response = public_page(
+        "Confirm sign-in",
+        html! {
+            p {"Continue to the private workspace for " strong {(email)} "."}
+            form action="/login/confirm" method="post" {
+                input type="hidden" name="token" value=(query.token);
+                input type="hidden" name="csrf" value=(nonce);
+                button type="submit" {"Continue to workspace"}
+            }
+            a href="/login" {"Use another email address"}
+        },
+    )
+    .into_response();
+    put_nonce(&mut response, state.config.production, &nonce);
+    Ok(response)
+}
+
+async fn verify(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<VerifyForm>,
+) -> AppResult<Response> {
+    check_nonce(&headers, state.config.production, &form.csrf)?;
+    let Some((raw, path)) = redeem(
+        &state.db,
+        &form.token,
+        session_cookie_raw(&headers, state.config.production),
+    )
+    .await?
+    else {
+        return Ok(invalid_link());
+    };
+    let mut response = Redirect::to(&path).into_response();
+    put_session(&mut response, state.config.production, &raw);
+    set_cookie(
+        &mut response,
+        nonce_name(state.config.production),
+        "",
+        0,
+        state.config.production,
+    );
+    if !state.config.production {
+        set_cookie(&mut response, "workspace_dev_preview", "", 0, false)
+    }
+    Ok(response)
+}
+
+fn signout_response(production: bool, owner: Uuid, path: &str) -> Response {
+    let mut response = Redirect::to(path).into_response();
+    set_cookie(
+        &mut response,
+        cleanup_cookie_name(production),
+        &owner.to_string(),
+        300,
+        production,
+    );
+    set_cookie(&mut response, session_name(production), "", 0, production);
+    set_cookie(&mut response, nonce_name(production), "", 0, production);
+    if !production {
+        set_cookie(&mut response, "workspace_dev_preview", "", 0, false)
+    }
+    response
+}
+
+async fn logout(
+    auth: Auth,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<CsrfForm>,
+) -> AppResult<Response> {
+    auth.check_csrf(&form.csrf)?;
+    let raw = session_cookie_raw(&headers, state.config.production).ok_or(AppError::Forbidden)?;
+    sqlx::query("DELETE FROM user_sessions WHERE token_hash=$1 AND user_id=$2")
+        .bind(digest(raw))
+        .bind(auth.user_id)
+        .execute(&state.db)
+        .await?;
+    Ok(signout_response(
+        state.config.production,
+        auth.user_id,
+        "/login?result=signed-out",
+    ))
+}
+
+async fn revoke(
+    auth: Auth,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<CsrfForm>,
+) -> AppResult<Redirect> {
+    auth.check_csrf(&form.csrf)?;
+    let raw = session_cookie_raw(&headers, state.config.production).ok_or(AppError::Forbidden)?;
+    sqlx::query("DELETE FROM user_sessions WHERE user_id=$1 AND token_hash<>$2")
+        .bind(auth.user_id)
+        .bind(digest(raw))
+        .execute(&state.db)
+        .await?;
+    Ok(Redirect::to("/settings?result=revoked"))
+}
+
+async fn settings(
+    auth: Auth,
+    State(state): State<AppState>,
+    Query(query): Query<LoginQuery>,
+) -> AppResult<Html<String>> {
+    let (plan, timezone, sessions): (String, String, i64) = sqlx::query_as(
+        "SELECT plan, timezone, (SELECT count(*) FROM user_sessions WHERE user_id=u.id
+         AND expires_at>now()) FROM users u WHERE id=$1",
+    )
+    .bind(auth.user_id)
+    .fetch_one(&state.db)
+    .await?;
+    let support = env::var("SUPPORT_EMAIL")
+        .ok()
+        .and_then(|v| normalized_email(&v));
+    let status = env::var("STATUS_URL")
+        .ok()
+        .and_then(|v| Url::parse(&v).ok())
+        .filter(|u| {
+            u.scheme() == "https"
+                && u.has_host()
+                && u.username().is_empty()
+                && u.password().is_none()
+        });
+    Ok(crate::ui::page(
+        &auth,
+        "Settings",
+        "settings",
+        html! {
+            h1 {"Settings"}
+            @match query.result.as_deref() {
+                Some("revoked") => {p role="status" {"Other sessions were signed out."}}
+                Some("timezone") => {p role="status" {"Time zone saved."}}
+                Some("recovered") => {p.notice role="status" {"Sign-in email updated. If you use a paid plan, review the email for receipts in " a href="/billing" {"Billing"} "."}}
+                _=>{}
+            }
+            section.panel {
+                h2 {"Account"}
+                dl {
+                    dt {"Sign-in email"} dd {(auth.email)}
+                    dt {"Plan"} dd {(plan)}
+                }
+                p {a href="/billing" {"Manage billing"}}
+                form method="post" action="/settings/timezone" {
+                    (crate::ui::csrf(&auth))
+                    label.field { "Workspace time zone" input name="timezone" value=(timezone) maxlength="128" required; }
+                    p { "Use an IANA time zone such as Europe/Zurich or America/New_York." }
+                    button type="submit" { "Save time zone" }
+                }
+            }
+            section.panel {
+                h2 {"Sessions"}
+                p {(sessions) @if sessions==1 {" active session, including this browser."} @else {" active sessions, including this browser."}}
+                form method="post" action="/logout" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of this browser"}}
+                @if sessions>1 {form method="post" action="/settings/sessions/revoke" {(crate::ui::csrf(&auth)) button type="submit" {"Sign out of other browsers"}}}
+            }
+            (recovery::settings(&auth))
+            section.panel {
+                h2 {"Delete workspace"}
+                p {"Deleting your account signs out every device and removes your projects, issues, notes and connections. Export a copy before continuing."}
+                p { "Deletion also requests cancellation of your subscription and any open checkout. Stripe may retain billing records." }
+                p {a href="/transfer" {"Export workspace data"}}
+                form method="post" action="/settings/delete" {
+                    (crate::ui::csrf(&auth))
+                    label for="delete-email" {"Type your sign-in email to confirm deletion"}
+                    input #delete-email type="email" name="email" autocomplete="off" required;
+                    button.danger type="submit" {"Delete my workspace permanently"}
+                }
+            }
+            @if support.is_some() || status.is_some() {
+                section.panel { h2 {"Support"}
+                    @if let Some(addr)=support {p {a href=(format!("mailto:{addr}")) {(addr)}}}
+                    @if let Some(url)=status {p {a href=(url.as_str()) {"Service status"}}}
+                }
+            }
+        },
+    ))
+}
+
+#[derive(Deserialize)]
+struct TimezoneForm {
+    csrf: String,
+    timezone: String,
+}
+
+async fn save_timezone(
+    auth: Auth,
+    State(state): State<AppState>,
+    Form(form): Form<TimezoneForm>,
+) -> AppResult<Redirect> {
+    auth.check_csrf(&form.csrf)?;
+    let zone = form.timezone.trim();
+    if zone.is_empty()
+        || zone.len() > 128
+        || zone.starts_with("posix/")
+        || zone.starts_with("right/")
+        || zone == "localtime"
+        || !sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name=$1)",
+        )
+        .bind(zone)
+        .fetch_one(&state.db)
+        .await?
+    {
+        return Err(AppError::BadRequest(
+            "Enter a valid IANA time zone, such as Europe/Zurich.".into(),
+        ));
+    }
+    sqlx::query("UPDATE users SET timezone=$1 WHERE id=$2")
+        .bind(zone)
+        .bind(auth.user_id)
+        .execute(&state.db)
+        .await?;
+    Ok(Redirect::to("/settings?result=timezone"))
+}
+
+async fn delete_account(
+    auth: Auth,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<DeleteForm>,
+) -> AppResult<Response> {
+    auth.check_csrf(&form.csrf)?;
+    if normalized_email(&form.email).as_deref() != Some(auth.email.as_str()) {
+        return Err(AppError::BadRequest(
+            "Type the email address shown in Settings.".into(),
+        ));
+    }
+    let raw = session_cookie_raw(&headers, state.config.production).ok_or(AppError::Forbidden)?;
+    let mut tx = state.db.begin().await?;
+    lock_email(&mut tx, &auth.email).await?;
+    let owner: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM users WHERE id=$1 AND email=$2 FOR UPDATE")
+            .bind(auth.user_id)
+            .bind(&auth.email)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if owner.is_none() {
+        return Err(AppError::Forbidden);
+    }
+    let active: Option<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM user_sessions WHERE token_hash=$1 AND user_id=$2
+         AND expires_at>now() AND created_at>now()-interval '15 minutes' FOR UPDATE",
+    )
+    .bind(digest(raw))
+    .bind(auth.user_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if active.is_none() {
+        return Ok(public_page(
+            "Verify your email to delete this workspace",
+            html! {
+                p { "Sign in again and confirm deletion from Settings within 15 minutes." }
+                a href="/login?next=%2Fsettings" { "Sign in again" }
+            },
+        )
+        .into_response());
+    }
+    crate::billing::ensure_deletable(&mut tx, auth.user_id).await?;
+    sqlx::query("INSERT INTO account_deletions(user_id) VALUES($1)")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM login_challenges WHERE email=$1")
+        .bind(&auth.email)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM users WHERE id=$1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(signout_response(
+        state.config.production,
+        auth.user_id,
+        "/login?result=deleted",
+    ))
+}
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/login", get(login).post(request_link))
+        .route("/login/check", get(check_inbox))
+        .route("/login/confirm", get(confirm).post(verify))
+        .route("/logout", post(logout))
+        .route("/settings", get(settings))
+        .route("/settings/sessions/revoke", post(revoke))
+        .route("/settings/delete", post(delete_account))
+        .route("/settings/timezone", post(save_timezone))
+        .merge(recovery::routes())
+}

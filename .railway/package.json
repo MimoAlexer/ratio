@@ -1,0 +1,10 @@
+{
+  "name": "workspace-railway-config",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": { "check": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module NodeNext railway.ts && node --experimental-strip-types check.mjs" },
+  "dependencies": { "railway": "3.17.0" },
+  "devDependencies": { "typescript": "5.9.3" }
+}

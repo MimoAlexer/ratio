@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:18-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
+    environment:
+      POSTGRES_USER: workspace
+      POSTGRES_DB: workspace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Export a random migration password}
+      WORKSPACE_DB_PASSWORD: ${WORKSPACE_DB_PASSWORD:?Export a separate random runtime password}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./ops/init-runtime.sh:/docker-entrypoint-initdb.d/010-runtime.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "workspace", "-d", "workspace"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  migrate:
+    build: .
+    image: ${COMPOSE_PROJECT_NAME:-workspace}-web:local
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["solo-tracker", "migrate"]
+    environment:
+      DATABASE_URL: postgresql://workspace:${POSTGRES_PASSWORD:?Export a random migration password}@db/workspace
+      APP_GRANT_RUNTIME: "1"
+  web:
+    image: ${COMPOSE_PROJECT_NAME:-workspace}-web:local
+    pull_policy: never
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_ENV: development
+      BIND_ADDR: 0.0.0.0
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      APP_BASE_URL: http://127.0.0.1:${WORKSPACE_PORT:-3000}
+      DATABASE_URL: postgresql://workspace_app:${WORKSPACE_DB_PASSWORD:?Export a separate random runtime password}@db/workspace
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:${WORKSPACE_PORT:-3000}:3000"
+volumes:
+  postgres-data:

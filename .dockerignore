@@ -1,0 +1,15 @@
+**
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!build.rs
+!src/
+!src/**
+!migrations/
+!migrations/**
+!assets/
+!assets/**
+!tests/
+!tests/**
+!ops/
+!ops/grant-runtime.sql

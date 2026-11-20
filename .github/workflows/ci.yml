@@ -1,0 +1,101 @@
+name: Verify
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  infrastructure:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Check Railway configuration with the pinned SDK
+        working-directory: .railway
+        run: |
+          npm ci --ignore-scripts
+          npm run check
+
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CARGO_TERM_COLOR: always
+      PG_IMAGE: postgres:18-bookworm@sha256:194e55feb2597b1465dbee81cc9fd8d204566cd2eb42c8d22fd6c931a38781b1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Start an isolated PostgreSQL database
+        run: |
+          export POSTGRES_PASSWORD WORKSPACE_DB_PASSWORD
+          POSTGRES_PASSWORD=$(openssl rand -hex 32)
+          WORKSPACE_DB_PASSWORD=$(openssl rand -hex 32)
+          echo "::add-mask::$WORKSPACE_DB_PASSWORD"
+          echo "::add-mask::$POSTGRES_PASSWORD"
+          docker compose config --quiet
+          docker run --detach --name workspace-postgres --publish 127.0.0.1::5432 \
+            --env POSTGRES_PASSWORD --env POSTGRES_DB=workspace_test "$PG_IMAGE"
+          port=$(docker port workspace-postgres 5432/tcp | cut -d: -f2)
+          for attempt in {1..60}; do
+            if docker exec workspace-postgres pg_isready -h 127.0.0.1 -U postgres -d workspace_test; then break; fi
+            sleep 1
+          done
+          docker exec workspace-postgres pg_isready -h 127.0.0.1 -U postgres -d workspace_test
+          docker cp ops workspace-postgres:/tmp/ops
+          docker exec --env PGUSER=postgres --env PGDATABASE=workspace_test --env WORKSPACE_DB_PASSWORD workspace-postgres /tmp/ops/init-runtime.sh
+          printf 'RUNTIME_DATABASE_URL=postgresql://workspace_app:%s@127.0.0.1:%s/workspace_test\n' "$WORKSPACE_DB_PASSWORD" "$port" >> "$GITHUB_ENV"
+          printf 'DATABASE_URL=postgresql://postgres:%s@127.0.0.1:%s/workspace_test\n' "$POSTGRES_PASSWORD" "$port" >> "$GITHUB_ENV"
+      - name: Check formatting and Clippy
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Migrate and test against PostgreSQL
+        run: |
+          APP_GRANT_RUNTIME=1 cargo run --locked --bin solo-tracker -- migrate
+          cargo test --locked --all-targets -- --include-ignored --test-threads=1
+      - name: Rehearse encrypted backup and restore
+        run: |
+          docker exec workspace-postgres sh -ec 'apt-get update -qq && apt-get install -qy --no-install-recommends age'
+          docker cp migrations workspace-postgres:/tmp/migrations
+          docker exec --user postgres --env PGHOST=/var/run/postgresql --env PGDATABASE=postgres --env PGUSER=postgres \
+            workspace-postgres /tmp/ops/drill.sh
+      - name: Build and probe the non-root release image
+        env:
+          APP_ENV: production
+          APP_BASE_URL: https://workspace.example.invalid
+          PORT: '38123'
+        run: |
+          cargo clean
+          docker build --tag workspace-ci .
+          test "$(docker image inspect --format '{{.Config.User}}' workspace-ci)" = '65532:65532'
+          docker run --rm --network host --env DATABASE_URL --env APP_GRANT_RUNTIME=1 workspace-ci solo-tracker migrate
+          export DATABASE_URL="$RUNTIME_DATABASE_URL"
+          docker run --rm --network host --env DATABASE_URL workspace-ci solo-tracker check
+          docker exec -i workspace-postgres psql -U postgres -d workspace_test -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          SET LOCAL ROLE workspace_app;
+          DO $$ BEGIN IF has_schema_privilege(current_user,'public','CREATE')
+            OR has_table_privilege(current_user,'_sqlx_migrations','UPDATE')
+            OR has_table_privilege(current_user,'account_deletions','DELETE')
+            OR has_column_privilege(current_user,'users','identity_current','UPDATE') THEN
+            RAISE EXCEPTION 'elevated runtime privileges'; END IF; END $$;
+          INSERT INTO users(email) VALUES ('runtime-ci@example.invalid') RETURNING id \gset owner_
+          INSERT INTO projects(owner_id,name,key) VALUES (:'owner_id','Fixture','FIX') RETURNING id \gset project_
+          INSERT INTO issues(owner_id,project_id,number,title) VALUES (:'owner_id',:'project_id',1,'A');
+          INSERT INTO notes(owner_id,project_id,title,path,body) VALUES (:'owner_id',:'project_id','B','B.md','ok');
+          SET CONSTRAINTS ALL IMMEDIATE;
+          DO $$ BEGIN IF (SELECT content_bytes FROM users WHERE email='runtime-ci@example.invalid') IS DISTINCT FROM 8::bigint THEN
+            RAISE EXCEPTION 'runtime issue and note storage accounting failed'; END IF; END $$;
+          ROLLBACK;
+          SQL
+          docker run --detach --name workspace-web --read-only --tmpfs /tmp \
+            --network host --env DATABASE_URL --env APP_BASE_URL --env APP_ENV --env PORT workspace-ci
+          curl --retry 30 --retry-connrefused --retry-delay 1 --fail --silent --show-error "http://127.0.0.1:$PORT/readyz"
+          curl --fail --silent --show-error "http://127.0.0.1:$PORT/login" | grep -qi '<form'
