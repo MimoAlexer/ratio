@@ -28,3 +28,9 @@ Wine ran all 21 Windows-target desktop tests. Fresh installation, an upgrade fro
 The published-installer workflow downloads the release asset, verifies its SHA-256 and runs fresh, legacy and 0.2.1 upgrade scenarios on separate Windows workers. Each run checks the Connect button in WebView2, confirms that the window has no attached menu bar, opens the popup with F10 and selects Quit. [Native Windows release checks](https://github.com/MimoAlexer/ratio/actions/workflows/verify-published-desktop.yml)
 
 [0.2.1 installer qualification](https://github.com/MimoAlexer/ratio/blob/3a5e7366d32b10d49e5480ce65c608dc825f7f81/docs/desktop-verification.md)
+
+## Hosted release results
+
+GitHub verified the published v0.3.0 Windows installer against the release manifest on three separate Windows Server 2025 machines. All three opened the rendered Connect form, opened the desktop controls with F10, selected Quit and completed uninstallation. The upgrade tests retained the existing profile. [Fresh install](https://github.com/MimoAlexer/ratio/actions/runs/44822320397/job/136586051864) · [Upgrade from Working Set 0.1.0](https://github.com/MimoAlexer/ratio/actions/runs/44822320397/job/136586051065) · [Upgrade from Ratio 0.2.1](https://github.com/MimoAlexer/ratio/actions/runs/44822320397/job/136586051460)
+
+The tagged source passed native builds, fresh installation and upgrades from 0.1.0, 0.2.0 and 0.2.1 on both Ubuntu 22.04 and Windows. Backend qualification passed PostgreSQL migrations and tests, encrypted backup and restore, and startup and readiness checks for the non-root container. [Ubuntu installer smoke](https://github.com/MimoAlexer/ratio/actions/runs/44822288591/job/136585938897) · [Desktop jobs](https://github.com/MimoAlexer/ratio/actions/runs/44822288591) · [Backend and infrastructure](https://github.com/MimoAlexer/ratio/actions/runs/44822288575)
