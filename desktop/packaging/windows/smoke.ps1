@@ -46,10 +46,21 @@ function Initialize-WindowInspection {
         Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 
 public static class RatioWindowSmoke {
+    public sealed class WindowInfo {
+        public IntPtr Handle, Owner;
+        public uint ProcessId;
+        public string Title, ClassName;
+        public override string ToString() {
+            return String.Format("PID={0} HWND=0x{1:X} owner=0x{2:X} class={3} title='{4}'",
+                ProcessId, Handle.ToInt64(), Owner.ToInt64(), ClassName, Title);
+        }
+    }
     [DllImport("user32.dll")]
     public static extern IntPtr GetMenu(IntPtr window);
 
@@ -68,23 +79,39 @@ public static class RatioWindowSmoke {
     private static extern int GetClassName(IntPtr window, StringBuilder text, int size);
     [DllImport("user32.dll")]
     private static extern IntPtr GetWindow(IntPtr window, uint command);
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr window);
 
-    public static string[] DescribeWindows(int processId) {
-        var windows = new List<string>();
+    public static WindowInfo[] Windows(int processId, bool visibleOnly) {
+        var windows = new List<WindowInfo>();
         EnumWindows(delegate(IntPtr window, IntPtr parameter) {
             uint pid;
             GetWindowThreadProcessId(window, out pid);
-            if (pid == (uint)processId) {
+            if ((processId == 0 || pid == (uint)processId) && (!visibleOnly || IsWindowVisible(window))) {
                 var title = new StringBuilder(512);
                 var name = new StringBuilder(128);
                 GetWindowText(window, title, title.Capacity);
                 GetClassName(window, name, name.Capacity);
-                windows.Add(String.Format("HWND=0x{0:X} owner=0x{1:X} class={2} title='{3}'",
-                    window.ToInt64(), GetWindow(window, 4).ToInt64(), name, title));
+                windows.Add(new WindowInfo { Handle = window, Owner = GetWindow(window, 4),
+                    ProcessId = pid, ClassName = name.ToString(), Title = title.ToString() });
             }
             return true;
         }, IntPtr.Zero);
         return windows.ToArray();
+    }
+
+    public static string[] DescribeWindows(int processId) {
+        return Array.ConvertAll(Windows(processId, false), w => w.ToString());
+    }
+
+    public static bool BelongsTo(IntPtr window, int processId) {
+        while (window != IntPtr.Zero) {
+            uint pid;
+            GetWindowThreadProcessId(window, out pid);
+            if (pid == (uint)processId) return true;
+            window = GetWindow(window, 4); // GW_OWNER
+        }
+        return false;
     }
 
     public static bool HasPopup(int processId) {
@@ -93,6 +120,36 @@ public static class RatioWindowSmoke {
         return popup != IntPtr.Zero && GetWindowThreadProcessId(popup, out owner) != 0
             && owner == (uint)processId;
     }
+}
+
+// TempDir may disappear before UI Automation has observed a Save dialog.
+public sealed class RatioStageWatch : IDisposable {
+    private readonly FileSystemWatcher watcher;
+    private readonly string root;
+    private readonly ConcurrentDictionary<string, bool> seen = new ConcurrentDictionary<string, bool>();
+    public RatioStageWatch(string tempDir) {
+        root = Path.GetFullPath(tempDir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        watcher = new FileSystemWatcher(root);
+        watcher.IncludeSubdirectories = true;
+        watcher.NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName | NotifyFilters.Size;
+        watcher.Created += Observe;
+        watcher.Changed += Observe;
+        watcher.Deleted += Observe;
+        watcher.Renamed += Observe;
+        watcher.Error += delegate { seen.TryAdd("Watcher buffer/error; stage history may be incomplete.", true); };
+        watcher.EnableRaisingEvents = true;
+    }
+    private void Observe(object sender, FileSystemEventArgs e) {
+        if (!e.FullPath.StartsWith(root + "ratio-export-", StringComparison.OrdinalIgnoreCase)) return;
+        string relative = e.FullPath.Substring(root.Length);
+        string size = "";
+        try { if (File.Exists(e.FullPath)) size = " bytes=" + new FileInfo(e.FullPath).Length; }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        seen.TryAdd(e.ChangeType + " " + relative + size, true);
+    }
+    public string[] Observations() { return new List<string>(seen.Keys).ToArray(); }
+    public void Dispose() { watcher.Dispose(); }
 }
 '@
     }
@@ -186,8 +243,51 @@ function Assert-ConnectionWindow([string]$phase) {
     } finally {
         if (!$app.HasExited) {
             $null = $app.CloseMainWindow()
-            if (!$app.WaitForExit(5000)) { Stop-Process -Id $app.Id -Force }
+            if (!$app.WaitForExit(5000)) { $app.Kill(); $app.WaitForExit() }
         }
+        $app.Dispose()
+    }
+}
+
+function Write-SvgTimeout($app, $destination, $stageWatcher) {
+    $visible = @([RatioWindowSmoke]::Windows(0, $true))
+    Write-Host "SVG save timeout for Ratio PID=$($app.Id). Visible windows ($($visible.Count)):"
+    $owners = @($visible | Where-Object ProcessId -eq $app.Id | ForEach-Object { $_.Handle })
+    foreach ($item in $visible) {
+        Write-Host $item.ToString()
+        $related = $item.ProcessId -eq $app.Id -or $owners -contains $item.Owner
+        if ($item.Title -notmatch 'save|export|error|could not' -and !($related -and $item.ClassName -eq '#32770')) { continue }
+        try {
+            $dialog = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$item.Handle)
+            $controls = $dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                [System.Windows.Automation.Condition]::TrueCondition)
+            for ($i = 0; $i -lt [Math]::Min(40, $controls.Count); $i++) {
+                $control = $controls[$i].Current
+                Write-Host ("  {0} ID='{1}' name='{2}'" -f $control.ControlType.ProgrammaticName, $control.AutomationId, $control.Name)
+            }
+        } catch {
+            Write-Host "  UI Automation could not inspect this window: $($_.Exception.Message)"
+        }
+    }
+    try {
+        $directory = Split-Path -Parent $destination
+        $stem = [IO.Path]::GetFileNameWithoutExtension($destination)
+        $files = @(Get-ChildItem -LiteralPath $directory -File -Filter "$stem*" -Force -ErrorAction Stop)
+        Write-Host "Downloads matches for '$destination': $($files.Count)"
+        foreach ($file in $files) {
+            Write-Host "  $($file.FullName) ($($file.Length) bytes)"
+            if ($file.Extension -eq '.svg') {
+                $hash = Get-FileHash -LiteralPath $file.FullName -ErrorAction Stop
+                Write-Host "  SHA-256 $($hash.Hash)"
+            }
+        }
+    } catch { Write-Host "Could not inspect matching downloads: $($_.Exception.Message)" }
+    if ($null -ne $stageWatcher) {
+        try {
+            $rows = @($stageWatcher.Observations())
+            Write-Host "Staging observations: $($rows.Count)"
+            foreach ($row in $rows) { Write-Host "  $row" }
+        } catch { Write-Host "Could not read staging observations: $($_.Exception.Message)" }
     }
 }
 
@@ -205,6 +305,7 @@ function Assert-CanvasSvgSave {
     [IO.File]::WriteAllText((Join-Path $dir $name), $svg, [Text.Encoding]::ASCII)
     $server = $null
     $app = $null
+    $stageWatcher = $null
     try {
         @'
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -219,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/desktop/start":
             mime = "text/html; charset=utf-8"
-            body = ('<!doctype html><a href="' + route + '">Download test SVG</a>').encode()
+            body = ('<!doctype html><a download="" href="' + route + '">Download test SVG</a>').encode()
         elif self.path == route:
             mime = "image/svg+xml; charset=utf-8"
             body = (root / name).read_bytes()
@@ -233,6 +334,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        if self.path == route:
+            (root / "attachment-sent").write_text(name, encoding="ascii")
+            print("Sent canonical GET attachment " + name + " (" + str(len(body)) + " bytes).", flush=True)
 
 with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
     port_file = root / "port.tmp"
@@ -266,12 +370,11 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         if (!$link) { throw 'WebView2 did not expose the SVG download link.' }
         $shell = New-Object -ComObject WScript.Shell
         if (!$shell.AppActivate($app.Id)) { throw 'Could not activate the SVG fixture window.' }
+        $stageWatcher = [RatioStageWatch]::new([IO.Path]::GetTempPath())
         $link.SetFocus()
         $shell.SendKeys('{ENTER}')
-        $condition = [System.Windows.Automation.AndCondition]::new(
-            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Save canvas SVG'),
-            [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]$app.Id))
-        $root = [System.Windows.Automation.AutomationElement]::RootElement
+        $editCondition = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit)
         $end = (Get-Date).AddSeconds(30)
         $save = $null
         $buttonCondition = [System.Windows.Automation.AndCondition]::new(
@@ -280,11 +383,34 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
                 [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::AutomationIdProperty, '1'),
                 [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Save')))
         do {
-            $dialog = $root.FindFirst([System.Windows.Automation.TreeScope]::Children, $condition)
-            if ($dialog) { $save = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition) }
+            foreach ($window in [RatioWindowSmoke]::Windows(0, $true)) {
+                if ($window.Title -ne 'Save canvas SVG' -or ![RatioWindowSmoke]::BelongsTo($window.Handle, $app.Id)) { continue }
+                try {
+                    $dialog = [System.Windows.Automation.AutomationElement]::FromHandle($window.Handle)
+                    if ($window.ProcessId -ne $app.Id) {
+                        # A brokered dialog must belong to Ratio and advertise this test's unique filename.
+                        $matchingName = $false
+                        foreach ($edit in $dialog.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCondition)) {
+                            $value = $null
+                            if ($edit.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$value) -and
+                                $value.Current.Value -eq $name) { $matchingName = $true; break }
+                        }
+                        if (!$matchingName) { continue }
+                    }
+                    $save = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
+                    if ($save) { break }
+                } catch [System.Windows.Automation.ElementNotAvailableException] { continue }
+            }
             if (!$save) { Start-Sleep -Milliseconds 200 }
         } until ($save -or (Get-Date) -ge $end)
-        if (!$save) { throw 'Ratio did not display its native Save canvas SVG dialog and Save button.' }
+        if (!$save) {
+            Write-SvgTimeout $app $destination $stageWatcher
+            throw 'Ratio did not display its native Save canvas SVG dialog and Save button.'
+        }
+        $receipt = Join-Path $dir 'attachment-sent'
+        if (!(Test-Path -LiteralPath $receipt) -or [IO.File]::ReadAllText($receipt) -ne $name) {
+            throw 'The fixture did not serve the canonical SVG GET attachment.'
+        }
         # Send real input after UIA confirms the process-owned control. Calling
         # a UIA provider synchronously to invoke a modal control can block a test.
         $save.SetFocus()
@@ -293,15 +419,19 @@ with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         while (!(Test-Path -LiteralPath $destination) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 100 }
         $expected = (Get-FileHash -LiteralPath (Join-Path $dir $name)).Hash
         if (!(Test-Path -LiteralPath $destination) -or (Get-FileHash -LiteralPath $destination).Hash -ne $expected) {
+            Write-SvgTimeout $app $destination $stageWatcher
             throw 'The native Save dialog did not write the expected SVG bytes to the suggested filename.'
         }
         Write-Host "Verified native SVG dialog, suggested filename and saved bytes (SHA-256 $expected)."
     } finally {
+        if ($stageWatcher) { $stageWatcher.Dispose() }
         if ($app -and !$app.HasExited) {
             $null = $app.CloseMainWindow()
             if (!$app.WaitForExit(5000)) { $app.Kill(); $app.WaitForExit() }
         }
+        if ($app) { $app.Dispose() }
         if ($server -and !$server.HasExited) { $server.Kill(); $server.WaitForExit() }
+        if ($server) { $server.Dispose() }
         if (Test-Path -LiteralPath $destination) { Remove-Item -LiteralPath $destination -Force }
         # Evergreen can release the test profile asynchronously after the app exits.
         Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
@@ -379,13 +509,57 @@ $sentinel = Join-Path $expectedProfileDir 'installer-ci-sentinel'
 if ($scenario -eq 'fresh') { Set-Content -LiteralPath $sentinel -Value 'retained' }
 if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Install changed user data.' }
 
-# The default NSIS uninstall process relaunches from TEMP and removes itself.
+# The installed command starts a temporary NSIS process. Its wrapper's exit
+# code covers the handoff; the installed files, shortcut and key cover cleanup.
 $uninstaller = Join-Path $installDir 'Uninstall.exe'
-$result = Start-Process $uninstaller -ArgumentList '/S' -Wait -PassThru
+$start = New-Object System.Diagnostics.ProcessStartInfo
+$start.FileName = $uninstaller
+$start.Arguments = '/S'
+$start.UseShellExecute = $false
+$wrapper = [Diagnostics.Process]::Start($start)
+try {
+    $wrapperId = $wrapper.Id
+    $wrapper.WaitForExit()
+    $wrapperExit = $wrapper.ExitCode
+    Write-Host "NSIS uninstall wrapper PID=$wrapperId exit=$wrapperExit."
+} finally {
+    $wrapper.Dispose()
+}
 $end = (Get-Date).AddSeconds(20)
-while ((Test-Path $uninstaller) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
-if ($result.ExitCode -ne 0 -or (Test-Path $installDir) -or (Test-Path $shortcut) -or (Test-Path $key)) {
-    throw 'Ratio uninstall left application files, a shortcut, or a registration.'
+do {
+    $remaining = @($installDir, $shortcut, $key | Where-Object { Test-Path -LiteralPath $_ })
+    if (!$remaining.Count -or (Get-Date) -ge $end) { break }
+    Start-Sleep -Milliseconds 200
+} while ($true)
+if ($wrapperExit -ne 0 -or $remaining.Count) {
+    foreach ($path in @($installDir, $appExe, $uninstaller, $shortcut, $key)) {
+        Write-Host "Uninstall state: exists=$(Test-Path -LiteralPath $path) path='$path'"
+    }
+    if (Test-Path -LiteralPath $installDir) {
+        Get-ChildItem -Force -Recurse -LiteralPath $installDir -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Remaining entry: '$($_.FullName)' bytes=$($_.Length) attributes=$($_.Attributes)"
+        }
+    }
+    if (Test-Path -LiteralPath $shortcut) {
+        try { Write-Host "Remaining shortcut target: '$(((New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)).TargetPath)'" }
+        catch { Write-Warning "Could not inspect remaining shortcut: $_" }
+    }
+    if (Test-Path -LiteralPath $key) {
+        $leftEntry = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+        Write-Host "Remaining registration: version='$($leftEntry.DisplayVersion)' location='$($leftEntry.InstallLocation)'"
+    }
+    $filter = "ParentProcessId=$wrapperId OR Name LIKE 'Un%.exe' OR Name='ratio.exe'"
+    try {
+        $related = @(Get-CimInstance Win32_Process -Filter $filter -OperationTimeoutSec 5 | Where-Object {
+            $_.ParentProcessId -eq $wrapperId -or $_.ExecutablePath -eq $appExe -or
+                ($_.CommandLine -and $_.CommandLine.IndexOf("_?=$installDir", [StringComparison]::OrdinalIgnoreCase) -ge 0)
+        })
+        Write-Host "Live Ratio or related NSIS processes: $($related.Count)"
+        foreach ($process in $related) {
+            Write-Host "PID=$($process.ProcessId) parent=$($process.ParentProcessId) image='$($process.ExecutablePath)' command='$($process.CommandLine)'"
+        }
+    } catch { Write-Warning "Could not inspect uninstall processes: $_" }
+    throw "Ratio uninstall failed: wrapper exit=$wrapperExit, remaining paths=[$($remaining -join ', ')]."
 }
 if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Uninstall changed user data.' }
 if ($LegacyInstaller -and (Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') {
