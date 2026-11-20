@@ -17,6 +17,8 @@ On the packaged client, Orca 50.3 spoke the HTTPS correction after a pasted remo
 
 A separate end-to-end check paired the published 0.2.0 Linux client with the read-only Luma sample, quit it, and launched the 0.2.1 package with the same profile. It reopened the remembered server and the authenticated issue list without a second approval. A clean 0.2.1 installation recovered from an unreachable server, connected to the live service, and forgot the saved address on request.
 
+The published Windows installer was also downloaded by GitHub, verified against the release checksum, and exercised on three native Windows Server 2025 workers. Fresh installation, upgrade from 0.1.0 and upgrade from 0.2.0 each passed. [Published installer verification](https://github.com/MimoAlexer/ratio/actions/runs/44815758573)
+
 ## Platform checks
 
 | Environment | Qualification |
