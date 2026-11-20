@@ -76,66 +76,57 @@ function Assert-ConnectionWindow {
 foreach ($path in @($installDir, $legacyDir, $ratioProfile, $legacyProfile, $key, $legacyKey, $shortcut, $legacyShortcut)) {
     if (Test-Path -LiteralPath $path) { throw "Installer smoke needs a clean worker. Found $path." }
 }
-$scenarios = @('fresh')
+$scenario = if ($LegacyInstaller) { 'upgrade' } else { 'fresh' }
+Write-Host "Testing Ratio $version ($scenario)"
+$expectedProfileDir = $ratioProfile
 if ($LegacyInstaller) {
     $LegacyInstaller = (Resolve-Path $LegacyInstaller).Path
     if ((Get-FileHash $LegacyInstaller).Hash -ne '71426a284bc1ddf97623f8d6b585116c812f278d87fbf967f02bc150e1ef8dcd') {
         throw 'Published Working Set 0.1.0 installer checksum mismatch.'
     }
-    $scenarios += 'upgrade'
+    Install-Application $LegacyInstaller
+    $oldExe = Join-Path $legacyDir 'working-set.exe'
+    if (!(Test-Path $oldExe) -or !(Test-Path $legacyShortcut) -or !(Test-Path $legacyKey)) {
+        throw 'The legacy installer did not establish the upgrade fixture.'
+    }
+    $legacyFiles = @(Get-ChildItem -LiteralPath $legacyDir -File)
+    $legacyUserFile = Join-Path $legacyDir 'user-owned.txt'
+    Set-Content -LiteralPath $legacyUserFile -Value 'keep this file'
+    $expectedProfileDir = $legacyProfile
+    New-Item -ItemType Directory -Path $expectedProfileDir -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $expectedProfileDir 'installer-ci-sentinel') -Value 'retained'
 }
-foreach ($scenario in $scenarios) {
-    Write-Host "Testing Ratio $version ($scenario)"
-    $expectedProfileDir = $ratioProfile
-    if ($scenario -eq 'upgrade') {
-        Install-Application $LegacyInstaller
-        $oldExe = Join-Path $legacyDir 'working-set.exe'
-        if (!(Test-Path $oldExe) -or !(Test-Path $legacyShortcut) -or !(Test-Path $legacyKey)) {
-            throw 'The legacy installer did not establish the upgrade fixture.'
-        }
-        $legacyFiles = @(Get-ChildItem -LiteralPath $legacyDir -File)
-        $legacyUserFile = Join-Path $legacyDir 'user-owned.txt'
-        Set-Content -LiteralPath $legacyUserFile -Value 'keep this file'
-        $expectedProfileDir = $legacyProfile
-        New-Item -ItemType Directory -Path $expectedProfileDir -Force | Out-Null
-        Set-Content -LiteralPath (Join-Path $expectedProfileDir 'installer-ci-sentinel') -Value 'retained'
+Install-Application $setup
+$entry = Get-ItemProperty -LiteralPath $key
+if (!(Test-Path $appExe) -or !(Test-Path $shortcut) -or $entry.DisplayName -ne 'Ratio' -or $entry.DisplayVersion -ne $version) {
+    throw 'Missing or incorrect installed Ratio binary, Start Menu entry, or registration.'
+}
+$link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+if ($link.TargetPath -ne $appExe) { throw 'The Start Menu shortcut points to the wrong executable.' }
+if ((Get-Item $appExe).VersionInfo.ProductName -ne 'Ratio') { throw 'Unexpected executable product name.' }
+if ((Test-Path $legacyKey) -or (Test-Path $legacyShortcut)) { throw 'The legacy registration or shortcut remains.' }
+if ($scenario -eq 'upgrade') {
+    foreach ($old in $legacyFiles) {
+        if (Test-Path -LiteralPath $old.FullName) { throw "Legacy application file remains: $($old.Name)" }
     }
-    Install-Application $setup
-    $entry = Get-ItemProperty -LiteralPath $key
-    if (!(Test-Path $appExe) -or !(Test-Path $shortcut) -or $entry.DisplayName -ne 'Ratio' -or $entry.DisplayVersion -ne $version) {
-        throw 'Missing or incorrect installed Ratio binary, Start Menu entry, or registration.'
-    }
-    $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
-    if ($link.TargetPath -ne $appExe) { throw 'The Start Menu shortcut points to the wrong executable.' }
-    if ((Get-Item $appExe).VersionInfo.ProductName -ne 'Ratio') { throw 'Unexpected executable product name.' }
-    if ((Test-Path $legacyKey) -or (Test-Path $legacyShortcut)) { throw 'The legacy registration or shortcut remains.' }
-    if ($scenario -eq 'upgrade') {
-        foreach ($old in $legacyFiles) {
-            if (Test-Path -LiteralPath $old.FullName) { throw "Legacy application file remains: $($old.Name)" }
-        }
-        if ((Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') { throw 'Upgrade removed an unrelated file.' }
-    }
+    if ((Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') { throw 'Upgrade removed an unrelated file.' }
+}
 
-    Assert-ConnectionWindow
-    if (!(Test-Path -LiteralPath (Join-Path $expectedProfileDir 'launcher'))) { throw 'The app opened the wrong profile.' }
-    $sentinel = Join-Path $expectedProfileDir 'installer-ci-sentinel'
-    if ($scenario -eq 'fresh') { Set-Content -LiteralPath $sentinel -Value 'retained' }
-    if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Install changed user data.' }
+Assert-ConnectionWindow
+if (!(Test-Path -LiteralPath (Join-Path $expectedProfileDir 'launcher'))) { throw 'The app opened the wrong profile.' }
+$sentinel = Join-Path $expectedProfileDir 'installer-ci-sentinel'
+if ($scenario -eq 'fresh') { Set-Content -LiteralPath $sentinel -Value 'retained' }
+if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Install changed user data.' }
 
-    # The default NSIS uninstall process relaunches from TEMP and removes itself.
-    $uninstaller = Join-Path $installDir 'Uninstall.exe'
-    $result = Start-Process $uninstaller -ArgumentList '/S' -Wait -PassThru
-    $end = (Get-Date).AddSeconds(20)
-    while ((Test-Path $uninstaller) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
-    if ($result.ExitCode -ne 0 -or (Test-Path $installDir) -or (Test-Path $shortcut) -or (Test-Path $key)) {
-        throw 'Ratio uninstall left application files, a shortcut, or a registration.'
-    }
-    if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Uninstall changed user data.' }
-    if ($scenario -eq 'fresh' -and $LegacyInstaller) {
-        # Keep this test-created profile for inspection and start the upgrade
-        # scenario on a machine with only the original Working Set profile.
-        Rename-Item -LiteralPath $ratioProfile -NewName ('Ratio-ci-' + [guid]::NewGuid().ToString('N'))
-    } elseif ($scenario -eq 'upgrade' -and (Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') {
-        throw 'Uninstall removed an unrelated legacy file.'
-    }
+# The default NSIS uninstall process relaunches from TEMP and removes itself.
+$uninstaller = Join-Path $installDir 'Uninstall.exe'
+$result = Start-Process $uninstaller -ArgumentList '/S' -Wait -PassThru
+$end = (Get-Date).AddSeconds(20)
+while ((Test-Path $uninstaller) -and (Get-Date) -lt $end) { Start-Sleep -Milliseconds 200 }
+if ($result.ExitCode -ne 0 -or (Test-Path $installDir) -or (Test-Path $shortcut) -or (Test-Path $key)) {
+    throw 'Ratio uninstall left application files, a shortcut, or a registration.'
+}
+if ((Get-Content -Raw $sentinel).Trim() -ne 'retained') { throw 'Uninstall changed user data.' }
+if ($LegacyInstaller -and (Get-Content -Raw $legacyUserFile).Trim() -ne 'keep this file') {
+    throw 'Uninstall removed an unrelated legacy file.'
 }

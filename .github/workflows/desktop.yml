@@ -127,19 +127,38 @@ jobs:
           $nsis = Join-Path $env:RUNNER_TEMP 'nsis-3.13\makensis.exe'
           $objdump = Join-Path $env:ProgramFiles 'LLVM\bin\llvm-objdump.exe'
           python packaging/windows/build.py target/x86_64-pc-windows-msvc/release/ratio.exe dist --makensis $nsis --objdump $objdump
-      - name: Fetch the published Working Set upgrade fixture
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern Working-Set-0.1.0-windows-x64-setup.exe --dir $env:RUNNER_TEMP
-      - name: Test fresh install and upgrade on Windows
+      - name: Test a fresh install on Windows
         shell: powershell
         run: |
           $installer = Get-Item dist/Ratio-*-windows-x64-setup.exe
-          $legacy = Join-Path $env:RUNNER_TEMP 'Working-Set-0.1.0-windows-x64-setup.exe'
-          ./packaging/windows/smoke.ps1 -Installer $installer.FullName -LegacyInstaller $legacy
+          ./packaging/windows/smoke.ps1 -Installer $installer.FullName
           "$((Get-FileHash $installer).Hash.ToLowerInvariant())  $($installer.Name)" | Set-Content dist/SHA256SUMS -Encoding ascii
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: Ratio-windows-x64
           path: desktop/dist/
           if-no-files-found: error
+
+  windows-upgrade:
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Ratio-windows-x64
+          path: desktop/dist
+      - name: Fetch the published Working Set upgrade fixture
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern Working-Set-0.1.0-windows-x64-setup.exe --dir $env:RUNNER_TEMP
+      - name: Test the upgrade on a clean Windows worker
+        shell: powershell
+        run: |
+          $installer = Get-Item desktop/dist/Ratio-*-windows-x64-setup.exe
+          $legacy = Join-Path $env:RUNNER_TEMP 'Working-Set-0.1.0-windows-x64-setup.exe'
+          ./desktop/packaging/windows/smoke.ps1 -Installer $installer.FullName -LegacyInstaller $legacy

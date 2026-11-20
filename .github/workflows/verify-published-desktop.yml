@@ -13,6 +13,10 @@ permissions:
   contents: read
 jobs:
   windows-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [fresh, upgrade]
     runs-on: windows-2025
     timeout-minutes: 12
     steps:
@@ -36,11 +40,17 @@ jobs:
           if ($hashLine.Count -ne 1 -or $hashLine[0] -notmatch $pattern) { throw 'Missing or ambiguous release checksum' }
           $expected = $Matches[1]
           if ((Get-FileHash (Join-Path $dir $exe)).Hash -ne $expected) { throw 'Release checksum mismatch' }
-          gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern Working-Set-0.1.0-windows-x64-setup.exe --dir $env:RUNNER_TEMP
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           "VERIFIED_SETUP=$(Join-Path $dir $exe)" >> $env:GITHUB_ENV
-      - name: Test fresh install and legacy upgrade of the published installer
-        shell: powershell
+      - name: Fetch the published Working Set upgrade fixture
+        if: matrix.scenario == 'upgrade'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $legacy = Join-Path $env:RUNNER_TEMP 'Working-Set-0.1.0-windows-x64-setup.exe'
-          ./desktop/packaging/windows/smoke.ps1 -Installer $env:VERIFIED_SETUP -LegacyInstaller $legacy
+          $name = 'Working-Set-0.1.0-windows-x64-setup.exe'
+          gh release download v0.1.0 --repo $env:GITHUB_REPOSITORY --pattern $name --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "LEGACY_SETUP=$(Join-Path $env:RUNNER_TEMP $name)" >> $env:GITHUB_ENV
+      - name: Test the published installer and its default user profile
+        shell: powershell
+        run: ./desktop/packaging/windows/smoke.ps1 -Installer $env:VERIFIED_SETUP -LegacyInstaller $env:LEGACY_SETUP
